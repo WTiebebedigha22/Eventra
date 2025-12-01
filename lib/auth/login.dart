@@ -276,13 +276,13 @@ class _LoginFormState extends State<LoginForm> {
               _buildSocialLoginButton(
                 text: 'Continue with Google',
                 color: Colors.blue,
-                icon: Icons.g_mobiledata,
+                icon: Icons.g_mobiledata_rounded,
               ),
               const SizedBox(height: 10.0),
               _buildSocialLoginButton(
-                text: 'Continue with Facebook',
-                color: const Color(0xFF1877F2),
-                icon: Icons.facebook,
+                text: 'Continue with Apple',
+                color: const Color.fromARGB(255, 3, 3, 3),
+                icon: Icons.apple,
               ),
 
               const SizedBox(height: 40.0),
