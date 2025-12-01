@@ -93,7 +93,7 @@ class _LoginFormState extends State<LoginForm> {
           enabledBorder: InputBorder.none,
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _pinterestRed, width: 2),
+            borderSide: const BorderSide(color: Colors.purpleAccent, width: 2),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
@@ -239,7 +239,7 @@ class _LoginFormState extends State<LoginForm> {
                 child: ElevatedButton(
                   onPressed: _loading ? null : _submitLogin,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _pinterestRed,
+                    backgroundColor: Colors.purpleAccent,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(25),
                     ),
