@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:ventra/views/onboarding_screen.dart';
-//import 'package:eventra/views/home.dart';
+import 'package:ventra/pages/homepage.dart';
+//import 'package:ventra/views/onboarding_screen.dart';
 
 // Make sure you have initialized Firebase (see notes below).
 void main() async {
@@ -30,7 +30,7 @@ class MyApp extends StatelessWidget {
       // Use named routes for clarity
       initialRoute: '/',
       routes: {
-        '/': (context) => const OnboardingScreen(),
+        '/': (context) => const VentraHomepage(),
       },
     );
   }

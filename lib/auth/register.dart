@@ -39,7 +39,7 @@ class _RegisterFormState extends State<RegisterForm> {
   bool _isPasswordVisible = false;
 
   // Pinterest's signature red color
-  static const Color _pinterestRed = Color(0xFFE60023);
+  static const Color _pinterestRed = Colors.purpleAccent;
 
   void _submitRegistration() {
     if (_formKey.currentState!.validate()) {
@@ -278,9 +278,9 @@ class _RegisterFormState extends State<RegisterForm> {
                 onPressed: _submitRegistration,
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: _pinterestRed,
+                  backgroundColor: Colors.purpleAccent,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25), // High rounding
+                    borderRadius: BorderRadius.circular(25),
                   ),
                   elevation: 0, // Flat design
                 ),
@@ -318,9 +318,9 @@ class _RegisterFormState extends State<RegisterForm> {
               ),
               const SizedBox(height: 10.0),
               _buildSocialLoginButton(
-                text: 'Continue with Facebook',
-                color: const Color(0xFF1877F2), 
-                icon: Icons.facebook,
+                text: 'Continue with Apple',
+                color: const Color.fromARGB(255, 3, 3, 3), 
+                icon: Icons.apple_rounded,
               ),
 
               const SizedBox(height: 40.0),
