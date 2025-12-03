@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:ventra/pages/homepage.dart';
+//import 'package:ventra/pages/homepage.dart';
+import 'package:ventra/pages/Profile/profilepage.dart';
 //import 'package:ventra/views/onboarding_screen.dart';
 
 // Make sure you have initialized Firebase (see notes below).
@@ -17,7 +18,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'eventra',
+      title: 'Eventra',
       theme: ThemeData(
         textTheme: GoogleFonts.latoTextTheme(),
         scaffoldBackgroundColor: Colors.white,
@@ -30,7 +31,7 @@ class MyApp extends StatelessWidget {
       // Use named routes for clarity
       initialRoute: '/',
       routes: {
-        '/': (context) => const VentraHomepage(),
+        '/': (context) => const ProfilePage(),
       },
     );
   }

@@ -1,89 +1,147 @@
 import 'package:flutter/material.dart';
+// Assuming the file path is correct and ProfilePage returns visible content
+import 'package:ventra/pages/Profile/profilepage.dart'; 
 
-class VentraHomepage extends StatelessWidget {
+// 1. REFRACTORED: Changed to StatefulWidget to manage the currentIndex and Page View
+class VentraHomepage extends StatefulWidget {
   const VentraHomepage({super.key});
 
   @override
+  State<VentraHomepage> createState() => _VentraHomepageState();
+}
+
+class _VentraHomepageState extends State<VentraHomepage> {
+  // State Variable to track the selected tab
+  int _currentIndex = 0;
+
+  // List of placeholder pages corresponding to the BottomNavigationBar items
+  final List<Widget> _pages = const [
+    _HomepageBody(),       // Index 0: Home Feed (Now contains the listings)
+    _PlaceholderPage(title: 'Search/Categories'), // Index 1
+    _PlaceholderPage(title: 'Post Listing'),      // Index 2
+    _PlaceholderPage(title: 'Favorites'),         // Index 3
+    ProfilePage(),           // Index 4 (Assuming it now has content)
+  ];
+
+  // Handler for BottomNavigationBar taps
+  void _onItemTapped(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Scaffold background uses theme's scaffoldBackgroundColor
     return Scaffold(
-      appBar: _buildAppBar(context), // Pass context to AppBar builder
-      body: _buildBody(context),      // Pass context to Body builder
-      bottomNavigationBar: _buildBottomNavigationBar(context), // Pass context to BottomNav builder
+      // Only show the custom AppBar on the Home tab (Index 0)
+      appBar: _currentIndex == 0 ? _buildAppBar(context) : null,
+      
+      // The body displays the page corresponding to the current index
+      body: _pages[_currentIndex],
+      
+      // The bottomNavigationBar is managed by the state
+      bottomNavigationBar: _buildBottomNavigationBar(context), 
     );
   }
 
-  // --- 1. AppBar (Ventra Blend - Now Dynamic) ---
+  // --- 1. AppBar ---
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final theme = Theme.of(context);
-    final iconColor = theme.textTheme.titleLarge?.color; // Dynamic color for icons/text
+    final iconColor = theme.textTheme.titleLarge?.color;
 
     return AppBar(
-      backgroundColor: theme.appBarTheme.backgroundColor, // Dynamic App Bar background
+      backgroundColor: theme.appBarTheme.backgroundColor,
       elevation: 0.5,
       title: Row(
         children: [
-          // Jiji-style Location Selector
-          Icon(
-            Icons.location_on_outlined,
-            color: iconColor,
-            size: 24,
-          ),
+          Icon(Icons.location_on_outlined, color: iconColor, size: 24),
           const SizedBox(width: 4),
           Text(
-            'Lagos, Nigeria', // Dynamic Location
+            'Lagos, Nigeria', 
             style: TextStyle(
               color: iconColor,
               fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
           ),
-          Icon(
-            Icons.keyboard_arrow_down,
-            color: iconColor,
-            size: 20,
-          ),
+          Icon(Icons.keyboard_arrow_down, color: iconColor, size: 20),
         ],
       ),
       actions: [
-        // Message Icon (Ventra Inbox)
         IconButton(
-          icon: Icon(
-            Icons.send_outlined,
-            color: iconColor,
-          ),
-          onPressed: () {},
+          icon: Icon(Icons.send_outlined, color: iconColor),
+          onPressed: () {
+             // Navigation logic for Chat/Inbox
+          },
         ),
       ],
     );
   }
 
-  // --- 2. Body (Categories and Feed) ---
+  // --- 2. Bottom Navigation Bar ---
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBottomNavigationBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final iconColor = theme.textTheme.titleLarge?.color;
+    final unselectedColor = theme.brightness == Brightness.dark ? Colors.grey[600] : Colors.grey[700];
+
+    return BottomNavigationBar(
+      type: BottomNavigationBarType.fixed,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      selectedItemColor: iconColor,
+      unselectedItemColor: unselectedColor,
+      showSelectedLabels: false,
+      showUnselectedLabels: false,
+      
+      currentIndex: _currentIndex, 
+      
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
+        BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search/Categories'),
+        BottomNavigationBarItem(icon: Icon(Icons.add_box_outlined), label: 'Post Listing'),
+        BottomNavigationBarItem(icon: Icon(Icons.favorite_border), label: 'Favorites'),
+        BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+      ],
+      
+      onTap: _onItemTapped, 
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// --- WIDGETS ---
+// -----------------------------------------------------------------------------
+
+// --- 3. Body Content Widget (Home Page) ---
+
+class _HomepageBody extends StatelessWidget {
+  const _HomepageBody();
+
+  @override
+  Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: <Widget>[
-        // Ventra Categories as Story/Quick Access (Event Services)
+        // Ventra Categories as Story/Quick Access
         SliverToBoxAdapter(
           child: _VentraCategoryBar(),
         ),
         const SliverToBoxAdapter(
-          // Divider color is dynamic, using a slightly darker grey for better visibility in both modes
+          // Divider color is dynamic
           child: Divider(height: 1, thickness: 0.5, color: Color(0xFF555555)), 
         ),
-        // Insta-style Product Feed
+        // Insta-style Product Feed (FIX APPLIED: Restored SliverList)
         SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, index) {
-              // Updated dummy data for event service listings
+              // Dummy data for event service listings
               final listing = {
                 'title': index % 2 == 0 ? 'Professional Wedding Photography Package' : 'Premium Catering & Wait Staff for Events',
                 'price': index % 3 == 0 ? '₦450,000' : '₦200,000',
                 'location': index % 2 == 0 ? 'Ikeja' : 'Lekki',
-                'image': 'assets/placeholder_$index.jpg', // Replace with actual images
+                'image': 'assets/placeholder_$index.jpg', 
                 'likes': 120 + index,
-                'isPromoted': index == 0, // Promote the first item
+                'isPromoted': index == 0, 
               };
               return _VentraListingCard(listing: listing);
             },
@@ -93,37 +151,26 @@ class VentraHomepage extends StatelessWidget {
       ],
     );
   }
+}
 
-  // --- 3. Bottom Navigation Bar ---
+// --- 4. Placeholder Widget for Other Tabs ---
 
-  Widget _buildBottomNavigationBar(BuildContext context) {
-    final theme = Theme.of(context);
-    final iconColor = theme.textTheme.titleLarge?.color;
-    final unselectedColor = theme.brightness == Brightness.dark ? Colors.grey[600] : Colors.grey[700];
+class _PlaceholderPage extends StatelessWidget {
+  final String title;
+  const _PlaceholderPage({required this.title});
 
-    return BottomNavigationBar(
-      type: BottomNavigationBarType.fixed,
-      backgroundColor: theme.scaffoldBackgroundColor, // Dynamic background
-      selectedItemColor: iconColor, // Dynamic selected item color
-      unselectedItemColor: unselectedColor, // Dynamic unselected color
-      showSelectedLabels: false,
-      showUnselectedLabels: false,
-      currentIndex: 0, // Home
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search/Categories'),
-        BottomNavigationBarItem(icon: Icon(Icons.add_box_outlined), label: 'Post Listing'),
-        BottomNavigationBarItem(icon: Icon(Icons.favorite_border), label: 'Favorites'),
-        BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-      ],
-      onTap: (index) {
-        // Handle navigation taps
-      },
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'Ventra $title Screen',
+        style: Theme.of(context).textTheme.headlineMedium,
+      ),
     );
   }
 }
 
-// --- Widget for the Category/Quick Access Bar (Theme Sensitive) ---
+// --- Widget for the Category/Quick Access Bar ---
 
 class _VentraCategoryBar extends StatelessWidget {
   final List<Map<String, dynamic>> categories = const [
@@ -152,7 +199,6 @@ class _VentraCategoryBar extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(index == 0 ? 12 : 8, 8, 8, 8),
             child: Column(
               children: [
-                // Category Icon in a circle (Like an IG story profile image)
                 Container(
                   width: 60,
                   height: 60,
@@ -171,12 +217,11 @@ class _VentraCategoryBar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                // Category Name
                 Text(
                   category['name'],
                   style: TextStyle(
                     fontSize: 12,
-                    color: theme.textTheme.bodyMedium?.color, // Dynamic text color
+                    color: theme.textTheme.bodyMedium?.color, 
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -190,7 +235,7 @@ class _VentraCategoryBar extends StatelessWidget {
   }
 }
 
-// --- Widget for a Single Product Listing Card (Ventra Feed Style - Theme Sensitive) ---
+// --- Widget for a Single Product Listing Card ---
 
 class _VentraListingCard extends StatelessWidget {
   final Map<String, dynamic> listing;
@@ -235,64 +280,57 @@ class _VentraListingCard extends StatelessWidget {
             ),
           ),
 
-          // --- Listing Image (The main visual focus - Placeholder is dynamic) ---
+          // --- Listing Image ---
           AspectRatio(
-            aspectRatio: 1 / 1, // Square image
+            aspectRatio: 1 / 1,
             child: Container(
-              color: isDarkMode ? const Color(0xFF2C2C2C) : Colors.grey[300], // Dynamic placeholder background
+              color: isDarkMode ? const Color(0xFF2C2C2C) : Colors.grey[300],
               child: Center(
                 child: Icon(
                   Icons.image, 
                   size: 80, 
-                  color: isDarkMode ? Colors.grey[600] : Colors.grey, // Dynamic placeholder icon
+                  color: isDarkMode ? Colors.grey[600] : Colors.grey,
                 ),
               ),
             ),
           ),
 
-          // --- Action Bar (Icons are dynamic) ---
+          // --- Action Bar ---
           Row(
             children: [
-              // Like/Heart
               IconButton(icon: Icon(Icons.favorite_border, color: iconColor), onPressed: () {}),
-              // Message/Chat (The primary action)
               IconButton(icon: Icon(Icons.forum_outlined, color: iconColor), onPressed: () {}),
-              // Share
               IconButton(icon: Icon(Icons.share_outlined, color: iconColor), onPressed: () {}),
               const Spacer(),
-              // Save/Bookmark
-              IconButton(icon: Icon(Icons.bookmark_border, color: iconColor), onPressed: () {}),
+              IconButton(icon: Icon(Icons.bookmark_border, color: iconColor), onPressed:() {}),
             ],
           ),
 
-          // --- Listing Info (Text is dynamic) ---
+          // --- Listing Info ---
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Price (Blue remains consistent for high visibility)
                 Text(
                   listing['price']!,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF007bff), // Constant clean blue
+                    color: Color(0xFF007bff),
                   ),
                 ),
                 const SizedBox(height: 4),
-                // Title (Listing Description)
                 Text(
                   listing['title']!,
                   style: TextStyle(
                     fontSize: 16,
-                    color: theme.textTheme.bodyMedium?.color, // Dynamic body text color
+                    color: theme.textTheme.bodyMedium?.color,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                // Location and Time Posted
                 Row(
                   children: [
                     Icon(
@@ -311,7 +349,6 @@ class _VentraListingCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                // Engagement Count
                 Text(
                   '${listing['likes']} interests',
                   style: TextStyle(
@@ -329,39 +366,27 @@ class _VentraListingCard extends StatelessWidget {
   }
 }
 
-// --- Reminder: You must wrap this in a MaterialApp with darkTheme set ---
-/*
-void main() {
-  runApp(const MyApp());
-}
+// -----------------------------------------------------------------------------
+// ASSUMED ProfilePage IMPLEMENTATION (For completeness)
+// -----------------------------------------------------------------------------
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+// NOTE: You must ensure your actual ProfilePage widget returns visible content.
+/*
+// File: ventra/pages/profilepage.dart
+import 'package:flutter/material.dart';
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Ventra App',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: Colors.white,
-        appBarTheme: const AppBarTheme(backgroundColor: Colors.white),
-        // ... define other light theme properties
+    return const Center(
+      child: Text(
+        'User Profile Page Content Loaded!',
+        style: TextStyle(fontSize: 24, color: Colors.blue),
       ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(color: Colors.white),
-          titleLarge: TextStyle(color: Colors.white),
-        ),
-        // ... define other dark theme properties
-      ),
-      themeMode: ThemeMode.system, // KEY: Auto detect system mode
-      home: const VentraHomepage(),
     );
   }
 }
 */
+
