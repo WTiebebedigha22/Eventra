@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:ventra/pages/Profile/accountsettings.dart';
+import 'package:ventra/pages/Profile/editprofile.dart';
+import 'package:url_launcher/url_launcher.dart'; // REQUIRED for launching phone/email apps
 
 void main() {
   runApp(const MyApp());
@@ -12,7 +15,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Profile',
       debugShowCheckedModeBanner: false,
-      
+
       // Light Theme Setup
       theme: ThemeData(
         brightness: Brightness.light,
@@ -23,7 +26,11 @@ class MyApp extends StatelessWidget {
           color: Colors.white,
           iconTheme: IconThemeData(color: Colors.black),
           toolbarTextStyle: TextStyle(color: Colors.black),
-          titleTextStyle: TextStyle(color: Colors.black, fontSize: 20, fontWeight: FontWeight.bold),
+          titleTextStyle: TextStyle(
+            color: Colors.black,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         textTheme: const TextTheme(
           bodyMedium: TextStyle(color: Colors.black87),
@@ -41,7 +48,11 @@ class MyApp extends StatelessWidget {
           color: Colors.black,
           iconTheme: IconThemeData(color: Colors.white),
           toolbarTextStyle: TextStyle(color: Colors.white),
-          titleTextStyle: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         textTheme: const TextTheme(
           bodyMedium: TextStyle(color: Colors.white70),
@@ -50,7 +61,7 @@ class MyApp extends StatelessWidget {
       ),
 
       // Set the theme mode to system to enable auto-switching
-      themeMode: ThemeMode.system, 
+      themeMode: ThemeMode.system,
 
       home: const ProfilePage(),
     );
@@ -65,7 +76,7 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       // AppBar is configured in MyApp to be dynamic
       appBar: AppBar(
@@ -74,7 +85,13 @@ class ProfilePage extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () {},
+            onPressed: () {
+              Navigator.push(
+                  context,
+                    MaterialPageRoute(
+                      builder: (context) => const AccountSettingsPage(),
+                    ),
+                );},
           ),
         ],
       ),
@@ -87,10 +104,123 @@ class ProfilePage extends StatelessWidget {
       children: [
         _ProfileHeader(),
         Divider(height: 1, thickness: 0.5),
-        Expanded(
-          child: _ContentGrid(),
-        ),
+        Expanded(child: _ContentGrid()),
       ],
+    );
+  }
+}
+
+class _ContactHandler {
+  final BuildContext context;
+  final String phoneNumber = '+2348012345678';
+  final String emailAddress = 'harmony.events@ventra.com';
+
+  _ContactHandler(this.context);
+
+  Future<void> _launchUrl(Uri url, String fallbackMessage) async {
+    if (!await launchUrl(url)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(fallbackMessage)),
+        );
+      }
+    }
+  }
+
+  void showContactOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext modalContext) {
+        return Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Contact Harmony Events Co.',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const Divider(),
+              
+              // 1. Ventra Chat (Placeholder for internal navigation)
+              _buildContactTile(
+                icon: Icons.chat_bubble_outline,
+                title: 'Message via Ventra Chat',
+                subtitle: 'Send a private message now',
+                onTap: () {
+                  Navigator.pop(modalContext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Navigating to Chat...')),
+                  );
+                },
+              ),
+              
+              // 2. Phone Call (Launches native dialer)
+              _buildContactTile(
+                icon: Icons.phone_outlined,
+                title: 'Call Seller',
+                subtitle: phoneNumber,
+                onTap: () {
+                  Navigator.pop(modalContext);
+                  _launchUrl(Uri(scheme: 'tel', path: phoneNumber), 'Could not open phone app.');
+                },
+              ),
+              
+              // 3. Email (Launches native email app)
+              _buildContactTile(
+                icon: Icons.email_outlined,
+                title: 'Send Email',
+                subtitle: emailAddress,
+                onTap: () {
+                  Navigator.pop(modalContext);
+                  _launchUrl(
+                    Uri(
+                      scheme: 'mailto',
+                      path: emailAddress,
+                      queryParameters: {'subject': 'Inquiry from Ventra Profile'},
+                    ),
+                    'Could not open email app.',
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildContactTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12.0),
+        child: Row(
+          children: <Widget>[
+            Icon(icon, size: 30, color: Theme.of(context).textTheme.titleLarge?.color),
+            const SizedBox(width: 15),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                Text(subtitle, style: TextStyle(fontSize: 14, color: Theme.of(context).textTheme.bodySmall?.color)),
+              ],
+            ),
+            const Spacer(),
+            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -102,6 +232,7 @@ class _ProfileHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
+    final contactHandler = _ContactHandler(context); // Instantiate the handler
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -113,8 +244,14 @@ class _ProfileHeader extends StatelessWidget {
               // Profile Picture
               CircleAvatar(
                 radius: 40,
-                backgroundColor: isDarkMode ? Colors.grey[800] : Colors.grey[300],
-                child: Icon(Icons.business_center, size: 40, color: isDarkMode ? Colors.grey[400] : Colors.grey[600]),
+                backgroundColor: isDarkMode
+                    ? Colors.grey[800]
+                    : Colors.grey[300],
+                child: Icon(
+                  Icons.business_center,
+                  size: 40,
+                  color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                ),
               ),
               const SizedBox(width: 20),
               // Stats
@@ -130,7 +267,7 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 10),
 
           Row(
@@ -151,10 +288,9 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 4),
 
-          // Row 3: Bio/Description
           Text(
             'Lagos-based professional event planners specializing in weddings, corporate functions, and private parties. Delivering memorable experiences since 2018.',
             style: theme.textTheme.bodyMedium,
@@ -165,13 +301,13 @@ class _ProfileHeader extends StatelessWidget {
           // Row 4: Action Buttons (Jiji Focus)
           Row(
             children: <Widget>[
-              // Primary Contact Button
+              // Primary Contact Button (UPDATED onPressed)
               _ActionButton(
                 label: 'Contact Seller',
                 icon: Icons.chat_bubble_outline,
                 color: const Color(0xFF007bff), // Ventra Blue
                 isPrimary: true,
-                onPressed: () {},
+                onPressed: contactHandler.showContactOptions, // CALLS THE MODAL
               ),
               const SizedBox(width: 8),
               // Analytics/Promote Placeholder
@@ -183,13 +319,21 @@ class _ProfileHeader extends StatelessWidget {
                 onPressed: () {},
               ),
               const SizedBox(width: 8),
-              // Edit/Settings Button
+              // Edit/Settings Button (UPDATED onPressed)
               _ActionButton(
                 label: 'Edit Profile',
                 icon: Icons.edit_outlined,
                 color: isDarkMode ? theme.cardColor : Colors.grey[200]!,
                 textColor: isDarkMode ? Colors.white : Colors.black87,
-                onPressed: () {},
+                onPressed: () {
+                  // Navigate to the EditProfileScreen
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const EditProfilePage(), // Added const for consistency
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -199,7 +343,7 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-// Helper Widget for the Stats
+// Helper Widget for the Stats (Unchanged)
 class _StatColumn extends StatelessWidget {
   final String count;
   final String label;
@@ -231,7 +375,7 @@ class _StatColumn extends StatelessWidget {
   }
 }
 
-// Helper Widget for the Action Buttons
+// Helper Widget for the Action Buttons (Unchanged)
 class _ActionButton extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -268,11 +412,7 @@ class _ActionButton extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: isPrimary ? textColor : textColor,
-                ),
+                Icon(icon, size: 16, color: isPrimary ? textColor : textColor),
                 if (label.isNotEmpty) const SizedBox(width: 4),
                 Text(
                   label,
@@ -291,9 +431,7 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-
-// --- Content Grid (Instagram Style) ---
-
+// --- Content Grid (Instagram Style) (Unchanged) ---
 class _ContentGrid extends StatelessWidget {
   const _ContentGrid();
 
@@ -327,7 +465,7 @@ class _ContentGrid extends StatelessWidget {
   }
 }
 
-// Helper Widget for a single grid item
+// Helper Widget for a single grid item (Unchanged)
 class _GridItem extends StatelessWidget {
   final Map<String, dynamic> post;
 
@@ -337,10 +475,10 @@ class _GridItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
-    
+
     IconData icon;
     String countText = '';
-    
+
     // Determine the icon and count text based on post type
     if (post['type'] == 'video') {
       icon = Icons.videocam;
@@ -350,21 +488,17 @@ class _GridItem extends StatelessWidget {
     } else {
       icon = Icons.camera_alt_outlined;
     }
-    
+
     // Grid item container acts as the visual placeholder
     return Container(
-      color: isDarkMode 
-          ? post['color'].withOpacity(0.3) 
+      color: isDarkMode
+          ? post['color'].withOpacity(0.3)
           : post['color'].withOpacity(0.5),
       child: Stack(
         fit: StackFit.expand,
         children: [
           Center(
-            child: Icon(
-              icon,
-              size: 40,
-              color: Colors.white.withOpacity(0.7),
-            ),
+            child: Icon(icon, size: 40, color: Colors.white.withOpacity(0.7)),
           ),
           // Top Right Badge for Video/Multi-photo
           if (post['type'] != 'photo')
@@ -398,3 +532,4 @@ class _GridItem extends StatelessWidget {
     );
   }
 }
+
