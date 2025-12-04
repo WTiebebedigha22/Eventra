@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ventra/pages/Profile/accountsettings.dart';
+import 'package:ventra/pages/Profile/analyticspage.dart';
 import 'package:ventra/pages/Profile/editprofile.dart';
 import 'package:url_launcher/url_launcher.dart'; // REQUIRED for launching phone/email apps
 
@@ -316,7 +317,14 @@ class _ProfileHeader extends StatelessWidget {
                 icon: Icons.show_chart,
                 color: isDarkMode ? theme.cardColor : Colors.grey[200]!,
                 textColor: isDarkMode ? Colors.white : Colors.black87,
-                onPressed: () {},
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AnalyticsPage(),
+                    ),
+                  );
+                },
               ),
               const SizedBox(width: 8),
               // Edit/Settings Button (UPDATED onPressed)

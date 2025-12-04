@@ -31,7 +31,7 @@ class _LoginFormState extends State<LoginForm> {
     setState(() => _loading = true);
 
     try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
