@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 // Assuming the file path is correct and ProfilePage returns visible content
-import 'package:ventra/pages/Profile/profilepage.dart'; 
+import 'package:ventra/UI/auth/Profile/profilepage.dart'; 
 
 // 1. REFRACTORED: Changed to StatefulWidget to manage the currentIndex and Page View
 class VentraHomepage extends StatefulWidget {

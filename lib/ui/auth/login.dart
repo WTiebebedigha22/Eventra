@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:ventra/auth/forgot_password.dart';
-import 'package:ventra/auth/register.dart';
+import 'package:ventra/ui/auth/forgot_password.dart';
+import 'package:ventra/ui/auth/register.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});

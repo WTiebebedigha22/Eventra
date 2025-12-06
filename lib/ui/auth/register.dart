@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ventra/auth/login.dart';
+import 'package:ventra/ui/auth/login.dart';
 
 class RegisterPage extends StatelessWidget {
   const RegisterPage({super.key});
