@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-// Note: Assuming 'editprofile.dart' exists and is imported elsewhere for navigation.
+import 'package:ventra/pages/Profile/editprofile.dart';
+import '../../auth/login.dart';
 
 class AccountSettingsPage extends StatelessWidget {
   const AccountSettingsPage({super.key});
@@ -31,11 +32,10 @@ class AccountSettingsPage extends StatelessWidget {
                 icon: Icons.person_outline,
                 title: 'Edit Profile Information',
                 subtitle: 'Name, Bio, Location',
-                onTap: () {
-                  // TODO: Navigate to EditProfilePage
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Navigating to Edit Profile...')));
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const EditProfilePage()),
+                ),
               ),
               _SettingsTile(
                 icon: Icons.lock_outline,
@@ -51,7 +51,7 @@ class AccountSettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          
+
           const Divider(height: 1),
 
           // --- Section 2: Preferences & Privacy ---
@@ -86,7 +86,7 @@ class AccountSettingsPage extends StatelessWidget {
           ),
 
           const Divider(height: 1),
-          
+
           // --- Section 3: Support & Legal ---
           _SettingsSection(
             title: 'Support & Legal',
@@ -121,27 +121,55 @@ class AccountSettingsPage extends StatelessWidget {
                 // Logout Button
                 ElevatedButton(
                   onPressed: () {
-                    // TODO: Implement logout logic
+                    // 1. **Clear Session Data (IMPORTANT):**
+                    // This step depends on your authentication method (e.g., Firebase, JWT, custom backend).
+                    // You must clear the stored authentication token or user ID here.
+
+                    // Example using SharedPreferences/shared_preferences:
+                    // final prefs = await SharedPreferences.getInstance();
+                    // await prefs.remove('auth_token');
+
+                    // Example using Firebase:
+                    // await FirebaseAuth.instance.signOut();
+
+                    // 2. **Navigate to the Login Page:**
+                    // This command pushes the LoginScreen onto the stack and removes all
+                    // previous routes, making the LoginScreen the new root of the navigation.
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        // Replace LoginScreen() with the actual constructor for your login page widget
+                        builder: (context) => LoginPage(),
+                      ),
+                      (Route<dynamic> route) =>
+                          false, // Predicate returns false, removing all routes below the new one
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 50),
                     backgroundColor: theme.cardColor,
                     foregroundColor: theme.textTheme.titleLarge?.color,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  child: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Log Out',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
 
                 const SizedBox(height: 10),
 
                 // Delete Account Button
                 TextButton(
-                  onPressed: () {
-                    // TODO: Implement confirmation modal for account deletion
-                  },
+                  onPressed: () {},
                   child: const Text(
                     'Delete Account',
-                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -182,7 +210,6 @@ class _SettingsSection extends StatelessWidget {
     );
   }
 }
-
 
 // Helper Widget for a single actionable setting (non-switch)
 class _SettingsTile extends StatelessWidget {
@@ -293,10 +320,7 @@ class _SettingsSwitchState extends State<_SettingsSwitch> {
                     color: theme.textTheme.titleLarge?.color,
                   ),
                 ),
-                Text(
-                  widget.subtitle,
-                  style: theme.textTheme.bodySmall,
-                ),
+                Text(widget.subtitle, style: theme.textTheme.bodySmall),
               ],
             ),
           ),
