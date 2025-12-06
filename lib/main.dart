@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:ventra/features/home/home_screen.dart';
 //import 'package:ventra/pages/homepage.dart';
-import 'package:ventra/UI/auth/Profile/profilepage.dart';
 //import 'package:ventra/views/onboarding_screen.dart';
 
 // Make sure you have initialized Firebase (see notes below).
@@ -31,7 +31,7 @@ class MyApp extends StatelessWidget {
       // Use named routes for clarity
       initialRoute: '/',
       routes: {
-        '/': (context) => const ProfilePage(),
+        '/': (context) => const HomeScreen(),
       },
     );
   }

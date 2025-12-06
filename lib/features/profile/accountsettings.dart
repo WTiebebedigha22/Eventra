@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:ventra/Profile/editprofile.dart';
-import '../../UI/UI/auth/login.dart';
+import 'package:ventra/features/profile/editprofile.dart';
+import 'package:ventra/ui/auth/login.dart';
 
 class AccountSettingsPage extends StatelessWidget {
   const AccountSettingsPage({super.key});

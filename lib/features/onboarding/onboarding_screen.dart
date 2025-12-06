@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-import '../ui/auth/login.dart'; 
+import '../../ui/auth/login.dart'; 
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});

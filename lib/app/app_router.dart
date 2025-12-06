@@ -2,17 +2,18 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:ventra/features/splash/splash_screen.dart';
 
 import '../features/onboarding/onboarding_screen.dart';
-import '../features/auth/presentation/screens/login_screen.dart';
-import '../features/auth/presentation/screens/signup_screen.dart';
-import '../features/splash/splash_screen.dart';
-import '../features/home/home_screen.dart';
-import '../features/events/presentation/screens/event_list_screen.dart';
-import '../features/events/presentation/screens/event_detail_screen.dart';
-import '../features/chat/presentation/screens/chat_list_screen.dart';
-import '../features/chat/presentation/screens/chat_room_screen.dart';
-import '../features/profile/presentation/screens/profile_screen.dart';
+//import '../features/auth/presentation/screens/login_screen.dart';
+//import '../features/auth/presentation/screens/signup_screen.dart';
+//import '../features/splash/splash_screen.dart';
+//import '../features/home/home_screen.dart';
+//import '../features/events/presentation/screens/event_list_screen.dart';
+//import '../features/events/presentation/screens/event_detail_screen.dart';
+//import '../features/chat/presentation/screens/chat_list_screen.dart';
+//import '../features/chat/presentation/screens/chat_room_screen.dart';
+//import '../features/profile/presentation/screens/profile_screen.dart';
 import '../providers/auth_provider.dart';
 
 class AppRouter {

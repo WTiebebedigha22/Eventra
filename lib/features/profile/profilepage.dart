@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:ventra/UI/auth/Profile/accountsettings.dart';
-import 'package:ventra/UI/auth/Profile/analyticspage.dart';
-import 'package:ventra/UI/auth/Profile/editprofile.dart';
-import 'package:url_launcher/url_launcher.dart'; // REQUIRED for launching phone/email apps
+import 'package:url_launcher/url_launcher.dart';
+import 'package:ventra/features/profile/accountsettings.dart';
+import 'package:ventra/features/profile/analyticspage.dart';
+import 'package:ventra/features/profile/editprofile.dart'; // REQUIRED for launching phone/email apps
 
 void main() {
   runApp(const MyApp());
