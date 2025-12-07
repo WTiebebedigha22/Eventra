@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/booking/booking.dart';
-import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 
 class BookingProvider extends ChangeNotifier {
   final FirestoreService _db = FirestoreService();

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/vendor/vendor.dart';
 import '../models/vendor/category.dart';
-import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 
 class VendorProvider extends ChangeNotifier {
   final FirestoreService _db = FirestoreService();

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/common/location_point.dart';
-import '../services/map_service.dart';
+import '../services/location_service.dart';
 
 class LocationProvider extends ChangeNotifier {
   final MapService _map = MapService();

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user/app_user.dart';
-import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 
 class UserProvider extends ChangeNotifier {
   final FirestoreService _db = FirestoreService();

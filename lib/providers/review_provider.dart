@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/reviews/review.dart';
-import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 
 class ReviewProvider extends ChangeNotifier {
   final FirestoreService _db = FirestoreService();
