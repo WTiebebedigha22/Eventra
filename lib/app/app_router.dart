@@ -15,8 +15,6 @@ import '../ui/profile/profile_screen.dart';
 
 class AppRouter {
   static GoRouter router(BuildContext context) {
-    // Note: Provider.of(context, listen: false) is the correct way to get the
-    // AuthProvider here for the refreshListenable below.
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
     return GoRouter(
@@ -26,21 +24,19 @@ class AppRouter {
       routes: [
         GoRoute(path: '/splash', builder: (c, state) => const SplashScreen()),
         GoRoute(path: '/onboarding', builder: (c, state) => const OnboardingScreen()),
-        GoRoute(path: '/login', builder: (c, state) => LoginScreen()),
-        GoRoute(path: '/register', builder: (c, state) => RegisterScreen()),
+        GoRoute(path: '/login', builder: (c, state) => const LoginScreen()),
+        GoRoute(path: '/register', builder: (c, state) => const RegisterScreen()),
         GoRoute(
           path: '/home', 
           builder: (c, state) => const HomeScreen(), 
           routes: [
             GoRoute(path: 'explore', builder: (c, state) => const EventListScreen()),
             GoRoute(path: 'event/:id', builder: (c, state) {
-              // FIX 2: Use state.pathParameters (New API) instead of state.params (Old API)
               final id = state.pathParameters['id']!;
               return EventDetailScreen(eventId: id);
             }),
             GoRoute(path: 'chat', builder: (c, state) => const ChatListScreen()),
             GoRoute(path: 'chat/:chatId', builder: (c, state) {
-              // FIX 3: Use state.pathParameters (New API) instead of state.params (Old API)
               final chatId = state.pathParameters['chatId']!;
               return ChatRoomScreen(chatId: chatId);
             }),
@@ -52,23 +48,41 @@ class AppRouter {
         final authProv = Provider.of<AuthProvider>(context, listen: false);
         final loggedIn = authProv.isLoggedIn;
         
-        // FIX 4: Use state.matchedLocation (New API) instead of state.subloc (Old API)
+        // 💡 ASSUMPTION: You must add this property to your AuthProvider
+        final onboardingComplete = authProv.hasSeenOnboarding; 
+        
         final goingTo = state.matchedLocation; 
         
-        // Allowed non-authenticated routes
-        final isAuthRoute = goingTo == '/login' || goingTo == '/register' || goingTo == '/onboarding' || goingTo == '/splash';
+        // Routes that should be accessible before or for authentication
+        final isAuthOrOnboardingRoute = 
+            goingTo == '/login' || 
+            goingTo == '/register' || 
+            goingTo == '/onboarding';
 
-        if (goingTo == '/splash') return null; // Let the splash screen run
+        // 1. Allow the splash screen to run first
+        if (goingTo == '/splash') return null;
 
+        // --- UNAUTHENTICATED FLOW ---
         if (!loggedIn) {
-          // If not logged in, only allow auth routes, otherwise redirect to onboarding
-          return isAuthRoute ? null : '/onboarding';
+            // If the user is trying to go anywhere protected (not auth/onboarding)
+            if (!isAuthOrOnboardingRoute) {
+                // Check if onboarding is done. If not, go to onboarding. If yes, go to login.
+                return onboardingComplete ? '/login' : '/onboarding'; 
+            }
+            // Otherwise (if they are on an auth/onboarding route), allow it.
+            return null;
         }
 
-        // If logged in, block access to auth routes, redirect to home
-        if (isAuthRoute) return '/home';
+        // --- AUTHENTICATED FLOW (The fix for the original issue) ---
+        
+        // 2. If logged in, block access to all auth/onboarding routes, redirect to home.
+        if (isAuthOrOnboardingRoute) {
+            // This prevents a user who just logged in and is navigating to '/home' 
+            // from being redirected back to '/onboarding' or '/login'.
+            return '/home'; 
+        }
 
-        // Otherwise, allow navigation
+        // 3. Otherwise, allow navigation (logged in and going to a protected route)
         return null;
       },
     );
