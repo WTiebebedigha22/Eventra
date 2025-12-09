@@ -6,7 +6,7 @@ class AppUser {
   final String email;
   final String phone;
   final String profileImage;
-  final String role; // user | vendor | admin
+  final String role;
   final DateTime createdAt;
 
   AppUser({
@@ -19,9 +19,9 @@ class AppUser {
     required this.createdAt,
   });
 
-  factory AppUser.fromMap(Map<String, dynamic> data, String documentId) {
+  factory AppUser.fromMap(Map<String, dynamic> data, String id) {
     return AppUser(
-      id: documentId,
+      id: id,
       name: data['name'] ?? '',
       email: data['email'] ?? '',
       phone: data['phone'] ?? '',
@@ -40,23 +40,5 @@ class AppUser {
       'role': role,
       'createdAt': Timestamp.fromDate(createdAt),
     };
-  }
-
-  AppUser copyWith({
-    String? name,
-    String? email,
-    String? phone,
-    String? profileImage,
-    String? role,
-  }) {
-    return AppUser(
-      id: id,
-      name: name ?? this.name,
-      email: email ?? this.email,
-      phone: phone ?? this.phone,
-      profileImage: profileImage ?? this.profileImage,
-      role: role ?? this.role,
-      createdAt: createdAt,
-    );
   }
 }

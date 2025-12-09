@@ -5,7 +5,7 @@ class Booking {
   final String userId;
   final String vendorId;
   final DateTime date;
-  final String status;
+  String status;
 
   Booking({
     required this.id,

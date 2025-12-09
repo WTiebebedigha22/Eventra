@@ -23,7 +23,7 @@ class ChatMessage {
       chatId: data['chatId'],
       senderId: data['senderId'],
       message: data['message'],
-      type: data['type'],
+      type: data['type'] ?? 'text',
       createdAt: (data['createdAt'] as Timestamp).toDate(),
     );
   }
