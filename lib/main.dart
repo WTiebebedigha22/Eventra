@@ -14,7 +14,6 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        // add other providers as needed
       ],
       child: const EventraApp(),
     ),
