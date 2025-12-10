@@ -15,27 +15,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   static const Color primaryPink = Color(0xFFE91E63);
   static const Color backgroundColor = Colors.black;
   static const Color appBarColor = Color(0xFF181818); 
-  static const Color inputFillColor = Color(0xFF121212); // Slightly lighter dark for inputs
+  static const Color inputFillColor = Color(0xFF121212); 
   static const Color textColor = Colors.white;
 
   // Controllers for fields that can be edited
   final _usernameController = TextEditingController();
+  final _fullNameController = TextEditingController(); // 💡 NEW: Full Name Controller
   final _bioController = TextEditingController();
-  // Note: Email/Password updates often require re-authentication, 
-  // so we'll treat them as display-only here for simplicity.
 
   @override
   void initState() {
     super.initState();
     // 💡 Fetch initial data (Placeholder logic)
-    // In a real app, you would load UserData from a provider/database here
     _usernameController.text = 'User_Eventra_X'; 
+    _fullNameController.text = 'Alice Johnson'; // 💡 NEW: Initialize Full Name
     _bioController.text = 'Event Enthusiast | Exploring the city\'s best meetups.';
   }
 
   @override
   void dispose() {
     _usernameController.dispose();
+    _fullNameController.dispose(); // 💡 NEW: Dispose Full Name Controller
     _bioController.dispose();
     super.dispose();
   }
@@ -68,11 +68,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   // --- Save Logic ---
   Future<void> _saveProfile(BuildContext context, AuthProvider auth) async {
-    // 1. Show loading/saving indicator
-    // 2. Call your data update service (e.g., Firestore update)
-    //    Example: await auth.updateProfile(_usernameController.text, _bioController.text);
+    // ... saving logic remains the same, but now you can also save _fullNameController.text
+    // Example: await auth.updateProfile(_usernameController.text, _fullNameController.text, _bioController.text);
     
-    // 3. Simple success feedback
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Profile updated successfully!'),
@@ -80,7 +78,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
     );
     
-    // 4. Navigate back to the ProfileScreen
     context.pop();
   }
 
@@ -138,7 +135,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   Positioned(
                     bottom: 0,
                     right: 0,
-                    // Icon to signal that the picture is editable
                     child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: const BoxDecoration(
@@ -182,6 +178,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _buildTextField(_usernameController, 'Username'),
             const SizedBox(height: 20),
             
+            // 💡 NEW: Full Name Field
+            _buildTextField(_fullNameController, 'Full Name'), 
+            const SizedBox(height: 20),
+
             // Bio
             _buildTextField(_bioController, 'Bio'),
             const SizedBox(height: 20),
@@ -190,6 +190,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             TextButton(
               onPressed: () {
                 // Navigate to a dedicated ChangePasswordScreen
+                context.push('/settings/security/change-password');
               },
               child: Text(
                 'Change Password',
