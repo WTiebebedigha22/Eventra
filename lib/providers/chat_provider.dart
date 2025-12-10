@@ -1,22 +1,33 @@
-import 'package:flutter/material.dart';
+// lib/providers/chat_provider.dart
+
+import 'package:flutter/foundation.dart';
 import '../services/chat_service.dart';
 import '../models/chat/chat_message.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ChatProvider extends ChangeNotifier {
-  final ChatService _chat = ChatService();
+  // 💡 Instantiate your finalized ChatService here
+  final ChatService _chatService;
 
+  // Constructor for dependency injection (good practice)
+  ChatProvider(this._chatService);
+
+  // --- 1. Load Messages Stream (Simplified) ---
+  // Since ChatService is already type-safe, this method just delegates.
   Stream<List<ChatMessage>> loadChat(String chatId) {
-    return _chat.messagesStream(chatId).map((list) => list.map((m) => ChatMessage.fromMap(m, m['id'])).toList());
+    // 💡 Delegate directly to the type-safe stream from ChatService
+    return _chatService.getMessagesStream(chatId); 
   }
 
-  Future<void> send(String chatId, String text, String senderId) async {
-    await _chat.sendMessage(chatId, {
-      'message': text,
-      'senderId': senderId,
-      'createdAt': FieldValue.serverTimestamp(),
-      'type': 'text',
-      'chatId': chatId,
-    });
+  // --- 2. Send Message (Simplified) ---
+  // The service handles building the full ChatMessage, setting senderId via FirebaseAuth,
+  // and updating Firestore (messages subcollection and conversation doc).
+  Future<void> send(String chatId, String messageText) async {
+    // 💡 Only need to pass the chat ID and the text. 
+    // The service fetches the senderId internally.
+    await _chatService.sendMessage(chatId, messageText);
   }
+
+  // --- Placeholder for Chat List Stream ---
+  // You would also need a method to expose the stream for the ChatListScreen
+  // Stream<List<Conversation>> get conversationsStream => _chatService.getConversationsStream();
 }

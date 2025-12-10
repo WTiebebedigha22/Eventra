@@ -1,65 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+// 💡 Must be StatelessWidget when used with StatefulShellRoute
+class HomeScreen extends StatelessWidget {
+  // 1. Accepts the content provided by the router (the active branch)
+  final Widget child;
+  // 2. Accepts the shell context to manage navigation between branches
+  final StatefulNavigationShell? navigationShell;
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
+  const HomeScreen({
+    required this.child, 
+    required this.navigationShell, 
+    super.key
+  });
 
-class _HomeScreenState extends State<HomeScreen> {
   // Define your color scheme (consistent)
   static const Color primaryPink = Color(0xFFE91E63); 
   static const Color backgroundColor = Colors.black;
   static const Color navBarColor = Color(0xFF181818); 
   static const Color textColor = Colors.white;
 
-  // The tabs map to the full paths defined in your AppRouter
-  final List<String> tabs = const ['/home/explore', '/home/chat', '/home/profile'];
-
-  // Dynamic Index Finder (to sync the bottom bar with the current URL)
-  int _getCurrentIndex(BuildContext context) {
-    final location = GoRouterState.of(context).matchedLocation;
-    
-    if (location.startsWith('/home/explore')) return 0;
-    if (location.startsWith('/home/chat')) return 1;
-    if (location.startsWith('/home/profile')) return 2;
-    
-    return 0;
-  }
-
-  void _onTap(int i) {
-    // Navigate to the full path of the selected tab
-    context.go(tabs[i]);
+  // 3. Navigation method using the Shell
+  void _onTap(int index) {
+    // Uses the shell's built-in navigation to switch branches
+    navigationShell?.goBranch(
+      index,
+      // Reset the stack of the current branch if we tap the current tab again
+      initialLocation: index == navigationShell?.currentIndex, 
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final int currentIndex = _getCurrentIndex(context);
-    
+    // 4. Get the current index directly from the shell
+    final currentIndex = navigationShell?.currentIndex ?? 0;
+
     return Scaffold(
       backgroundColor: backgroundColor,
       
       // --- FIXED BODY ---
-      // The body must be a placeholder that GoRouter's underlying Navigator 
-      // uses to draw the child screen (EventListScreen, etc.).
-      // By using a Builder and the correct Key, the child navigator's content 
-      // can be rendered here.
+      // The body directly renders the child widget (the active screen)
       body: SafeArea(
-        // The KeyedSubtree widget is used to tell GoRouter where to draw the 
-        // content of the current nested route.
-        child: Builder(
-          builder: (context) {
-            // Get the current route's state and use its unique key
-            final state = GoRouterState.of(context);
-            // This is the common GoRouter pattern to correctly render nested content
-            return KeyedSubtree(
-              key: state.pageKey,
-              child: state.,
-            );
-          },
-        ),
+        child: child,
       ),
       
       // --- Bottom Navigation Bar ---
@@ -75,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: BottomNavigationBar(
           currentIndex: currentIndex,
-          onTap: _onTap,
+          onTap: _onTap, // Uses the fixed _onTap
           
           // Aesthetic Settings:
           backgroundColor: navBarColor, 
@@ -87,11 +69,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
           items: const [
             BottomNavigationBarItem(
-                icon: Icon(Icons.explore_outlined), label: 'Explore'),
+              icon: Icon(Icons.explore_outlined), label: 'Explore'),
             BottomNavigationBarItem(
-                icon: Icon(Icons.chat_bubble_outline), label: 'Chats'),
+              icon: Icon(Icons.chat_bubble_outline), label: 'Chats'),
             BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline), label: 'Profile'),
+              icon: Icon(Icons.person_outline), label: 'Profile'),
           ],
         ),
       ),

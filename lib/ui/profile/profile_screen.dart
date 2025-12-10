@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:ventra/ui/profile/edit_profile.dart';
+import 'package:ventra/ui/profile/edit_profile.dart'; 
 import 'package:ventra/ui/profile/profile_settings.dart';
 import '../../providers/auth_provider.dart';
 import 'package:go_router/go_router.dart';
@@ -43,9 +43,17 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Get the AuthProvider instance
+    // Get the AuthProvider instance and listen for changes
     final auth = Provider.of<AuthProvider>(context);
+    
+    // 💡 Use getters from AuthProvider
+    final userName = auth.currentUserName; 
+    final fullName = auth.currentUserFullName;
+    final bio = auth.currentBio;
+    final photoUrl = auth.profilePhotoUrl;
     final email = auth.currentUserEmail ?? 'Unknown';
+
+    final initialLetter = userName.isNotEmpty ? userName[0].toUpperCase() : (email.isNotEmpty ? email[0].toUpperCase() : 'G');
 
     return DefaultTabController(
       length: 3, // Events, Saved, Attended
@@ -55,7 +63,7 @@ class ProfileScreen extends StatelessWidget {
           backgroundColor: appBarColor,
           elevation: 0,
           title: Text(
-            email.split('@').first, // Use username portion of email as title
+            userName, // 💡 Display the actual username (from AuthProvider)
             style: const TextStyle(
               color: textColor,
               fontWeight: FontWeight.bold,
@@ -104,13 +112,19 @@ class ProfileScreen extends StatelessWidget {
                               child: CircleAvatar(
                                 radius: 40,
                                 backgroundColor: appBarColor,
-                                child: Text(
-                                  email[0].toUpperCase(),
-                                  style: const TextStyle(
-                                    color: primaryPink,
-                                    fontSize: 32,
-                                  ),
-                                ),
+                                // 💡 Conditional Avatar based on photoUrl
+                                backgroundImage: photoUrl != null
+                                    ? NetworkImage(photoUrl)
+                                    : null,
+                                child: photoUrl == null
+                                    ? Text(
+                                        initialLetter,
+                                        style: const TextStyle(
+                                          color: primaryPink,
+                                          fontSize: 32,
+                                        ),
+                                      )
+                                    : null,
                               ),
                             ),
                             const Expanded(child: SizedBox()), // Spacer
@@ -125,17 +139,29 @@ class ProfileScreen extends StatelessWidget {
 
                         const SizedBox(height: 12),
 
-                        // Username/Bio
+                        // Full Name
                         Text(
-                          email, // Full email for subtitle/username
+                          fullName, // 💡 Display the Full Name
                           style: const TextStyle(
                             color: textColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        
+                        // Email (subtle, as unique identifier)
                         Text(
-                          'Event Enthusiast | Exploring the city\'s best meetups.',
+                          '@$userName', // 💡 Display the Username/Handle
+                          style: TextStyle(
+                              color: textColor.withOpacity(0.6),
+                              fontSize: 12,
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 4),
+                        
+                        // Bio
+                        Text(
+                          bio, // 💡 Display the Bio
                           style: TextStyle(color: textColor.withOpacity(0.8)),
                         ),
                         const SizedBox(height: 16),
@@ -245,7 +271,7 @@ Widget _buildContentGrid(String type, Color color) {
         alignment: Alignment.center,
         child: Text(
           '$type ${index + 1}',
-          style: TextStyle(color: Colors.white12, fontWeight: FontWeight.bold),
+          style: const TextStyle(color: Colors.white12, fontWeight: FontWeight.bold),
         ),
       );
     },
