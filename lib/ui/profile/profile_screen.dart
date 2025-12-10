@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:ventra/ui/profile/edit_profile.dart';
+import 'package:ventra/ui/profile/profile_settings.dart';
 import '../../providers/auth_provider.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,7 +12,9 @@ class ProfileScreen extends StatelessWidget {
   static const Color primaryPink = Color(0xFFE91E63);
   static const Color secondaryPurple = Color(0xFF9C27B0);
   static const Color backgroundColor = Colors.black;
-  static const Color appBarColor = Color(0xFF181818); // Darker shade for App/Tab bars
+  static const Color appBarColor = Color(
+    0xFF181818,
+  ); // Darker shade for App/Tab bars
   static const Color textColor = Colors.white;
 
   // --- Widget for a single Profile Statistic ---
@@ -30,10 +34,7 @@ class ProfileScreen extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 13,
-            color: textColor.withOpacity(0.7),
-          ),
+          style: TextStyle(fontSize: 13, color: textColor.withOpacity(0.7)),
         ),
       ],
     );
@@ -66,7 +67,12 @@ class ProfileScreen extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.settings, color: textColor),
               onPressed: () {
-                // Navigate to settings page
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileSettingsScreen(),
+                  ),
+                );
               },
             ),
           ],
@@ -100,12 +106,14 @@ class ProfileScreen extends StatelessWidget {
                                 backgroundColor: appBarColor,
                                 child: Text(
                                   email[0].toUpperCase(),
-                                  style: const TextStyle(color: primaryPink, fontSize: 32),
+                                  style: const TextStyle(
+                                    color: primaryPink,
+                                    fontSize: 32,
+                                  ),
                                 ),
                               ),
                             ),
                             const Expanded(child: SizedBox()), // Spacer
-
                             // Stats Columns (Instagram Style: 3 columns)
                             _buildStatColumn('Events', '12'),
                             const SizedBox(width: 25),
@@ -120,7 +128,10 @@ class ProfileScreen extends StatelessWidget {
                         // Username/Bio
                         Text(
                           email, // Full email for subtitle/username
-                          style: const TextStyle(color: textColor, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -135,13 +146,23 @@ class ProfileScreen extends StatelessWidget {
                             Expanded(
                               child: OutlinedButton(
                                 style: OutlinedButton.styleFrom(
-                                  side: BorderSide(color: textColor.withOpacity(0.5)),
+                                  side: BorderSide(
+                                    color: textColor.withOpacity(0.5),
+                                  ),
                                   foregroundColor: textColor,
                                   backgroundColor: appBarColor,
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                 ),
                                 onPressed: () {
-                                  // Action: Edit Profile
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const EditProfileScreen(),
+                                    ),
+                                  );
                                 },
                                 child: const Text('Edit Profile'),
                               ),
@@ -152,8 +173,11 @@ class ProfileScreen extends StatelessWidget {
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: primaryPink,
-                                  foregroundColor: Colors.black, // Black text on pink button
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  foregroundColor:
+                                      Colors.black, // Black text on pink button
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                 ),
                                 onPressed: () async {
                                   await auth.logout();
@@ -241,11 +265,12 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: _backgroundColor,
-      child: _tabBar,
-    );
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(color: _backgroundColor, child: _tabBar);
   }
 
   @override
