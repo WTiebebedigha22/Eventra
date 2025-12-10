@@ -7,13 +7,21 @@ import 'providers/auth_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  final authProvider = AuthProvider();
+  await authProvider.initialize();
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        // 3. Use .value constructor to provide the already-initialized instance
+        ChangeNotifierProvider<AuthProvider>.value(
+          value: authProvider,
+        ),
       ],
       child: const EventraApp(),
     ),

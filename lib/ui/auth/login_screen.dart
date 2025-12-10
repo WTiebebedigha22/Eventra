@@ -145,6 +145,17 @@ class _LoginScreenState extends State<LoginScreen> {
               TextButton(
                 onPressed: () => context.go('/register'),
                 child: const Text(
+                  'forgot your password?',
+                  style: TextStyle(color: textColor, fontSize: 12),
+                ),
+              ),
+
+              const SizedBox(height: 5),
+
+              // Register Button (TextButton - low visibility, high contrast)
+              TextButton(
+                onPressed: () => context.go('/register'),
+                child: const Text(
                   'Don\'t have an account?',
                   style: TextStyle(color: textColor, fontSize: 14),
                 ),
