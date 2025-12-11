@@ -4,6 +4,7 @@ import 'package:ventra/ui/profile/edit_profile.dart';
 import 'package:ventra/ui/profile/profile_settings.dart';
 import '../../providers/auth_provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart'; // Required for date formatting
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -43,27 +44,34 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Get the AuthProvider instance and listen for changes
     final auth = Provider.of<AuthProvider>(context);
     
-    // 💡 Use getters from AuthProvider
     final userName = auth.currentUserName; 
     final fullName = auth.currentUserFullName;
     final bio = auth.currentBio;
     final photoUrl = auth.profilePhotoUrl;
+    final createdAt = auth.currentUserCreatedAt; // 💡 NEW: Get creation date
+    
     final email = auth.currentUserEmail ?? 'Unknown';
 
-    final initialLetter = userName.isNotEmpty ? userName[0].toUpperCase() : (email.isNotEmpty ? email[0].toUpperCase() : 'G');
+    final initialLetter = userName.isNotEmpty 
+      ? userName[0].toUpperCase() 
+      : (email.isNotEmpty ? email[0].toUpperCase() : 'G');
+
+    // 💡 Format Creation Date for display: MMM/YYYY
+    final formattedJoinedDate = createdAt != null 
+        ? DateFormat('MMM/yyyy').format(createdAt)
+        : null;
 
     return DefaultTabController(
-      length: 3, // Events, Saved, Attended
+      length: 3, 
       child: Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
           backgroundColor: appBarColor,
           elevation: 0,
           title: Text(
-            userName, // 💡 Display the actual username (from AuthProvider)
+            userName, 
             style: const TextStyle(
               color: textColor,
               fontWeight: FontWeight.bold,
@@ -71,7 +79,6 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
           actions: [
-            // Settings/More Icon
             IconButton(
               icon: const Icon(Icons.settings, color: textColor),
               onPressed: () {
@@ -99,7 +106,7 @@ class ProfileScreen extends StatelessWidget {
                         // Avatar and Stats Row
                         Row(
                           children: [
-                            // Large Profile Avatar (Pink Border/Accent)
+                            // Large Profile Avatar 
                             Container(
                               padding: const EdgeInsets.all(3),
                               decoration: BoxDecoration(
@@ -112,7 +119,6 @@ class ProfileScreen extends StatelessWidget {
                               child: CircleAvatar(
                                 radius: 40,
                                 backgroundColor: appBarColor,
-                                // 💡 Conditional Avatar based on photoUrl
                                 backgroundImage: photoUrl != null
                                     ? NetworkImage(photoUrl)
                                     : null,
@@ -128,7 +134,7 @@ class ProfileScreen extends StatelessWidget {
                               ),
                             ),
                             const Expanded(child: SizedBox()), // Spacer
-                            // Stats Columns (Instagram Style: 3 columns)
+                            // Stats Columns
                             _buildStatColumn('Events', '12'),
                             const SizedBox(width: 25),
                             _buildStatColumn('Followers', '1.2k'),
@@ -141,16 +147,16 @@ class ProfileScreen extends StatelessWidget {
 
                         // Full Name
                         Text(
-                          fullName, // 💡 Display the Full Name
+                          fullName, 
                           style: const TextStyle(
                             color: textColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         
-                        // Email (subtle, as unique identifier)
+                        // Username/Handle
                         Text(
-                          '@$userName', // 💡 Display the Username/Handle
+                          '@$userName', 
                           style: TextStyle(
                               color: textColor.withOpacity(0.6),
                               fontSize: 12,
@@ -158,12 +164,32 @@ class ProfileScreen extends StatelessWidget {
                         ),
                         
                         const SizedBox(height: 4),
-                        
+
                         // Bio
                         Text(
-                          bio, // 💡 Display the Bio
+                          bio, 
                           style: TextStyle(color: textColor.withOpacity(0.8)),
                         ),
+                        
+                        // 💡 REPLACED: Joined Date Display
+                        if (formattedJoinedDate != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                                children: [
+                                    // Use an icon relevant to joining/time
+                                    const Icon(Icons.access_time, color: primaryPink, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                        'Joined Eventra $formattedJoinedDate',
+                                        style: TextStyle(
+                                            color: textColor.withOpacity(0.6),
+                                            fontSize: 13,
+                                        ),
+                                    ),
+                                ],
+                            ),
+                        ],
+
                         const SizedBox(height: 16),
 
                         // Edit Profile / Logout Button
@@ -223,7 +249,7 @@ class ProfileScreen extends StatelessWidget {
               SliverPersistentHeader(
                 delegate: _SliverAppBarDelegate(
                   TabBar(
-                    indicatorColor: primaryPink, // Pink indicator line
+                    indicatorColor: primaryPink, 
                     labelColor: textColor,
                     unselectedLabelColor: textColor.withOpacity(0.6),
                     tabs: const [
@@ -232,7 +258,7 @@ class ProfileScreen extends StatelessWidget {
                       Tab(icon: Icon(Icons.check_circle_outline)),
                     ],
                   ),
-                  appBarColor, // Background color of the tab bar
+                  appBarColor, 
                 ),
                 pinned: true,
               ),
@@ -241,11 +267,8 @@ class ProfileScreen extends StatelessWidget {
           // --- 3. Tab Content ---
           body: TabBarView(
             children: [
-              // Grid View of User's Events
               _buildContentGrid('Events', primaryPink),
-              // List of Saved Events
               _buildContentGrid('Saved', secondaryPurple),
-              // List of Attended Events
               _buildContentGrid('Attended', primaryPink),
             ],
           ),
