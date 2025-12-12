@@ -4,7 +4,7 @@ class Post {
   final String id;
   final String userId;
   final String content;
-  final String mediaUrl;
+  final String? mediaUrl;
   final DateTime timestamp;
   final int likeCount;
   final int commentCount;

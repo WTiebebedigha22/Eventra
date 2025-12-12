@@ -1,5 +1,3 @@
-// lib/providers/post_provider.dart
-
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
