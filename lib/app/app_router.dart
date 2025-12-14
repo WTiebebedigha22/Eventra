@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:ventra/ui/settings/privacy.dart';
 
-// Your UI Imports (Cleaned up and using relative paths assuming the AppRouter file structure)
+// Your UI Imports
 import '../providers/auth_provider.dart';
 import '../ui/splash/splash_screen.dart';
 import '../ui/onboarding/onboarding_screen.dart';
@@ -22,9 +21,13 @@ import '../ui/settings/activity.dart';
 import '../ui/settings/help.dart';
 import '../ui/settings/language.dart';
 import '../ui/settings/notifications.dart';
+import '../ui/settings/privacy.dart';
 import '../ui/settings/security.dart';
 import '../ui/settings/theme.dart';
 
+// 💡 NEW IMPORTS for Post Creation and Tagging
+import '../ui/post/create_post.dart'; 
+import '../ui/post/tag_people.dart'; // ASSUME this file/widget exists
 
 class AppRouter {
   static GoRouter router(BuildContext context) {
@@ -41,9 +44,11 @@ class AppRouter {
         GoRoute(path: '/register', builder: (c, state) => const RegisterScreen()),
 
         // --- 🚀 StatefulShellRoute for Main Tabs (Home Screen) ---
-        StatefulShellRoute.indexedStack( // <-- FIXED: Using .indexedStack
+        StatefulShellRoute.indexedStack( 
           // 1. HomeScreen is the shell, receiving the child widget
           builder: (context, state, navigationShell) {
+            // FIX: navigationShell acts as both the child and the shell
+            // The type system requires the `child` to be a Widget, which navigationShell is
             return HomeScreen(
               navigationShell: navigationShell,
               child: navigationShell,
@@ -51,7 +56,7 @@ class AppRouter {
           },
           // 2. Define the branches (one for each BottomNavBar tab)
           branches: [
-            // Branch 1: Explore
+            // Branch 0: Explore (Tab Index 0)
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -69,7 +74,7 @@ class AppRouter {
               ],
             ),
 
-            // Branch 2: Chat
+            // Branch 1: Chat (Maps to BottomNavBar Index 2)
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -87,7 +92,7 @@ class AppRouter {
               ],
             ),
 
-            // Branch 3: Profile
+            // Branch 2: Profile (Maps to BottomNavBar Index 3)
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -102,6 +107,20 @@ class AppRouter {
                 ),
               ],
             ),
+          ],
+        ),
+
+        // --- 🚀 CREATE POST STANDALONE ROUTE ---
+        // This is outside the StatefulShellRoute so it appears fullscreen
+        GoRoute(
+          path: '/create-post', // Must match the constant used in HomeScreen
+          builder: (c, state) => const CreatePostScreen(),
+          routes: [
+                // 💡 NEW: Tag People Sub-Route
+                GoRoute(
+                  path: 'tag-people', // Full path: /create-post/tag-people
+                  builder: (c, state) => const TagPeopleScreen(),
+                ),
           ],
         ),
 
@@ -121,7 +140,7 @@ class AppRouter {
         ),
       ],
       
-      // --- REDIRECT LOGIC (UNCHANGED) ---
+      // --- REDIRECT LOGIC ---
       redirect: (context, state) {
         final authProv = Provider.of<AuthProvider>(context, listen: false);
         final loggedIn = authProv.isLoggedIn;

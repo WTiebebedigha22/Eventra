@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-// 💡 Must be StatelessWidget when used with StatefulShellRoute
 class HomeScreen extends StatelessWidget {
-  // 1. Accepts the content provided by the router (the active branch)
   final Widget child;
-  // 2. Accepts the shell context to manage navigation between branches
-  final StatefulNavigationShell? navigationShell;
+  final StatefulNavigationShell navigationShell;
 
   const HomeScreen({
     required this.child, 
@@ -20,26 +17,46 @@ class HomeScreen extends StatelessWidget {
   static const Color navBarColor = Color(0xFF181818); 
   static const Color textColor = Colors.white;
 
-  // 3. Navigation method using the Shell
-  void _onTap(int index) {
-    // Uses the shell's built-in navigation to switch branches
-    navigationShell?.goBranch(
-      index,
-      // Reset the stack of the current branch if we tap the current tab again
-      initialLocation: index == navigationShell?.currentIndex, 
-    );
+  // Define the Route for Create Post
+  static const String createPostRoute = '/create-post';
+
+  void _onTap(int index, BuildContext context) {
+    // Check if the user tapped the 'Create Post' index (1)
+    if (index == 1) {
+      // Navigate using context.go() to open the creation screen full-screen, 
+      // outside the StatefulShellRoute's tab history.
+      context.go(createPostRoute);
+    } else {
+      // For the other tabs (0, 2, 3), determine the corresponding branch index
+      // Tab Index 0 -> Branch 0
+      // Tab Index 2 -> Branch 1
+      // Tab Index 3 -> Branch 2
+      final branchIndex = index > 1 ? index - 1 : index;
+
+      navigationShell.goBranch(
+        branchIndex,
+        // Reset the stack of the current branch if we tap the current tab again
+        initialLocation: branchIndex == navigationShell.currentIndex, 
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 4. Get the current index directly from the shell
-    final currentIndex = navigationShell?.currentIndex ?? 0;
+    // 4. Get the current branch index directly from the shell
+    final currentBranchIndex = navigationShell.currentIndex;
+    
+    // Convert the current GoRouter branch index back to the BottomNavigationBar index
+    // Branch Index 0 -> Tab Index 0
+    // Branch Index 1 -> Tab Index 2
+    // Branch Index 2 -> Tab Index 3
+    final currentIndex = currentBranchIndex > 0 ? currentBranchIndex + 1 : currentBranchIndex;
+
 
     return Scaffold(
       backgroundColor: backgroundColor,
       
       // --- FIXED BODY ---
-      // The body directly renders the child widget (the active screen)
       body: SafeArea(
         child: child,
       ),
@@ -57,7 +74,8 @@ class HomeScreen extends StatelessWidget {
         ),
         child: BottomNavigationBar(
           currentIndex: currentIndex,
-          onTap: _onTap, // Uses the fixed _onTap
+          // Use the updated _onTap that takes context
+          onTap: (index) => _onTap(index, context), 
           
           // Aesthetic Settings:
           backgroundColor: navBarColor, 
@@ -67,12 +85,14 @@ class HomeScreen extends StatelessWidget {
           showUnselectedLabels: false, 
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
 
-          items: const [
-            BottomNavigationBarItem(
+          items: [
+            const BottomNavigationBarItem(
               icon: Icon(Icons.explore_outlined), label: 'Explore'),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.add_box_outlined), label: 'Create'),
+            const BottomNavigationBarItem(
               icon: Icon(Icons.chat_bubble_outline), label: 'Chats'),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.person_outline), label: 'Profile'),
           ],
         ),

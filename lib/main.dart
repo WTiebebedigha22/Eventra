@@ -18,7 +18,6 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        // 3. Use .value constructor to provide the already-initialized instance
         ChangeNotifierProvider<AuthProvider>.value(
           value: authProvider,
         ),
