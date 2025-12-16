@@ -503,4 +503,3 @@ class _FeelingPickerSheet extends StatelessWidget {
     );
   }
 }
-
