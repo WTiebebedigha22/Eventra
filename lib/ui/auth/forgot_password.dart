@@ -100,7 +100,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 onPressed: () async {
                   if (email.text.isEmpty) return;
 
-                  await auth.resetPassword(email.text.trim());
+                  await auth.forgotPassword(email.text.trim());
 
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(

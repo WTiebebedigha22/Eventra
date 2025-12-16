@@ -16,21 +16,20 @@ class AuthProvider extends ChangeNotifier {
   bool _hasSeenOnboarding = false; 
   static const String _onboardingKey = 'hasSeenOnboarding';
 
-  // --- PROFILE STATE ---
+  // --- Profile State ---
   String? _currentUserFirstName; 
   String? _currentUserLastName;  
   DateTime? _currentUserDOB;     
   String? _currentBio;
-  DateTime? _currentUserCreatedAt;
+  DateTime? _currentUserCreatedAt; 
 
-  // --- STATE GETTERS ---
+  // --- Getters ---
   Stream<User?> get authStateChangesStream => _auth.authStateChanges();
   bool get isLoggedIn => _auth.currentUser != null;
   String? get currentUserEmail => _auth.currentUser?.email;
   bool get isLoading => _isLoading;
   bool get hasSeenOnboarding => _hasSeenOnboarding;
 
-  // --- PROFILE GETTERS ---
   String get currentUserName => _auth.currentUser?.displayName ?? 'Guest';
   String? get profilePhotoUrl => _auth.currentUser?.photoURL;
 
@@ -45,11 +44,10 @@ class AuthProvider extends ChangeNotifier {
   String get currentUserFirstName => _currentUserFirstName ?? ''; 
   String get currentUserLastName => _currentUserLastName ?? ''; 
   DateTime? get currentUserDOB => _currentUserDOB; 
-  DateTime? get currentUserCreatedAt => _currentUserCreatedAt;
+  DateTime? get currentUserCreatedAt => _currentUserCreatedAt; 
   String get currentBio => _currentBio ?? 'No bio yet.';
 
-  // --- INITIALIZATION ---
-
+  // --- Initialization ---
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
     _hasSeenOnboarding = prefs.getBool(_onboardingKey) ?? false;
@@ -62,23 +60,21 @@ class AuthProvider extends ChangeNotifier {
       }
       notifyListeners(); 
     });
-
+    
     notifyListeners();
   }
-
-  // --- FETCH USER DATA ---
 
   Future<void> _fetchUserData(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
       if (doc.exists) {
         final data = doc.data()!;
-        _currentUserFirstName = data['firstName'];
-        _currentUserLastName = data['lastName'];
-        _currentBio = data['bio'];
-
+        _currentUserFirstName = data['firstName'] as String?; 
+        _currentUserLastName = data['lastName'] as String?;  
+        _currentBio = data['bio'] as String?;
+        
         final dobTimestamp = data['dob'] as Timestamp?;
-        _currentUserDOB = dobTimestamp?.toDate();
+        _currentUserDOB = dobTimestamp?.toDate();           
 
         final createdAtTimestamp = data['createdAt'] as Timestamp?;
         _currentUserCreatedAt = createdAtTimestamp?.toDate();
@@ -91,15 +87,13 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _clearProfileData() {
-    _currentUserFirstName = null;
-    _currentUserLastName = null;
-    _currentUserDOB = null;
+    _currentUserFirstName = null; 
+    _currentUserLastName = null;  
+    _currentUserDOB = null;        
     _currentBio = null;
-    _currentUserCreatedAt = null;
+    _currentUserCreatedAt = null; 
     notifyListeners();
   }
-
-  // --- ONBOARDING ---
 
   Future<void> completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
@@ -108,72 +102,104 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- AUTHENTICATION ---
-
+  // --- Authentication Methods ---
   Future<void> login(String email, String password) async {
-    _isLoading = true;
-    notifyListeners();
+    _isLoading = true; notifyListeners();
     try {
-      await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
+    } catch (e) {
+      rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _isLoading = false; notifyListeners();
     }
   }
 
   Future<void> signup(String email, String password) async {
-    _isLoading = true;
-    notifyListeners();
+    _isLoading = true; notifyListeners();
     try {
-      final cred = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      final user = cred.user;
+      final userCredential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
+      final user = userCredential.user;
       if (user != null) {
-        final username = email.split('@')[0];
-        await user.updateDisplayName(username);
-
-        await _firestore.collection('users').doc(user.uid).set({
+        final defaultUsername = email.split('@')[0];
+        final creationDate = DateTime.now();
+        
+        await user.updateDisplayName(defaultUsername);
+        await _firestore.collection('users').doc(user.uid).set({ 
           'email': email,
-          'firstName': username,
-          'lastName': '',
-          'bio': '',
+          'firstName': defaultUsername, 
+          'lastName': '',              
+          'bio': '', 
           'createdAt': FieldValue.serverTimestamp(),
-          'dob': null,
+          'dob': null,                 
         });
-
-        _currentUserFirstName = username;
+        
+        _currentUserFirstName = defaultUsername;
         _currentUserLastName = '';
+        _currentUserDOB = null;
         _currentBio = '';
-        _currentUserCreatedAt = DateTime.now();
+        _currentUserCreatedAt = creationDate; 
       }
+    } catch (e) {
+      rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _isLoading = false; notifyListeners();
     }
   }
 
   Future<void> logout() async {
     await _auth.signOut();
     _clearProfileData();
+    _isLoading = false;
     notifyListeners();
   }
 
-  // --- FORGOT PASSWORD (NEW) ---
+  // --- Profile Update ---
+  Future<void> updateProfile({
+    required String username, 
+    required String firstName,  
+    required String lastName,   
+    required String bio,
+    DateTime? dob,              
+  }) async {
+    _isLoading = true; notifyListeners();
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        await user.updateDisplayName(username);
+        await _firestore.collection('users').doc(user.uid).update({ 
+          'firstName': firstName, 
+          'lastName': lastName, 
+          'bio': bio, 
+          'dob': dob != null ? Timestamp.fromDate(dob) : null, 
+          'updatedAt': FieldValue.serverTimestamp()
+        });
+        
+        _currentUserFirstName = firstName;
+        _currentUserLastName = lastName;
+        _currentBio = bio;
+        _currentUserDOB = dob;
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false; 
+      notifyListeners(); 
+    }
+  }
 
-  Future<void> resetPassword(String email) async {
+  // --- Upload Profile Picture ---
+  Future<void> uploadProfilePicture(File imageFile) async {
     _isLoading = true;
     notifyListeners();
-
     try {
-      await _auth.sendPasswordResetEmail(email: email);
-    } on FirebaseAuthException catch (e) {
-      debugPrint('Reset password error: ${e.message}');
+      final user = _auth.currentUser;
+      if (user != null) {
+        final storageRef = _storage.ref().child('profile_pictures/${user.uid}.jpg');
+        await storageRef.putFile(imageFile);
+        final photoUrl = await storageRef.getDownloadURL();
+        await user.updatePhotoURL(photoUrl);
+      }
+    } catch (e) {
       rethrow;
     } finally {
       _isLoading = false;
@@ -181,57 +207,15 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // --- PROFILE UPDATE ---
-
-  Future<void> updateProfile({
-    required String username,
-    required String firstName,
-    required String lastName,
-    required String bio,
-    DateTime? dob,
-  }) async {
-    _isLoading = true;
-    notifyListeners();
+  // --- Forgot / Reset Password ---
+  Future<void> sendPasswordResetEmail(String email) async {
+    _isLoading = true; notifyListeners();
     try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        await user.updateDisplayName(username);
-
-        await _firestore.collection('users').doc(user.uid).update({
-          'firstName': firstName,
-          'lastName': lastName,
-          'bio': bio,
-          'dob': dob != null ? Timestamp.fromDate(dob) : null,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        _currentUserFirstName = firstName;
-        _currentUserLastName = lastName;
-        _currentBio = bio;
-        _currentUserDOB = dob;
-      }
+      await _auth.sendPasswordResetEmail(email: email);
+    } catch (e) {
+      rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  // --- PROFILE PHOTO ---
-
-  Future<void> uploadProfilePicture(File imageFile) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        final ref = _storage.ref('profile_pictures/${user.uid}.jpg');
-        await ref.putFile(imageFile);
-        final url = await ref.getDownloadURL();
-        await user.updatePhotoURL(url);
-      }
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      _isLoading = false; notifyListeners();
     }
   }
 }
