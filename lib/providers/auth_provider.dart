@@ -16,41 +16,39 @@ class AuthProvider extends ChangeNotifier {
   bool _hasSeenOnboarding = false; 
   static const String _onboardingKey = 'hasSeenOnboarding';
 
-  // --- UPDATED PROFILE STATE (Mirrors data stored in Firestore) ---
+  // --- PROFILE STATE ---
   String? _currentUserFirstName; 
   String? _currentUserLastName;  
   DateTime? _currentUserDOB;     
   String? _currentBio;
-    DateTime? _currentUserCreatedAt; // 💡 NEW: Creation date state
-  
+  DateTime? _currentUserCreatedAt;
 
-  // State Getters
+  // --- STATE GETTERS ---
   Stream<User?> get authStateChangesStream => _auth.authStateChanges();
   bool get isLoggedIn => _auth.currentUser != null;
   String? get currentUserEmail => _auth.currentUser?.email;
   bool get isLoading => _isLoading;
   bool get hasSeenOnboarding => _hasSeenOnboarding;
 
-  // --- REAL PROFILE GETTERS ---
+  // --- PROFILE GETTERS ---
   String get currentUserName => _auth.currentUser?.displayName ?? 'Guest';
   String? get profilePhotoUrl => _auth.currentUser?.photoURL;
-  
+
   String get currentUserFullName {
-        if (_currentUserFirstName != null && _currentUserLastName != null) {
-            return '${_currentUserFirstName!} ${_currentUserLastName!}';
-        }
-        if (_currentUserFirstName != null) return _currentUserFirstName!;
-        return 'Update your Full Name';
+    if (_currentUserFirstName != null && _currentUserLastName != null) {
+      return '${_currentUserFirstName!} ${_currentUserLastName!}';
     }
-    
+    if (_currentUserFirstName != null) return _currentUserFirstName!;
+    return 'Update your Full Name';
+  }
+
   String get currentUserFirstName => _currentUserFirstName ?? ''; 
   String get currentUserLastName => _currentUserLastName ?? ''; 
   DateTime? get currentUserDOB => _currentUserDOB; 
-    DateTime? get currentUserCreatedAt => _currentUserCreatedAt; // 💡 NEW GETTER
-  
+  DateTime? get currentUserCreatedAt => _currentUserCreatedAt;
   String get currentBio => _currentBio ?? 'No bio yet.';
 
-  // --- Initialization and State Management ---
+  // --- INITIALIZATION ---
 
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
@@ -64,24 +62,24 @@ class AuthProvider extends ChangeNotifier {
       }
       notifyListeners(); 
     });
-    
+
     notifyListeners();
   }
 
-  // 💡 UPDATED: Fetch creation date from Firestore
+  // --- FETCH USER DATA ---
+
   Future<void> _fetchUserData(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
       if (doc.exists) {
         final data = doc.data()!;
-        _currentUserFirstName = data['firstName'] as String?; 
-        _currentUserLastName = data['lastName'] as String?;  
-        _currentBio = data['bio'] as String?;
-        
-        final dobTimestamp = data['dob'] as Timestamp?;
-        _currentUserDOB = dobTimestamp?.toDate();           
+        _currentUserFirstName = data['firstName'];
+        _currentUserLastName = data['lastName'];
+        _currentBio = data['bio'];
 
-        // 💡 NEW: Retrieve createdAt Timestamp and convert it
+        final dobTimestamp = data['dob'] as Timestamp?;
+        _currentUserDOB = dobTimestamp?.toDate();
+
         final createdAtTimestamp = data['createdAt'] as Timestamp?;
         _currentUserCreatedAt = createdAtTimestamp?.toDate();
       }
@@ -93,13 +91,15 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _clearProfileData() {
-    _currentUserFirstName = null; 
-    _currentUserLastName = null;  
-    _currentUserDOB = null;        
+    _currentUserFirstName = null;
+    _currentUserLastName = null;
+    _currentUserDOB = null;
     _currentBio = null;
-    _currentUserCreatedAt = null; // 💡 Clear new state
+    _currentUserCreatedAt = null;
     notifyListeners();
   }
+
+  // --- ONBOARDING ---
 
   Future<void> completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
@@ -108,116 +108,130 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Authentication Methods ---
+  // --- AUTHENTICATION ---
 
   Future<void> login(String email, String password) async {
-    _isLoading = true; notifyListeners();
+    _isLoading = true;
+    notifyListeners();
     try {
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-    } catch (e) {
-      rethrow;
+      await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
     } finally {
-      _isLoading = false; notifyListeners();
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   Future<void> signup(String email, String password) async {
-    _isLoading = true; notifyListeners();
+    _isLoading = true;
+    notifyListeners();
     try {
-      final userCredential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
-      final user = userCredential.user;
+      final cred = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = cred.user;
       if (user != null) {
-        final defaultUsername = email.split('@')[0];
-        final creationDate = DateTime.now(); // Local time for initial state
-        
-        await user.updateDisplayName(defaultUsername);
-        
-        // 💡 Firestore document uses server timestamp
-        await _firestore.collection('users').doc(user.uid).set({ 
+        final username = email.split('@')[0];
+        await user.updateDisplayName(username);
+
+        await _firestore.collection('users').doc(user.uid).set({
           'email': email,
-          'firstName': defaultUsername, 
-          'lastName': '',              
-          'bio': '', 
-          'createdAt': FieldValue.serverTimestamp(), // 💡 The source of truth
-          'dob': null,                 
+          'firstName': username,
+          'lastName': '',
+          'bio': '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'dob': null,
         });
-        
-        // Initialize local state after creation (Note: _fetchUserData is triggered on auth change)
-        _currentUserFirstName = defaultUsername;
+
+        _currentUserFirstName = username;
         _currentUserLastName = '';
-        _currentUserDOB = null;
         _currentBio = '';
-        _currentUserCreatedAt = creationDate; // 💡 Initialize local state for immediate use
+        _currentUserCreatedAt = DateTime.now();
       }
-    } catch (e) {
-      rethrow;
     } finally {
-      _isLoading = false; notifyListeners();
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   Future<void> logout() async {
     await _auth.signOut();
     _clearProfileData();
-    _isLoading = false;
     notifyListeners();
   }
 
-  // --- PROFILE UPDATE METHODS (No change needed here) ---
-  
-  Future<void> updateProfile({
-    required String username, 
-    required String firstName,  
-    required String lastName,   
-    required String bio,
-    DateTime? dob,              
-  }) async {
-    _isLoading = true; notifyListeners();
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        
-        await user.updateDisplayName(username);
-        
-        await _firestore.collection('users').doc(user.uid).update({ 
-          'firstName': firstName, 
-          'lastName': lastName, 
-          'bio': bio, 
-          'dob': dob != null ? Timestamp.fromDate(dob) : null, 
-          'updatedAt': FieldValue.serverTimestamp()
-        });
-        
-        _currentUserFirstName = firstName;
-        _currentUserLastName = lastName;
-        _currentBio = bio;
-        _currentUserDOB = dob;
-      }
-    } catch (e) {
-      rethrow;
-    } finally {
-      _isLoading = false; 
-      notifyListeners(); 
-    }
-  }
+  // --- FORGOT PASSWORD (NEW) ---
 
-  // Photo upload remains unchanged
-  Future<void> uploadProfilePicture(File imageFile) async {
+  Future<void> resetPassword(String email) async {
     _isLoading = true;
     notifyListeners();
+
     try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        final storageRef = _storage.ref().child('profile_pictures/${user.uid}.jpg');
-        await storageRef.putFile(imageFile);
-        final photoUrl = await storageRef.getDownloadURL();
-        await user.updatePhotoURL(photoUrl);
-      }
-    } catch (e) {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Reset password error: ${e.message}');
       rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
+
+  // --- PROFILE UPDATE ---
+
+  Future<void> updateProfile({
+    required String username,
+    required String firstName,
+    required String lastName,
+    required String bio,
+    DateTime? dob,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        await user.updateDisplayName(username);
+
+        await _firestore.collection('users').doc(user.uid).update({
+          'firstName': firstName,
+          'lastName': lastName,
+          'bio': bio,
+          'dob': dob != null ? Timestamp.fromDate(dob) : null,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        _currentUserFirstName = firstName;
+        _currentUserLastName = lastName;
+        _currentBio = bio;
+        _currentUserDOB = dob;
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // --- PROFILE PHOTO ---
+
+  Future<void> uploadProfilePicture(File imageFile) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final ref = _storage.ref('profile_pictures/${user.uid}.jpg');
+        await ref.putFile(imageFile);
+        final url = await ref.getDownloadURL();
+        await user.updatePhotoURL(url);
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }
-  

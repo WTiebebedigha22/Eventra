@@ -3,20 +3,15 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import 'package:go_router/go_router.dart';
 
-class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
 
   @override
-  State<RegisterScreen> createState() => _RegisterScreenState();
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
-  final fullName = TextEditingController();
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final email = TextEditingController();
-  final pass = TextEditingController();
-  final confirmPass = TextEditingController();
-
-  bool agreedToTerms = false;
 
   static const Color backgroundColor = Colors.black;
   static const Color inputFillColor = Color(0xFF1C1C1E);
@@ -25,25 +20,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
-    fullName.dispose();
     email.dispose();
-    pass.dispose();
-    confirmPass.dispose();
     super.dispose();
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String hint, {
-    bool obscure = false,
-  }) {
+  Widget _buildTextField() {
     return TextField(
-      controller: controller,
-      obscureText: obscure,
+      controller: email,
       style: const TextStyle(color: primaryColor),
       cursorColor: primaryColor,
+      keyboardType: TextInputType.emailAddress,
       decoration: InputDecoration(
-        hintText: hint,
+        hintText: 'Email address',
         hintStyle: TextStyle(color: secondaryText),
         filled: true,
         fillColor: inputFillColor,
@@ -77,10 +65,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 height: 70,
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
               const Text(
-                'Create your account',
+                'Forgot your password?',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 26,
@@ -89,76 +77,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 12),
 
-              _buildTextField(fullName, 'Full name'),
-              const SizedBox(height: 14),
-
-              _buildTextField(email, 'Email address'),
-              const SizedBox(height: 14),
-
-              _buildTextField(pass, 'Password', obscure: true),
-              const SizedBox(height: 14),
-
-              _buildTextField(confirmPass, 'Confirm password',
-                  obscure: true),
-
-              const SizedBox(height: 18),
-
-              // Terms & Privacy
-              Row(
-                children: [
-                  Checkbox(
-                    value: agreedToTerms,
-                    onChanged: (value) {
-                      setState(() => agreedToTerms = value ?? false);
-                    },
-                    activeColor: primaryColor,
-                    checkColor: Colors.black,
-                  ),
-                  Expanded(
-                    child: Text(
-                      'I agree to the Terms & Privacy Policy',
-                      style: TextStyle(
-                        color: secondaryText,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
+              const Text(
+                'Enter your email and we’ll send you instructions to reset your password.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: secondaryText,
+                  height: 1.4,
+                ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 40),
 
-              // Create Account Button
+              _buildTextField(),
+
+              const SizedBox(height: 30),
+
+              // Reset Button
               ElevatedButton(
                 onPressed: () async {
-                  if (!agreedToTerms) {
+                  if (email.text.isEmpty) return;
+
+                  await auth.resetPassword(email.text.trim());
+
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content:
-                            Text('Please accept Terms & Privacy Policy'),
+                        content: Text(
+                          'Password reset email sent',
+                        ),
                       ),
                     );
-                    return;
-                  }
-
-                  if (pass.text != confirmPass.text) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Passwords do not match'),
-                      ),
-                    );
-                    return;
-                  }
-
-                  await auth.signup(
-                    email.text.trim(),
-                    pass.text.trim(),
-                  );
-
-                  if (auth.isLoggedIn && mounted) {
-                    context.go('/home');
+                    context.go('/login');
                   }
                 },
                 style: ElevatedButton.styleFrom(
@@ -178,7 +130,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       )
                     : const Text(
-                        'Create Account',
+                        'Send Reset Link',
                         style: TextStyle(
                           color: Colors.black,
                           fontSize: 16,
@@ -192,7 +144,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextButton(
                 onPressed: () => context.go('/login'),
                 child: const Text(
-                  'Already have an account? Log in',
+                  'Back to Login',
                   style: TextStyle(color: secondaryText),
                 ),
               ),

@@ -8,6 +8,7 @@ import '../ui/splash/splash_screen.dart';
 import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
 import '../ui/auth/register_screen.dart';
+import '../ui/auth/forgot_password.dart';
 
 import '../ui/home/home_screen.dart';
 import '../ui/events/event_list_screen.dart';
@@ -43,20 +44,21 @@ class AppRouter {
         GoRoute(path: '/login', builder: (c, state) => const LoginScreen()),
         GoRoute(path: '/register', builder: (c, state) => const RegisterScreen()),
 
-        // --- 🚀 StatefulShellRoute for Main Tabs (Home Screen) ---
+        // --- NEW: Forgot Password Route ---
+        GoRoute(
+          path: '/forgot-password',
+          builder: (c, state) => const ForgotPasswordScreen(),
+        ),
+
+        // --- StatefulShellRoute for Main Tabs (Home Screen) ---
         StatefulShellRoute.indexedStack( 
-          // 1. HomeScreen is the shell, receiving the child widget
           builder: (context, state, navigationShell) {
-            // FIX: navigationShell acts as both the child and the shell
-            // The type system requires the `child` to be a Widget, which navigationShell is
             return HomeScreen(
               navigationShell: navigationShell,
               child: navigationShell,
             );
           },
-          // 2. Define the branches (one for each BottomNavBar tab)
           branches: [
-            // Branch 0: Explore (Tab Index 0)
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -64,7 +66,7 @@ class AppRouter {
                   builder: (c, state) => const EventListScreen(),
                   routes: [
                     GoRoute(
-                      path: 'event/:id', // Full path: /home/explore/event/:id
+                      path: 'event/:id',
                       builder: (c, state) {
                         final id = state.pathParameters['id']!;
                         return EventDetailScreen(eventId: id);
@@ -73,8 +75,6 @@ class AppRouter {
                 ),
               ],
             ),
-
-            // Branch 1: Chat (Maps to BottomNavBar Index 2)
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -82,7 +82,7 @@ class AppRouter {
                   builder: (c, state) => const ChatListScreen(),
                   routes: [
                     GoRoute(
-                      path: 'chat/:chatId', // Full path: /home/chat/chat/:chatId
+                      path: 'chat/:chatId',
                       builder: (c, state) {
                         final chatId = state.pathParameters['chatId']!;
                         return ChatRoomScreen(chatId: chatId);
@@ -91,16 +91,14 @@ class AppRouter {
                 ),
               ],
             ),
-
-            // Branch 2: Profile (Maps to BottomNavBar Index 3)
             StatefulShellBranch(
               routes: [
                 GoRoute(
-                  path: '/home/profile', // Full path: /home/profile
+                  path: '/home/profile',
                   builder: (c, state) => const ProfileScreen(),
                   routes: [
                     GoRoute(
-                      path: 'edit', // Full path: /home/profile/edit
+                      path: 'edit',
                       builder: (c, state) => const EditProfileScreen(),
                     ),
                   ],
@@ -110,21 +108,19 @@ class AppRouter {
           ],
         ),
 
-        // --- 🚀 CREATE POST STANDALONE ROUTE ---
-        // This is outside the StatefulShellRoute so it appears fullscreen
+        // --- CREATE POST ROUTE ---
         GoRoute(
-          path: '/create-post', // Must match the constant used in HomeScreen
+          path: '/create-post',
           builder: (c, state) => const CreatePostScreen(),
           routes: [
-                // 💡 NEW: Tag People Sub-Route
-                GoRoute(
-                  path: 'tag-people', // Full path: /create-post/tag-people
-                  builder: (c, state) => const TagPeopleScreen(),
-                ),
+            GoRoute(
+              path: 'tag-people',
+              builder: (c, state) => const TagPeopleScreen(),
+            ),
           ],
         ),
 
-        // --- SETTINGS ROUTE GROUP (Still outside the shell) ---
+        // --- SETTINGS ROUTES ---
         GoRoute(
           path: '/settings', 
           builder: (c, state) => const ProfileSettingsScreen(),
@@ -147,7 +143,7 @@ class AppRouter {
         final onboardingComplete = authProv.hasSeenOnboarding; 
         final goingTo = state.matchedLocation; 
         final isAuthOrOnboardingRoute = 
-            goingTo == '/login' || goingTo == '/register' || goingTo == '/onboarding';
+            goingTo == '/login' || goingTo == '/register' || goingTo == '/onboarding' || goingTo == '/forgot-password';
 
         if (goingTo == '/splash') return null;
 
@@ -159,7 +155,6 @@ class AppRouter {
         }
 
         if (isAuthOrOnboardingRoute) {
-            // Redirect to the default branch route
             return '/home/explore'; 
         }
 

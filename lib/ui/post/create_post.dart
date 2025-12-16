@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import '../../providers/post_provider.dart'; 
+import '../../providers/post_provider.dart';
 
-// --- Color Palette from HomeScreen ---
 const Color primaryPink = Color(0xFFE91E63);
 const Color backgroundColor = Colors.black;
 const Color appBarColor = Color(0xFF181818);
@@ -15,8 +14,6 @@ const Color darkSurface = Color(0xFF242424);
 
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
-
-  // 💡 NEW: Define the static route for the tagging sub-screen
   static const String tagPeopleRoute = '/create-post/tag-people';
 
   @override
@@ -29,141 +26,44 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String? _selectedFeeling;
   DateTime? _eventDate;
   String? _location;
-  bool _isPosting = false; // New state to manage loading
+  bool _isPosting = false;
 
-  bool get _isPostButtonEnabled => (_contentController.text.isNotEmpty || _selectedMedia != null) && !_isPosting;
+  bool get _isPostButtonEnabled =>
+      (_contentController.text.isNotEmpty || _selectedMedia != null) && !_isPosting;
 
   @override
   void initState() {
     super.initState();
-    _contentController.addListener(_updateState);
+    _contentController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
-    _contentController.removeListener(_updateState);
     _contentController.dispose();
     super.dispose();
   }
 
-  void _updateState() {
-    setState(() {});
-  }
-
-  // --- Image Picker Logic ---
   Future<void> _pickMedia() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _selectedMedia = File(pickedFile.path);
-      });
-    }
-  }
-  
-  // --- Enhanced Feature: Feeling Picker ---
-  Future<void> _pickFeeling() async {
-    final newFeeling = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _FeelingPickerSheet(),
-    );
-
-    if (newFeeling != null) {
-      setState(() {
-        _selectedFeeling = newFeeling;
-      });
-    }
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) setState(() => _selectedMedia = File(picked.path));
   }
 
-  // --- Enhanced Feature: Event Date Picker ---
-  Future<void> _pickEventDate() async {
-    final today = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _eventDate ?? today.add(const Duration(days: 1)),
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 365)),
-      builder: (context, child) {
-        return Theme(
-          data: ThemeData.dark().copyWith(
-            colorScheme: ColorScheme.dark(
-              primary: primaryPink, // Pink header/button color
-              onPrimary: textColor,
-              surface: appBarColor, // Dark background for the picker
-              onSurface: textColor,
-            ),
-            dialogBackgroundColor: appBarColor,
-          ),
-          child: child!,
-        );
-      }
-    );
-
-    if (date != null) {
-      setState(() {
-        _eventDate = date;
-      });
-    }
-  }
-
-  // --- Enhanced Feature: Location Picker (Placeholder) ---
-  void _pickLocation() {
-    // In a real app, this would use a package like geolocator/google_maps_flutter
-    // and potentially save GeoPoint data to Firestore.
-    setState(() {
-      _location = 'Ventra Hub, Downtown'; // Placeholder location
-    });
-  }
-
-  // --- Post Submission Logic ---
   Future<void> _submitPost() async {
     if (!_isPostButtonEnabled) return;
-
-    setState(() {
-      _isPosting = true; // Start loading
-    });
+    setState(() => _isPosting = true);
 
     try {
       final postProvider = Provider.of<PostProvider>(context, listen: false);
-      
-      // Combine content with feeling/event/location for a richer post, 
-      // although these are also sent as separate fields to the PostProvider.
-      String finalContent = _contentController.text.trim();
-      if (_selectedFeeling != null) {
-        finalContent = 'Feeling $_selectedFeeling - $finalContent';
-      }
-
       await postProvider.createPost(
-        content: finalContent,
+        content: _contentController.text.trim(),
         mediaFile: _selectedMedia,
         eventDate: _eventDate,
         location: _location,
       );
-
-      // Successfully posted, navigate back
-      if (mounted) {
-        context.pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Post created successfully!')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to post: ${e.toString()}'),
-            backgroundColor: primaryPink,
-          ),
-        );
-      }
+      if (mounted) context.pop();
     } finally {
-      if (mounted) {
-        setState(() {
-          _isPosting = false; // Stop loading
-        });
-      }
+      if (mounted) setState(() => _isPosting = false);
     }
   }
 
@@ -171,333 +71,151 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
-      appBar: _buildAppBar(context),
+      appBar: _buildInstagramAppBar(),
       body: Column(
         children: [
-          _buildUserInfoHeader(),
-
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildContentInput(),
-
-                  if (_selectedMedia != null) 
-                    const SizedBox(height: 16),
-                    _buildMediaPreview(),
-                  
-                  const SizedBox(height: 16),
-
-                  // Display added details clearly below the input area
-                  _buildExtraDetailsDisplay(),
-                ],
-              ),
-            ),
-          ),
-          
-          _buildDockedActions(),
+          _buildUserHeader(),
+          Expanded(child: _buildComposer()),
+          _buildBottomActions(),
         ],
       ),
     );
   }
-  
-  // --- Widgets ---
 
-  AppBar _buildAppBar(BuildContext context) {
+  // --- Instagram-like AppBar ---
+  AppBar _buildInstagramAppBar() {
     return AppBar(
       backgroundColor: appBarColor,
-      elevation: 0,
+      elevation: 0.5,
       leading: IconButton(
         icon: const Icon(Icons.close, color: textColor),
         onPressed: () => context.pop(),
       ),
-      title: const Text('Create Post', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
+      title: const Text('New Post', style: TextStyle(fontWeight: FontWeight.w600)),
       actions: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextButton(
-            onPressed: _isPostButtonEnabled ? _submitPost : null,
-            style: TextButton.styleFrom(
-              backgroundColor: _isPostButtonEnabled ? primaryPink : primaryPink.withOpacity(0.3),
-              foregroundColor: textColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: _isPosting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: textColor,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text('Post', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ),
+        TextButton(
+          onPressed: _isPostButtonEnabled ? _submitPost : null,
+          child: _isPosting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Share', style: TextStyle(color: primaryPink)),
         ),
       ],
     );
   }
-  
-  Widget _buildExtraDetailsDisplay() {
-    final details = <Widget>[];
 
-    if (_selectedFeeling != null) {
-      details.add(_buildDetailChip(
-        icon: Icons.sentiment_satisfied_alt, 
-        label: 'Feeling $_selectedFeeling',
-        onRemove: () => setState(() => _selectedFeeling = null),
-      ));
-    }
-    
-    if (_location != null) {
-      details.add(_buildDetailChip(
-        icon: Icons.location_on, 
-        label: _location!,
-        onRemove: () => setState(() => _location = null),
-      ));
-    }
-
-    if (_eventDate != null) {
-      details.add(_buildDetailChip(
-        icon: Icons.event, 
-        label: 'Event: ${MaterialLocalizations.of(context).formatShortDate(_eventDate!)}',
-        onRemove: () => setState(() => _eventDate = null),
-      ));
-    }
-
-    if (details.isEmpty) return const SizedBox.shrink();
-
+  // --- User Header (Instagram style) ---
+  Widget _buildUserHeader() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Wrap(spacing: 8.0, runSpacing: 8.0, children: details),
-    );
-  }
-
-  Widget _buildDetailChip({required IconData icon, required String label, required VoidCallback onRemove}) {
-    return Chip(
-      backgroundColor: darkSurface,
-      label: Text(label, style: const TextStyle(color: textColor, fontSize: 14)),
-      avatar: Icon(icon, color: primaryPink, size: 18),
-      deleteIcon: const Icon(Icons.close, color: hintColor, size: 16),
-      onDeleted: onRemove,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    );
-  }
-
-  Widget _buildUserInfoHeader() {
-    // ... (No changes)
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 20,
-            backgroundColor: darkSurface,
-            child: Icon(Icons.person, color: hintColor), 
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Current User', 
-                style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                children: [
-                  _buildPrivacyButton(),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildPrivacyButton() {
-    // ... (No changes)
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: darkSurface,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.public, color: hintColor, size: 14),
-          SizedBox(width: 4),
-          Text('Public', style: TextStyle(color: hintColor, fontSize: 12)),
-          Icon(Icons.arrow_drop_down, color: hintColor, size: 16),
+        children: const [
+          CircleAvatar(radius: 20, backgroundColor: darkSurface),
+          SizedBox(width: 12),
+          Text('Current User', style: TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 
-  Widget _buildContentInput() {
-    // ... (No changes)
-    return TextField(
-      controller: _contentController,
-      maxLines: null,
-      style: const TextStyle(color: textColor, fontSize: 20),
-      keyboardType: TextInputType.multiline,
-      decoration: const InputDecoration(
-        hintText: "What's on your mind?",
-        hintStyle: TextStyle(color: hintColor, fontSize: 20),
-        border: InputBorder.none,
-      ),
-    );
-  }
-
-  Widget _buildMediaPreview() {
-    return Stack(
-      alignment: Alignment.topRight,
-      children: [
-        // The Preview Image
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8.0),
-          child: Image.file(
-            _selectedMedia!,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: 200,
-          ),
-        ),
-        
-        // The Remove Button
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: InkWell(
-            onTap: () {
-              setState(() {
-                _selectedMedia = null;
-              });
-            },
-            child: const CircleAvatar(
-              radius: 14,
-              backgroundColor: Colors.black54,
-              child: Icon(Icons.close, color: textColor, size: 18),
-            ),
-          ),
-        ),
-
-        // Optional: Edit Icon
-        Positioned(
-          bottom: 8,
-          right: 8,
-          child: IconButton(
-            icon: const Icon(Icons.edit, color: textColor),
-            onPressed: () {
-              // TODO: Implement image editing feature (e.g., cropping)
-            },
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.black54,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            )
-          ),
-        )
-      ],
-    );
-  }
-
-  Widget _buildDockedActions() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: appBarColor, 
-        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+  // --- Main Composer ---
+  Widget _buildComposer() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // --- Additional Post Options Bar ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildActionButton(Icons.photo_library, 'Photo/Video', _pickMedia),
-                _buildActionButton(Icons.sentiment_satisfied_alt, 'Feeling', _pickFeeling), 
-                _buildActionButton(Icons.event, 'Event', _pickEventDate), 
-                _buildActionButton(Icons.location_on, 'Location', _pickLocation), 
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          
-          // --- Separator (like in Facebook) ---
-          const Divider(color: Colors.white10, height: 1),
-          
-          // --- Tag People / More Options ---
-          ListTile(
-            leading: const Icon(Icons.person_add_alt_1, color: primaryPink),
-            title: const Text('Tag people', style: TextStyle(color: textColor)),
-            trailing: const Icon(Icons.arrow_forward_ios, color: hintColor, size: 16),
-            onTap: () {
-              // 💡 IMPLEMENTATION: Navigate to the tagging screen
-              context.push(CreatePostScreen.tagPeopleRoute);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onTap) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: primaryPink, size: 24),
-              const SizedBox(height: 4),
-              Text(label, style: const TextStyle(color: hintColor, fontSize: 10)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// --- Helper Widget for Feeling Picker Bottom Sheet ---
-class _FeelingPickerSheet extends StatelessWidget {
-  final List<String> feelings = ['Happy', 'Excited', 'Tired', 'Blessed', 'Focused', 'Grateful'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: appBarColor,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('How are you feeling?', style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8.0,
-            runSpacing: 8.0,
-            children: feelings.map((feeling) => ActionChip(
-              backgroundColor: darkSurface,
-              label: Text(feeling, style: const TextStyle(color: textColor)),
-              avatar: const Icon(Icons.star, color: primaryPink, size: 18),
-              onPressed: () => Navigator.of(context).pop(feeling),
-            )).toList(),
+          TextField(
+            controller: _contentController,
+            maxLines: null,
+            style: const TextStyle(fontSize: 18, color: textColor),
+            decoration: const InputDecoration(
+              hintText: "What's on your mind?",
+              hintStyle: TextStyle(color: hintColor),
+              border: InputBorder.none,
+            ),
           ),
+          const SizedBox(height: 12),
+
+          // --- Media Preview (Instagram-first) ---
+          if (_selectedMedia != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                children: [
+                  Image.file(_selectedMedia!, width: double.infinity, height: 260, fit: BoxFit.cover),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black54,
+                      child: IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => setState(() => _selectedMedia = null),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 16),
+
+          // --- Jiji-style Info Chips ---
+          Wrap(
+            spacing: 8,
+            children: [
+              if (_selectedFeeling != null) _infoChip(Icons.mood, _selectedFeeling!),
+              if (_location != null) _infoChip(Icons.location_on, _location!),
+              if (_eventDate != null)
+                _infoChip(Icons.event, _eventDate!.toLocal().toString().split(' ')[0]),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoChip(IconData icon, String label) {
+    return Chip(
+      backgroundColor: darkSurface,
+      avatar: Icon(icon, size: 16, color: primaryPink),
+      label: Text(label, style: const TextStyle(color: textColor)),
+    );
+  }
+
+  // --- Bottom Action Bar (Jiji card feel) ---
+  Widget _buildBottomActions() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: const BoxDecoration(
+        color: appBarColor,
+        border: Border(top: BorderSide(color: Colors.white12)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _action(Icons.photo, 'Media', _pickMedia),
+          _action(Icons.person_add, 'Tag', () => context.push(CreatePostScreen.tagPeopleRoute)),
+          _action(Icons.location_on, 'Location', () => setState(() => _location = 'Ventra Hub')),
+        ],
+      ),
+    );
+  }
+
+  Widget _action(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: primaryPink),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(fontSize: 11, color: hintColor)),
         ],
       ),
     );
