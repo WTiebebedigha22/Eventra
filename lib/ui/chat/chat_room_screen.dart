@@ -15,7 +15,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
   // Define your color scheme (consistent with other screens)
   static const Color primaryPink = Color(0xFFE91E63);
-  static const Color secondaryPurple = Color(0xFF9C27B0);
   static const Color backgroundColor = Colors.black;
   static const Color appBarColor = Color(0xFF181818); // Darker shade for contrast
   static const Color textColor = Colors.white;
@@ -89,7 +88,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     // final chat = Provider.of<ChatProvider>(context, listen: true); 
 
     // Using listen: false for the action call only
-    final chat = Provider.of<ChatProvider>(context, listen: false); 
+    final _ = Provider.of<ChatProvider>(context, listen: false); 
     
     _scrollToBottom(); 
 

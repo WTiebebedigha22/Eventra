@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is logged in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper to check if the user is the owner of the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // --- USERS COLLECTION ---
+    match /users/{userId} {
+      allow read: if isSignedIn(); // Any logged-in user can view profiles
+      allow write: if isOwner(userId); // Only the user can edit their own profile
+    }
+
+    // --- POSTS COLLECTION ---
+    match /posts/{postId} {
+      allow read: if true; // Publicly viewable feed
+      allow create: if isSignedIn(); // Must be logged in to post
+      allow update: if isSignedIn(); // Required for Liking/Commenting
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+
+    // --- NOTIFICATIONS COLLECTION ---
+    match /notifications/{notifId} {
+      // Only the recipient can see or delete their notifications
+      allow read, delete: if isSignedIn() && isOwner(resource.data.userId);
+      // Any logged in user can trigger a notification (e.g. by liking a post)
+      allow create: if isSignedIn();
+    }
+
+    // --- MESSAGES / CHATS COLLECTION ---
+    // Assuming a structure: /chats/{chatId}/messages/{messageId}
+    match /chats/{chatId} {
+      // Users can only read/write if their UID is in the participants array
+      allow read, write: if isSignedIn() && request.auth.uid in resource.data.participants;
+      
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+  }
+}

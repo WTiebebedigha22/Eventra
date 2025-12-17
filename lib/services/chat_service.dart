@@ -1,79 +1,118 @@
-// lib/services/chat_service.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart'; // Import for @required and ChangeNotifier
-import '../models/chat/chat_message.dart'; // Assuming the path to your model
+import 'package:flutter/foundation.dart';
+import '../models/chat/chat_message.dart';
 
 class ChatService extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  
-  // Firestore collection reference for all chats/conversations
+
   final String _conversationCollection = 'conversations';
 
-  // --- Real-Time Message Stream ---
-  // Streams a list of ChatMessage objects for a specific chat ID.
+  // --- 1. Real-Time Conversations Stream (For Inbox) ---
+  Stream<QuerySnapshot> getConversationsStream() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+
+    return _firestore
+        .collection(_conversationCollection)
+        .where('participants', arrayContains: uid)
+        .orderBy('lastMessageTime', descending: true)
+        .snapshots();
+  }
+
+  // --- 2. NEW: Fetch Other User's Profile Info ---
+  // This is used by the UI to turn a "UID" into a "Name" and "Photo"
+  Future<Map<String, dynamic>?> getUserProfile(String userId) async {
+    try {
+      final doc = await _firestore.collection('users').doc(userId).get();
+      return doc.data();
+    } catch (e) {
+      debugPrint('Error fetching user profile: $e');
+      return null;
+    }
+  }
+
+  // --- 3. Get or Create Conversation (Optimized) ---
+  Future<String> getOrCreateConversation(String otherUserId) async {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) throw Exception("User not logged in");
+
+    List<String> ids = [currentUserId, otherUserId];
+    ids.sort();
+    String chatId = ids.join('_');
+
+    final chatDoc = await _firestore.collection(_conversationCollection).doc(chatId).get();
+
+    if (!chatDoc.exists) {
+      await _firestore.collection(_conversationCollection).doc(chatId).set({
+        'participants': ids,
+        'lastMessage': 'Start a conversation!',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    return chatId;
+  }
+
+  // --- 4. Real-Time Message Stream ---
   Stream<List<ChatMessage>> getMessagesStream(String chatId) {
-    // 1. Get the stream of snapshots ordered by creation time
-    final sub = _firestore
+    return _firestore
         .collection(_conversationCollection)
         .doc(chatId)
         .collection('messages')
-        .orderBy('createdAt', descending: true) // Newest at the top of the stream
-        .snapshots();
-        
-    // 2. Map the QuerySnapshot to a List<ChatMessage>
-    return sub.map((snapshot) {
-      return snapshot.docs.map((doc) {
-        // Use the factory constructor from the ChatMessage model
-        return ChatMessage.fromMap(doc.data(), doc.id);
-      }).toList();
-    });
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.map((doc) {
+            return ChatMessage.fromMap(doc.data(), doc.id);
+          }).toList();
+        });
   }
 
-  // --- Send Message Function ---
+  // --- 5. Send Message (Using Batch for Consistency) ---
   Future<void> sendMessage(String chatId, String messageText) async {
     final currentUserId = _auth.currentUser?.uid;
-    
-    if (currentUserId == null || messageText.trim().isEmpty) {
-      // Throw an error or log if the user isn't authenticated or message is empty
-      throw Exception("User not authenticated or message is empty.");
-    }
-    
+    if (currentUserId == null || messageText.trim().isEmpty) return;
+
     try {
-      // 1. Prepare the ChatMessage model instance
-      final newMessage = ChatMessage(
-        id: '', // Firestore will assign the ID
-        chatId: chatId,
-        senderId: currentUserId,
-        message: messageText.trim(),
-        type: 'text',
-        createdAt: DateTime.now(),
-      );
-      
-      final messageData = newMessage.toMap();
-      
-      // 2. Add the message to the 'messages' subcollection
-      await _firestore
-          .collection(_conversationCollection)
-          .doc(chatId)
-          .collection('messages')
-          .add(messageData);
-          
-      // 3. Update the parent conversation document for last message info
-      await _firestore.collection(_conversationCollection).doc(chatId).update({
+      final messageData = {
+        'chatId': chatId,
+        'senderId': currentUserId,
+        'message': messageText.trim(),
+        'type': 'text',
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      WriteBatch batch = _firestore.batch();
+      DocumentReference msgRef = _firestore.collection(_conversationCollection).doc(chatId).collection('messages').doc();
+      DocumentReference chatRef = _firestore.collection(_conversationCollection).doc(chatId);
+
+      batch.set(msgRef, messageData);
+      batch.update(chatRef, {
         'lastMessage': messageText.trim(),
-        'lastMessageTime': messageData['createdAt'], // Use the Timestamp
+        'lastMessageTime': FieldValue.serverTimestamp(),
       });
-      
+
+      await batch.commit();
     } catch (e) {
-      debugPrint('Error sending message to chat $chatId: $e');
-      rethrow; // Re-throw the error for the UI layer to handle
+      debugPrint('Error sending message: $e');
+      rethrow;
     }
   }
 
-  // NOTE: You would also have methods here for:
-  // - getConversationsStream() (for the ChatListScreen)
-  // - getOrCreateConversation(String otherUserId)
+  // --- 6. Formatter ---
+  String formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return '';
+    DateTime dateTime = (timestamp is Timestamp) ? timestamp.toDate() : (timestamp is DateTime ? timestamp : DateTime.now());
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+
+    if (diff.inDays > 7) return '${dateTime.month}/${dateTime.day}/${dateTime.year}';
+    if (diff.inDays >= 1) return '${diff.inDays}d ago';
+    if (diff.inHours >= 1) return '${diff.inHours}h ago';
+    if (diff.inMinutes >= 1) return '${diff.inMinutes}m ago';
+    return 'Just now';
+  }
 }

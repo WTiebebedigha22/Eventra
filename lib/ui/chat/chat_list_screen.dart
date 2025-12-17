@@ -1,149 +1,144 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/chat_service.dart';
 
 class ChatListScreen extends StatelessWidget {
   const ChatListScreen({super.key});
 
-  // Define your color scheme (consistent with other screens)
   static const Color primaryPink = Color(0xFFE91E63);
   static const Color backgroundColor = Colors.black;
   static const Color navBarColor = Color(0xFF181818);
   static const Color textColor = Colors.white;
 
-  // Mock data for chat list and 'stories'
-  final List<Map<String, String>> mockChats = const [
-    {'name': 'Organizer A', 'lastMessage': 'See you at the event!', 'chatId': 'organizerA'},
-    {'name': 'Alex Johnson', 'lastMessage': 'Got the tickets, thanks!', 'chatId': 'alexJ'},
-    {'name': 'Dev Community', 'lastMessage': 'Flutter Meetup details confirmed.', 'chatId': 'devComm'},
-    {'name': 'Sarah Smith', 'lastMessage': 'The concert was awesome!', 'chatId': 'sarahS'},
-  ];
-
-  final List<String> mockStories = const [
-    'Your Story', 'Friend 1', 'Friend 2', 'Organizer C', 'Event News', 'Lisa M'
-  ];
-
-  // --- Widget for a single 'Story' item (Circular Profile) ---
-  Widget _buildStoryItem(BuildContext context, String name, {bool isNew = true}) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 12.0),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              // Instagram Story Ring Effect: Gradient Border
-              border: isNew
-                  ? Border.all(
-                      color: primaryPink,
-                      width: 2.5,
-                    )
-                  : null,
-            ),
-            child: CircleAvatar(
-              radius: 30,
-              backgroundColor: navBarColor, // Placeholder for profile image
-              child: Text(
-                name[0], // First letter of name
-                style: const TextStyle(color: textColor),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            name.split(' ')[0], // Display only first name
-            style: const TextStyle(color: textColor, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-  // -------------------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
+    // Standard: Use the provider to access the service
+    final chatService = Provider.of<ChatService>(context, listen: false);
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
         backgroundColor: backgroundColor,
         elevation: 0,
-        title: const Text(
-          'Chats',
-          style: TextStyle(
-            color: textColor,
-            fontWeight: FontWeight.bold,
-            fontSize: 24,
-          ),
-        ),
-        actions: [
-          // New Message/Add Icon (Instagram style)
-          IconButton(
-            icon: const Icon(Icons.add_box_outlined, color: textColor, size: 28),
-            onPressed: () {
-              // Action for starting a new chat
-            },
-          ),
-        ],
+        title: const Text('Chats', 
+          style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 24)),
       ),
       body: Column(
         children: [
-          // --- Stories Section (Horizontal List) ---
-          SizedBox(
-            height: 100,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              itemCount: mockStories.length,
-              itemBuilder: (context, index) {
-                return _buildStoryItem(context, mockStories[index], isNew: index != 0);
-              },
-            ),
-          ),
-          
-          const Divider(color: navBarColor, height: 1), // Subtle divider
+          _buildStoriesSection(),
+          const Divider(color: navBarColor, height: 1),
 
-          // --- Chat List Section ---
           Expanded(
-            child: ListView.builder(
-              itemCount: mockChats.length,
-              itemBuilder: (context, index) {
-                final chat = mockChats[index];
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  
-                  // Circular Profile Picture
-                  leading: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: primaryPink.withOpacity(0.3),
-                    child: Text(
-                      chat['name']![0],
-                      style: const TextStyle(color: primaryPink, fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                  ),
+            child: StreamBuilder<QuerySnapshot>(
+              // Update: Match the method name in your ChatService
+              stream: chatService.getConversationsStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: primaryPink));
+                }
 
-                  // User Name
-                  title: Text(
-                    chat['name']!,
-                    style: const TextStyle(
-                        color: textColor, fontWeight: FontWeight.w600),
-                  ),
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return _buildEmptyState();
+                }
 
-                  // Last Message Snippet
-                  subtitle: Text(
-                    chat['lastMessage']!,
-                    style: TextStyle(color: textColor.withOpacity(0.6), fontSize: 14),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                return ListView.builder(
+                  itemCount: snapshot.data!.docs.length,
+                  itemBuilder: (context, index) {
+                    final doc = snapshot.data!.docs[index];
+                    final chatData = doc.data() as Map<String, dynamic>;
+                    
+                    final List participants = chatData['participants'] ?? [];
+                    final String otherUserId = participants.firstWhere(
+                      (id) => id != currentUserId, 
+                      orElse: () => ''
+                    );
 
-                  // Action Arrow/Icon
-                  trailing: Icon(Icons.keyboard_arrow_right, color: textColor.withOpacity(0.5)),
+                    // --- LIVE DATA: Fetch Profile for each list item ---
+                    return FutureBuilder<Map<String, dynamic>?>(
+                      future: chatService.getUserProfile(otherUserId),
+                      builder: (context, userSnapshot) {
+                        final userData = userSnapshot.data;
+                        final String displayName = userData?['name'] ?? 'User';
+                        final String? profilePic = userData?['profileImageUrl'];
 
-                  // 💡 Navigation to ChatRoomScreen
-                  onTap: () => context.go('/home/chat/${chat['chatId']}'),
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          leading: CircleAvatar(
+                            radius: 28,
+                            backgroundColor: primaryPink.withOpacity(0.1),
+                            backgroundImage: profilePic != null ? NetworkImage(profilePic) : null,
+                            child: profilePic == null 
+                                ? Text(displayName[0].toUpperCase(), style: const TextStyle(color: primaryPink)) 
+                                : null,
+                          ),
+                          title: Text(
+                            displayName,
+                            style: const TextStyle(color: textColor, fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            chatData['lastMessage'] ?? 'No messages yet',
+                            style: TextStyle(color: textColor.withOpacity(0.6), fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Text(
+                            // Update: Use your ChatService's improved formatter
+                            chatService.formatTimestamp(chatData['lastMessageTime']),
+                            style: TextStyle(color: textColor.withOpacity(0.4), fontSize: 12),
+                          ),
+                          onTap: () => context.go('/home/chat/${doc.id}'),
+                        );
+                      },
+                    );
+                  },
                 );
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ... (Keeping your helper widgets: _buildEmptyState, _buildStoriesSection, _buildStoryItem)
+  
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 64, color: textColor.withOpacity(0.2)),
+          const SizedBox(height: 16),
+          Text("No conversations yet", style: TextStyle(color: textColor.withOpacity(0.5))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoriesSection() {
+    return SizedBox(
+      height: 100,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        itemCount: 5,
+        itemBuilder: (context, index) => _buildStoryItem("User $index"),
+      ),
+    );
+  }
+
+  Widget _buildStoryItem(String name) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12.0),
+      child: Column(
+        children: [
+          CircleAvatar(radius: 30, backgroundColor: navBarColor, child: Text(name[0], style: const TextStyle(color: textColor))),
+          const SizedBox(height: 4),
+          Text(name, style: const TextStyle(color: textColor, fontSize: 12)),
         ],
       ),
     );
