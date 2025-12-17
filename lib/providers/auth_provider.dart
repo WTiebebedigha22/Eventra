@@ -208,14 +208,18 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // --- Forgot / Reset Password ---
-  Future<void> sendPasswordResetEmail(String email) async {
-    _isLoading = true; notifyListeners();
+  Future<void> forgotPassword(String email) async {
+    _isLoading = true; 
+    notifyListeners(); // Notify UI to show loading spinner
+    
     try {
       await _auth.sendPasswordResetEmail(email: email);
     } catch (e) {
-      rethrow;
+      // Rethrow so your UI catch block can show the error SnackBar
+      rethrow; 
     } finally {
-      _isLoading = false; notifyListeners();
+      _isLoading = false; 
+      notifyListeners(); // Notify UI to stop loading spinner
     }
   }
 }

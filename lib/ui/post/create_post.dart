@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/post_provider.dart';
+import '../../providers/auth_provider.dart'; // Import AuthProvider
 
 const Color primaryPink = Color(0xFFE91E63);
 const Color backgroundColor = Colors.black;
@@ -61,7 +62,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         eventDate: _eventDate,
         location: _location,
       );
-      if (mounted) context.pop();
+      if (mounted) context.go('/explore'); // Navigate back to the home branch
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
@@ -69,14 +70,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Access the AuthProvider
+    final authProvider = Provider.of<AuthProvider>(context);
+
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: _buildInstagramAppBar(),
       body: Column(
         children: [
-          _buildUserHeader(),
+          _buildUserHeader(authProvider), // Pass provider to header
           Expanded(child: _buildComposer()),
-          _buildBottomActions(),
+          
+          // Use SafeArea to ensure bottom bar is not flush against the screen edge
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12.0), 
+              child: _buildBottomActions(),
+            ),
+          ),
         ],
       ),
     );
@@ -89,9 +101,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       elevation: 0.5,
       leading: IconButton(
         icon: const Icon(Icons.close, color: textColor),
-        onPressed: () => context.pop(),
+        onPressed: () => context.go('/home_screen'), // Ensure it goes back to the home shell
       ),
-      title: const Text('New Post', style: TextStyle(fontWeight: FontWeight.w600)),
+      title: const Text('New Post', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+      centerTitle: true,
       actions: [
         TextButton(
           onPressed: _isPostButtonEnabled ? _submitPost : null,
@@ -99,23 +112,36 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: primaryPink),
                 )
-              : const Text('Share', style: TextStyle(color: primaryPink)),
+              : const Text('Share', 
+                  style: TextStyle(color: primaryPink, fontWeight: FontWeight.bold, fontSize: 16)),
         ),
       ],
     );
   }
 
-  // --- User Header (Instagram style) ---
-  Widget _buildUserHeader() {
+  // --- User Header (Shows logged-in user data) ---
+  Widget _buildUserHeader(AuthProvider auth) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
-        children: const [
-          CircleAvatar(radius: 20, backgroundColor: darkSurface),
-          SizedBox(width: 12),
-          Text('Current User', style: TextStyle(fontWeight: FontWeight.bold)),
+        children: [
+          CircleAvatar(
+            radius: 20, 
+            backgroundColor: darkSurface,
+            backgroundImage: auth.profilePhotoUrl != null 
+                ? NetworkImage(auth.profilePhotoUrl!) 
+                : null,
+            child: auth.profilePhotoUrl == null 
+                ? const Icon(Icons.person, color: hintColor) 
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            auth.currentUserFullName.isEmpty ? 'Loading...' : auth.currentUserFullName, 
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: textColor)
+          ),
         ],
       ),
     );
@@ -140,7 +166,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ),
           const SizedBox(height: 12),
 
-          // --- Media Preview (Instagram-first) ---
           if (_selectedMedia != null)
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
@@ -164,7 +189,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
           const SizedBox(height: 16),
 
-          // --- Jiji-style Info Chips ---
           Wrap(
             spacing: 8,
             children: [
@@ -182,25 +206,28 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _infoChip(IconData icon, String label) {
     return Chip(
       backgroundColor: darkSurface,
+      side: BorderSide.none,
       avatar: Icon(icon, size: 16, color: primaryPink),
-      label: Text(label, style: const TextStyle(color: textColor)),
+      label: Text(label, style: const TextStyle(color: textColor, fontSize: 12)),
     );
   }
 
-  // --- Bottom Action Bar (Jiji card feel) ---
+  // --- Bottom Action Bar (Improved Spacing) ---
   Widget _buildBottomActions() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: const BoxDecoration(
+      margin: const EdgeInsets.symmetric(horizontal: 16), // Gives it a floating look
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
         color: appBarColor,
-        border: Border(top: BorderSide(color: Colors.white12)),
+        borderRadius: BorderRadius.circular(16), // Jiji/Figma rounded style
+        border: Border.all(color: Colors.white10),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _action(Icons.photo, 'Media', _pickMedia),
-          _action(Icons.person_add, 'Tag', () => context.push(CreatePostScreen.tagPeopleRoute)),
-          _action(Icons.location_on, 'Location', () => setState(() => _location = 'Ventra Hub')),
+          _action(Icons.photo_library_outlined, 'Media', _pickMedia),
+          _action(Icons.person_add_outlined, 'Tag', () => context.push(CreatePostScreen.tagPeopleRoute)),
+          _action(Icons.location_on_outlined, 'Location', () => setState(() => _location = 'Ventra Hub')),
         ],
       ),
     );
@@ -213,8 +240,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: primaryPink),
-          const SizedBox(height: 4),
+          Icon(icon, color: primaryPink, size: 28),
+          const SizedBox(height: 6),
           Text(label, style: const TextStyle(fontSize: 11, color: hintColor)),
         ],
       ),
