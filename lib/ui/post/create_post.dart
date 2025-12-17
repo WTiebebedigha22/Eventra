@@ -3,15 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:ventra/ui/post/location_picker.dart';
 import '../../providers/post_provider.dart';
-import '../../providers/auth_provider.dart'; // Import AuthProvider
-
-const Color primaryPink = Color(0xFFE91E63);
-const Color backgroundColor = Colors.black;
-const Color appBarColor = Color(0xFF181818);
-const Color textColor = Colors.white;
-const Color hintColor = Colors.white54;
-const Color darkSurface = Color(0xFF242424);
+import '../../providers/auth_provider.dart';
 
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
@@ -23,14 +17,22 @@ class CreatePostScreen extends StatefulWidget {
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final TextEditingController _contentController = TextEditingController();
+
   File? _selectedMedia;
-  String? _selectedFeeling;
-  DateTime? _eventDate;
   String? _location;
+  DateTime? _eventDate;
   bool _isPosting = false;
 
+  static const Color backgroundColor = Colors.black;
+  static const Color appBarColor = Color(0xFF0E0E0E);
+  static const Color darkSurface = Color(0xFF1C1C1E);
+  static const Color primaryPink = Color(0xFFE91E63);
+  static const Color textColor = Colors.white;
+  static const Color hintColor = Colors.white54;
+
   bool get _isPostButtonEnabled =>
-      (_contentController.text.isNotEmpty || _selectedMedia != null) && !_isPosting;
+      (_contentController.text.trim().isNotEmpty || _selectedMedia != null) &&
+      !_isPosting;
 
   @override
   void initState() {
@@ -46,8 +48,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _pickMedia() async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked != null) setState(() => _selectedMedia = File(picked.path));
+  }
+
+  // --- NEW: NAVIGATE TO LOCATION PICKER ---
+  Future<void> _pickLocation() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
+    );
+    if (result != null) {
+      setState(() => _location = result);
+    }
   }
 
   Future<void> _submitPost() async {
@@ -55,14 +68,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() => _isPosting = true);
 
     try {
-      final postProvider = Provider.of<PostProvider>(context, listen: false);
+      final postProvider = context.read<PostProvider>();
       await postProvider.createPost(
         content: _contentController.text.trim(),
         mediaFile: _selectedMedia,
         eventDate: _eventDate,
         location: _location,
       );
-      if (mounted) context.go('/explore'); // Navigate back to the home branch
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post shared!'), backgroundColor: Colors.green),
+      );
+      context.go('/home/explore');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
@@ -70,22 +91,34 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Access the AuthProvider
-    final authProvider = Provider.of<AuthProvider>(context);
+    final auth = context.watch<AuthProvider>();
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      appBar: _buildInstagramAppBar(),
+      appBar: AppBar(
+        backgroundColor: appBarColor,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: textColor),
+          onPressed: () => context.pop(),
+        ),
+        title: const Text('New Post', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+        actions: [
+          TextButton(
+            onPressed: _isPostButtonEnabled ? _submitPost : null,
+            child: _isPosting
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: primaryPink))
+                : Text('Share', style: TextStyle(color: _isPostButtonEnabled ? primaryPink : hintColor, fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          _buildUserHeader(authProvider), // Pass provider to header
+          _buildUserHeader(auth),
           Expanded(child: _buildComposer()),
-          
-          // Use SafeArea to ensure bottom bar is not flush against the screen edge
           SafeArea(
-            top: false,
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 12.0), 
+              padding: const EdgeInsets.symmetric(vertical: 12),
               child: _buildBottomActions(),
             ),
           ),
@@ -94,140 +127,114 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
   }
 
-  // --- Instagram-like AppBar ---
-  AppBar _buildInstagramAppBar() {
-    return AppBar(
-      backgroundColor: appBarColor,
-      elevation: 0.5,
-      leading: IconButton(
-        icon: const Icon(Icons.close, color: textColor),
-        onPressed: () => context.go('/home_screen'), // Ensure it goes back to the home shell
-      ),
-      title: const Text('New Post', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
-      centerTitle: true,
-      actions: [
-        TextButton(
-          onPressed: _isPostButtonEnabled ? _submitPost : null,
-          child: _isPosting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: primaryPink),
-                )
-              : const Text('Share', 
-                  style: TextStyle(color: primaryPink, fontWeight: FontWeight.bold, fontSize: 16)),
-        ),
-      ],
-    );
-  }
-
-  // --- User Header (Shows logged-in user data) ---
   Widget _buildUserHeader(AuthProvider auth) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           CircleAvatar(
-            radius: 20, 
+            radius: 20,
             backgroundColor: darkSurface,
-            backgroundImage: auth.profilePhotoUrl != null 
-                ? NetworkImage(auth.profilePhotoUrl!) 
-                : null,
-            child: auth.profilePhotoUrl == null 
-                ? const Icon(Icons.person, color: hintColor) 
-                : null,
+            backgroundImage: auth.profilePhotoUrl != null ? NetworkImage(auth.profilePhotoUrl!) : null,
+            child: auth.profilePhotoUrl == null ? const Icon(Icons.person, color: hintColor) : null,
           ),
           const SizedBox(width: 12),
-          Text(
-            auth.currentUserFullName.isEmpty ? 'Loading...' : auth.currentUserFullName, 
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: textColor)
-          ),
+          Text(auth.currentUserName, style: const TextStyle(fontWeight: FontWeight.bold, color: textColor)),
         ],
       ),
     );
   }
 
-  // --- Main Composer ---
   Widget _buildComposer() {
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _contentController,
-            maxLines: null,
-            style: const TextStyle(fontSize: 18, color: textColor),
-            decoration: const InputDecoration(
-              hintText: "What's on your mind?",
-              hintStyle: TextStyle(color: hintColor),
-              border: InputBorder.none,
-            ),
+      children: [
+        TextField(
+          controller: _contentController,
+          maxLines: null,
+          autofocus: true,
+          style: const TextStyle(fontSize: 18, color: textColor),
+          decoration: const InputDecoration(
+            hintText: "What's on your mind?",
+            hintStyle: TextStyle(color: hintColor),
+            border: InputBorder.none,
           ),
-          const SizedBox(height: 12),
-
-          if (_selectedMedia != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Stack(
+        ),
+        
+        // --- VISUAL LOCATION BADGE ---
+        if (_location != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: primaryPink.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.file(_selectedMedia!, width: double.infinity, height: 260, fit: BoxFit.cover),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: CircleAvatar(
-                      backgroundColor: Colors.black54,
-                      child: IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () => setState(() => _selectedMedia = null),
-                      ),
-                    ),
+                  const Icon(Icons.location_on, size: 14, color: primaryPink),
+                  const SizedBox(width: 4),
+                  Text(_location!, style: const TextStyle(color: primaryPink, fontSize: 13, fontWeight: FontWeight.w500)),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: () => setState(() => _location = null),
+                    child: const Icon(Icons.cancel, size: 16, color: primaryPink),
                   ),
                 ],
               ),
             ),
-
-          const SizedBox(height: 16),
-
-          Wrap(
-            spacing: 8,
-            children: [
-              if (_selectedFeeling != null) _infoChip(Icons.mood, _selectedFeeling!),
-              if (_location != null) _infoChip(Icons.location_on, _location!),
-              if (_eventDate != null)
-                _infoChip(Icons.event, _eventDate!.toLocal().toString().split(' ')[0]),
-            ],
           ),
-        ],
-      ),
+
+        if (_selectedMedia != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              children: [
+                Image.file(_selectedMedia!, width: double.infinity, fit: BoxFit.fitWidth),
+                Positioned(
+                  top: 10, right: 10,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedMedia = null),
+                    child: const CircleAvatar(
+                      backgroundColor: Colors.black54,
+                      radius: 15,
+                      child: Icon(Icons.close, size: 16, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
-  Widget _infoChip(IconData icon, String label) {
-    return Chip(
-      backgroundColor: darkSurface,
-      side: BorderSide.none,
-      avatar: Icon(icon, size: 16, color: primaryPink),
-      label: Text(label, style: const TextStyle(color: textColor, fontSize: 12)),
-    );
-  }
-
-  // --- Bottom Action Bar (Improved Spacing) ---
   Widget _buildBottomActions() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16), // Gives it a floating look
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
         color: appBarColor,
-        borderRadius: BorderRadius.circular(16), // Jiji/Figma rounded style
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white10),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _action(Icons.photo_library_outlined, 'Media', _pickMedia),
-          _action(Icons.person_add_outlined, 'Tag', () => context.push(CreatePostScreen.tagPeopleRoute)),
-          _action(Icons.location_on_outlined, 'Location', () => setState(() => _location = 'Ventra Hub')),
+          _action(Icons.image_outlined, 'Media', _pickMedia),
+          _action(Icons.location_on_outlined, 'Location', _pickLocation), // Linked to picker
+          _action(Icons.event_note_outlined, 'Event', () async {
+            final date = await showDatePicker(
+              context: context,
+              initialDate: DateTime.now(),
+              firstDate: DateTime.now(),
+              lastDate: DateTime.now().add(const Duration(days: 365)),
+            );
+            if (date != null) setState(() => _eventDate = date);
+          }),
         ],
       ),
     );
@@ -236,14 +243,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _action(IconData icon, String label, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: primaryPink, size: 28),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 11, color: hintColor)),
-        ],
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Column(
+          children: [
+            Icon(icon, color: primaryPink),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(color: hintColor, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }

@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart' as path_provider;
 import '../models/posts/post.dart';
 
 class PostProvider extends ChangeNotifier {
@@ -10,13 +12,24 @@ class PostProvider extends ChangeNotifier {
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // --- Notification Engine ---
+  // --- State for Pagination ---
+  final List<Post> _posts = [];
+  List<Post> get posts => _posts;
   
-  /// Internal helper to write a notification to Firestore
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
+  
+  bool _hasMore = true;
+  bool get hasMore => _hasMore;
+  
+  DocumentSnapshot? _lastDocument;
+  final int _pageSize = 10;
+
+  // --- Notification Engine ---
   Future<void> _sendNotification({
     required String receiverId,
     required String senderName,
-    required String type, // 'like', 'comment', 'booking'
+    required String type,
     required String message,
   }) async {
     try {
@@ -29,24 +42,54 @@ class PostProvider extends ChangeNotifier {
         'senderId': _auth.currentUser?.uid,
       });
     } catch (e) {
-      debugPrint('Notification failed to send: $e');
+      debugPrint('Notification error: $e');
     }
   }
 
-  // --- Feed Stream ---
-  Stream<List<Post>> get postsStream {
-    return _firestore
-        .collection('posts')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
-    });
+  // --- Standardized Feed Logic (Pagination) ---
+  
+  /// Fetches the first page or next page of posts
+  Future<void> fetchPosts({bool isRefresh = false}) async {
+    if (_isLoading || (!_hasMore && !isRefresh)) return;
+
+    _isLoading = true;
+    if (isRefresh) {
+      _lastDocument = null;
+      _hasMore = true;
+    }
+    notifyListeners();
+
+    try {
+      Query query = _firestore
+          .collection('posts')
+          .orderBy('timestamp', descending: true)
+          .limit(_pageSize);
+
+      if (_lastDocument != null) {
+        query = query.startAfterDocument(_lastDocument!);
+      }
+
+      final snapshot = await query.get();
+
+      if (isRefresh) _posts.clear();
+
+      if (snapshot.docs.length < _pageSize) {
+        _hasMore = false;
+      }
+
+      if (snapshot.docs.isNotEmpty) {
+        _lastDocument = snapshot.docs.last;
+        _posts.addAll(snapshot.docs.map((doc) => Post.fromFirestore(doc as DocumentSnapshot<Map<String, dynamic>>)).toList());
+      }
+    } catch (e) {
+      debugPrint('Error fetching posts: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   // --- Interaction Logic ---
-
-  /// Toggles like status and triggers notification
   Future<void> toggleLike(String postId, List<String> currentLikes, String postAuthorId, String senderName) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
@@ -56,17 +99,9 @@ class PostProvider extends ChangeNotifier {
 
     try {
       if (isLiked) {
-        // Unlike
-        await postRef.update({
-          'likes': FieldValue.arrayRemove([uid])
-        });
+        await postRef.update({'likes': FieldValue.arrayRemove([uid])});
       } else {
-        // Like
-        await postRef.update({
-          'likes': FieldValue.arrayUnion([uid])
-        });
-
-        // Only send notification if liking someone else's post
+        await postRef.update({'likes': FieldValue.arrayUnion([uid])});
         if (uid != postAuthorId) {
           await _sendNotification(
             receiverId: postAuthorId,
@@ -76,12 +111,32 @@ class PostProvider extends ChangeNotifier {
           );
         }
       }
+      // Update local state to reflect UI change immediately
+      int index = _posts.indexWhere((p) => p.id == postId);
+      if (index != -1) {
+        isLiked ? _posts[index].likes.remove(uid) : _posts[index].likes.add(uid);
+        notifyListeners();
+      }
     } catch (e) {
-      debugPrint('Error toggling like: $e');
+      debugPrint('Like error: $e');
     }
   }
 
-  // --- Post Creation Logic ---
+  // --- Image Compression ---
+  Future<File?> _compressImage(File file) async {
+    final dir = await path_provider.getTemporaryDirectory();
+    final targetPath = "${dir.absolute.path}/temp_${DateTime.now().millisecondsSinceEpoch}.jpg";
+
+    final result = await FlutterImageCompress.compressAndGetFile(
+      file.absolute.path,
+      targetPath,
+      quality: 70, // Reduces size significantly without visible quality loss
+    );
+
+    return result != null ? File(result.path) : null;
+  }
+
+  // --- Post Creation ---
   Future<void> createPost({
     required String content,
     File? mediaFile,
@@ -91,14 +146,16 @@ class PostProvider extends ChangeNotifier {
     final user = _auth.currentUser;
     if (user == null) throw Exception("User not logged in.");
 
-    String? mediaUrl;
-
     try {
+      String? mediaUrl;
       if (mediaFile != null) {
-        final storageRef = _storage.ref().child('posts/${user.uid}/${DateTime.now().millisecondsSinceEpoch}');
-        final uploadTask = storageRef.putFile(mediaFile);
-        final snapshot = await uploadTask.whenComplete(() {});
-        mediaUrl = await snapshot.ref.getDownloadURL();
+        // Apply compression
+        File? compressedFile = await _compressImage(mediaFile);
+        if (compressedFile != null) {
+          final storageRef = _storage.ref().child('posts/${user.uid}/${DateTime.now().millisecondsSinceEpoch}');
+          final uploadTask = await storageRef.putFile(compressedFile);
+          mediaUrl = await uploadTask.ref.getDownloadURL();
+        }
       }
 
       final postData = Post(
@@ -112,9 +169,10 @@ class PostProvider extends ChangeNotifier {
       ).toFirestore();
 
       await _firestore.collection('posts').add(postData);
+      await fetchPosts(isRefresh: true); // Reload feed to show new post
     } catch (e) {
-      debugPrint('Error creating post: $e');
-      throw Exception('Failed to create post. Please try again.');
+      debugPrint('Create post error: $e');
+      throw Exception('Failed to create post.');
     }
   }
 }

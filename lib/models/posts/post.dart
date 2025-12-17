@@ -10,7 +10,9 @@ class Post {
   final int commentCount;
   
   final DateTime? eventDate;
-  final String? location; 
+  final String? location;
+
+  var likes; 
 
   Post({
     required this.id,

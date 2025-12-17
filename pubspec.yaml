@@ -48,6 +48,12 @@ dependencies:
   intl: ^0.20.2
   firebase_ui_database: ^2.0.1
   onesignal_flutter: ^5.3.4
+  path_provider: ^2.1.5
+  flutter_image_compress: ^2.4.0
+  flutter_launcher_icons: ^0.14.4
+  cached_network_image: ^3.4.1
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
 
 dev_dependencies:
   flutter_test:
@@ -59,7 +65,6 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
-  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
