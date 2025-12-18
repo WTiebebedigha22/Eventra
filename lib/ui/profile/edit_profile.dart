@@ -14,43 +14,34 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  // Define your color scheme (consistent)
   static const Color primaryPink = Color(0xFFE91E63);
   static const Color backgroundColor = Colors.black;
   static const Color appBarColor = Color(0xFF181818); 
   static const Color inputFillColor = Color(0xFF121212); 
   static const Color textColor = Colors.white;
 
-  // --- 💡 UPDATED CONTROLLERS ---
   final _usernameController = TextEditingController();
-  final _firstNameController = TextEditingController(); // NEW
-  final _lastNameController = TextEditingController(); // NEW
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _bioController = TextEditingController();
-  
-  // State for Date of Birth
-  DateTime? _selectedDateOfBirth; // NEW: Holds the actual DateTime object
 
-  // 💡 Real Image Picker instance
+  DateTime? _selectedDateOfBirth;
   final ImagePicker _picker = ImagePicker();
-  
+
   @override
   void initState() {
     super.initState();
-    // Use `WidgetsBinding.instance.addPostFrameCallback` to access Provider safely
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      
+
       // Load existing data
-      _usernameController.text = auth.currentUserName; 
-      _firstNameController.text = auth.currentUserFirstName; // ASSUME: Provider has this field
-      _lastNameController.text = auth.currentUserLastName;  // ASSUME: Provider has this field
+      _usernameController.text = auth.currentUserFullName;
+      _firstNameController.text = auth.currentUserFirstName;
+      _lastNameController.text = auth.currentUserLastName;
       _bioController.text = auth.currentBio;
-          
-      // Load DOB
-      _selectedDateOfBirth = auth.currentUserDOB; // ASSUME: Provider has this field as DateTime?
-      
-      // Force UI update if DOB was loaded
-      setState(() {}); 
+      _selectedDateOfBirth = auth.currentUserDOB;
+
+      setState(() {});
     });
   }
 
@@ -63,11 +54,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
-  // --- Photo Upload Logic (Unchanged) ---
   Future<void> _pickAndUploadImage(AuthProvider auth) async {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-      
+
       if (image != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -76,10 +66,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             duration: Duration(seconds: 2),
           ),
         );
-        
+
         final imageFile = File(image.path);
         await auth.uploadProfilePicture(imageFile);
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -101,12 +91,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
     }
   }
-  
-  // --- Date Picker Logic ---
+
   Future<void> _selectDateOfBirth(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDateOfBirth ?? DateTime(2000), // Default to a reasonable year
+      initialDate: _selectedDateOfBirth ?? DateTime(2000),
       firstDate: DateTime(1900),
       lastDate: DateTime.now(),
       builder: (context, child) {
@@ -126,6 +115,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         );
       },
     );
+
     if (picked != null && picked != _selectedDateOfBirth) {
       setState(() {
         _selectedDateOfBirth = picked;
@@ -133,16 +123,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  // --- Widget for custom input field (Unchanged) ---
   Widget _buildTextField(
-      TextEditingController controller, String labelText, {int maxLines = 1}) {
-    final isReadOnly = labelText.contains('Read-only');
-      
+      TextEditingController controller, String labelText, {
+        int maxLines = 1,
+        bool readOnly = false,
+        String? initialValue,
+      }) {
     return TextField(
-      controller: controller,
-      readOnly: isReadOnly, 
-      maxLines: maxLines, // Allow multiline for bio
-      style: TextStyle(color: isReadOnly ? textColor.withOpacity(0.5) : textColor),
+      controller: controller..text = initialValue ?? controller.text,
+      readOnly: readOnly,
+      maxLines: maxLines,
+      style: TextStyle(color: readOnly ? textColor.withOpacity(0.5) : textColor),
       cursorColor: primaryPink,
       decoration: InputDecoration(
         labelText: labelText,
@@ -162,26 +153,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  // --- Save Logic (UPDATED) ---
   Future<void> _saveProfile(BuildContext context, AuthProvider auth) async {
     try {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Saving profile...'),
-            backgroundColor: primaryPink,
-            duration: Duration(seconds: 1),
-          ),
+        const SnackBar(
+          content: Text('Saving profile...'),
+          backgroundColor: primaryPink,
+          duration: Duration(seconds: 1),
+        ),
       );
 
-      // 💡 UPDATED CALL WITH NEW FIELDS
       await auth.updateProfile(
-        username: _usernameController.text.trim(), 
-        firstName: _firstNameController.text.trim(), // NEW
-        lastName: _lastNameController.text.trim(),  // NEW
+        username: _usernameController.text.trim(),
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
         bio: _bioController.text.trim(),
-        dob: _selectedDateOfBirth,                // NEW
+        dob: _selectedDateOfBirth,
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -208,13 +197,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
     final email = auth.currentUserEmail ?? 'Unknown';
-    final initialLetter = auth.currentUserName.isNotEmpty ? auth.currentUserName[0].toUpperCase() : email[0].toUpperCase();
+    final initialLetter = auth.currentUserFullName.isNotEmpty
+        ? auth.currentUserFullName[0].toUpperCase()
+        : email[0].toUpperCase();
     final photoUrl = auth.profilePhotoUrl; 
 
-    // Format DOB for display
     final dobText = _selectedDateOfBirth == null 
-      ? 'Select Date of Birth' 
-      : DateFormat.yMMMd().format(_selectedDateOfBirth!);
+        ? 'Select Date of Birth' 
+        : DateFormat.yMMMd().format(_selectedDateOfBirth!);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -231,9 +221,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: auth.isLoading 
-                ? null 
-                : () => _saveProfile(context, auth),
+            onPressed: auth.isLoading ? null : () => _saveProfile(context, auth),
             child: Text(
               'Save',
               style: TextStyle(
@@ -250,7 +238,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- 1. Avatar Editing Area (Unchanged) ---
             Center(
               child: Stack(
                 children: [
@@ -263,9 +250,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         : null,
                     child: photoUrl == null || photoUrl.isEmpty
                         ? Text(
-                        initialLetter,
-                        style: const TextStyle(color: primaryPink, fontSize: 40),
-                      )
+                            initialLetter,
+                            style: const TextStyle(color: primaryPink, fontSize: 40),
+                          )
                         : null,
                   ),
                   Positioned(
@@ -290,7 +277,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ],
               ),
             ),
-            
             const SizedBox(height: 10),
             Center(
               child: TextButton(
@@ -299,25 +285,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   'Change Profile Photo',
                   style: TextStyle(
                     color: auth.isLoading ? primaryPink.withOpacity(0.5) : primaryPink, 
-                    fontSize: 16
+                    fontSize: 16,
                   ),
                 ),
               ),
             ),
-            
             const SizedBox(height: 30),
 
-            // --- 2. Editable Fields (UPDATED) ---
-            
-            // Email (Read-only)
-            _buildTextField(TextEditingController(text: email), 'Email (Read-only)'),
+            // Email read-only
+            _buildTextField(_usernameController, 'Email (Read-only)',
+                readOnly: true, initialValue: email),
             const SizedBox(height: 20),
-            
+
             // Username
             _buildTextField(_usernameController, 'Username'),
             const SizedBox(height: 20),
 
-            // First Name and Last Name (Side-by-Side)
             Row(
               children: [
                 Expanded(
@@ -330,8 +313,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            
-            // Date of Birth Picker Field
+
             GestureDetector(
               onTap: auth.isLoading ? null : () => _selectDateOfBirth(context),
               child: Container(
@@ -341,8 +323,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: primaryPink.withOpacity(0.5), 
-                    width: 
-                        (_selectedDateOfBirth != null) ? 2.0 : 0.0,
+                    width: (_selectedDateOfBirth != null) ? 2.0 : 0.0,
                   ),
                 ),
                 child: Row(
@@ -351,10 +332,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(width: 10),
                     Text(
                       dobText,
-                      style: TextStyle(
-                        color: textColor.withOpacity(0.8),
-                        fontSize: 16,
-                      ),
+                      style: TextStyle(color: textColor.withOpacity(0.8), fontSize: 16),
                     ),
                   ],
                 ),
@@ -362,27 +340,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Bio (Changed to multiline)
-            _buildTextField(_bioController, 'Bio', maxLines: 4), // 💡 Set maxLines
+            _buildTextField(_bioController, 'Bio', maxLines: 4),
             const SizedBox(height: 30),
-            
-            // Optional: Link to Change Password Screen (Unchanged)
+
             TextButton(
               onPressed: auth.isLoading ? null : () {
                 context.push('/settings/security'); 
               },
               child: Text(
                 'Change Password',
-                style: TextStyle(
-                  color: textColor.withOpacity(0.7)
-                ),
+                style: TextStyle(color: textColor.withOpacity(0.7)),
               ),
             ),
-            
           ],
         ),
       ),
     );
   }
 }
-

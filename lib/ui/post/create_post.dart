@@ -128,22 +128,36 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Widget _buildUserHeader(AuthProvider auth) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: darkSurface,
-            backgroundImage: auth.profilePhotoUrl != null ? NetworkImage(auth.profilePhotoUrl!) : null,
-            child: auth.profilePhotoUrl == null ? const Icon(Icons.person, color: hintColor) : null,
+  final String displayName = auth.fullName.isNotEmpty ? auth.fullName : 'Guest';
+  final String? photoUrl = auth.photoURL ?? auth.profilePhotoUrl;
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: darkSurface,
+          backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
+          child: photoUrl == null
+              ? const Icon(Icons.person, color: hintColor)
+              : null,
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            displayName,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: textColor,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          const SizedBox(width: 12),
-          Text(auth.currentUserName, style: const TextStyle(fontWeight: FontWeight.bold, color: textColor)),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildComposer() {
     return ListView(

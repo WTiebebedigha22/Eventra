@@ -1,28 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:ventra/ui/profile/edit_profile.dart'; 
+import 'package:ventra/ui/profile/edit_profile.dart';
 import 'package:ventra/ui/profile/profile_settings.dart';
 import '../../providers/auth_provider.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart'; // Required for date formatting
+import 'package:intl/intl.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  // Define your color scheme (consistent with other screens)
   static const Color primaryPink = Color(0xFFE91E63);
   static const Color secondaryPurple = Color(0xFF9C27B0);
   static const Color backgroundColor = Colors.black;
-  static const Color appBarColor = Color(
-    0xFF181818,
-  ); // Darker shade for App/Tab bars
+  static const Color appBarColor = Color(0xFF181818);
   static const Color textColor = Colors.white;
 
-  // --- Widget for a single Profile Statistic ---
   Widget _buildStatColumn(String label, String value) {
     return Column(
       mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
           value,
@@ -40,38 +35,35 @@ class ProfileScreen extends StatelessWidget {
       ],
     );
   }
-  // ---------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    
-    final userName = auth.currentUserName; 
+
+    final userName = auth.currentUserFullName;
     final fullName = auth.currentUserFullName;
     final bio = auth.currentBio;
-    final photoUrl = auth.profilePhotoUrl;
-    final createdAt = auth.currentUserCreatedAt; // 💡 NEW: Get creation date
-    
+    final photoUrl = auth.photoURL;
+    final createdAt = auth.createdAt;
+
     final email = auth.currentUserEmail ?? 'Unknown';
+    final initialLetter = userName.isNotEmpty
+        ? userName[0].toUpperCase()
+        : (email.isNotEmpty ? email[0].toUpperCase() : 'G');
 
-    final initialLetter = userName.isNotEmpty 
-      ? userName[0].toUpperCase() 
-      : (email.isNotEmpty ? email[0].toUpperCase() : 'G');
-
-    // 💡 Format Creation Date for display: MMM/YYYY
-    final formattedJoinedDate = createdAt != null 
+    final formattedJoinedDate = createdAt != null
         ? DateFormat('MMM/yyyy').format(createdAt)
         : null;
 
     return DefaultTabController(
-      length: 3, 
+      length: 3,
       child: Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
           backgroundColor: appBarColor,
           elevation: 0,
           title: Text(
-            userName, 
+            userName,
             style: const TextStyle(
               color: textColor,
               fontWeight: FontWeight.bold,
@@ -85,8 +77,7 @@ class ProfileScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const ProfileSettingsScreen(),
-                  ),
+                      builder: (context) => const ProfileSettingsScreen()),
                 );
               },
             ),
@@ -97,24 +88,18 @@ class ProfileScreen extends StatelessWidget {
             return [
               SliverList(
                 delegate: SliverChildListDelegate([
-                  // --- 1. Profile Header ---
                   Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Avatar and Stats Row
                         Row(
                           children: [
-                            // Large Profile Avatar 
                             Container(
                               padding: const EdgeInsets.all(3),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: primaryPink,
-                                  width: 2,
-                                ),
+                                border: Border.all(color: primaryPink, width: 2),
                               ),
                               child: CircleAvatar(
                                 radius: 40,
@@ -133,8 +118,7 @@ class ProfileScreen extends StatelessWidget {
                                     : null,
                               ),
                             ),
-                            const Expanded(child: SizedBox()), // Spacer
-                            // Stats Columns
+                            const Expanded(child: SizedBox()),
                             _buildStatColumn('Events', '12'),
                             const SizedBox(width: 25),
                             _buildStatColumn('Followers', '1.2k'),
@@ -142,57 +126,44 @@ class ProfileScreen extends StatelessWidget {
                             _buildStatColumn('Following', '80'),
                           ],
                         ),
-
                         const SizedBox(height: 12),
-
-                        // Full Name
                         Text(
-                          fullName, 
+                          fullName,
                           style: const TextStyle(
                             color: textColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        
-                        // Username/Handle
                         Text(
-                          '@$userName', 
+                          '@$userName',
                           style: TextStyle(
-                              color: textColor.withOpacity(0.6),
-                              fontSize: 12,
+                            color: textColor.withOpacity(0.6),
+                            fontSize: 12,
                           ),
                         ),
-                        
                         const SizedBox(height: 4),
-
-                        // Bio
                         Text(
-                          bio, 
+                          bio,
                           style: TextStyle(color: textColor.withOpacity(0.8)),
                         ),
-                        
-                        // 💡 REPLACED: Joined Date Display
                         if (formattedJoinedDate != null) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                                children: [
-                                    // Use an icon relevant to joining/time
-                                    const Icon(Icons.access_time, color: primaryPink, size: 16),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                        'Joined Eventra $formattedJoinedDate',
-                                        style: TextStyle(
-                                            color: textColor.withOpacity(0.6),
-                                            fontSize: 13,
-                                        ),
-                                    ),
-                                ],
-                            ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(Icons.access_time,
+                                  color: primaryPink, size: 16),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Joined Eventra $formattedJoinedDate',
+                                style: TextStyle(
+                                  color: textColor.withOpacity(0.6),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
-
                         const SizedBox(height: 16),
-
-                        // Edit Profile / Logout Button
                         Row(
                           children: [
                             Expanded(
@@ -211,9 +182,8 @@ class ProfileScreen extends StatelessWidget {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) =>
-                                          const EditProfileScreen(),
-                                    ),
+                                        builder: (context) =>
+                                            const EditProfileScreen()),
                                   );
                                 },
                                 child: const Text('Edit Profile'),
@@ -225,8 +195,7 @@ class ProfileScreen extends StatelessWidget {
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: primaryPink,
-                                  foregroundColor:
-                                      Colors.black, // Black text on pink button
+                                  foregroundColor: Colors.black,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 10,
                                   ),
@@ -245,11 +214,10 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ]),
               ),
-              // --- 2. Tab Bar (Sliver Persistent Header) ---
               SliverPersistentHeader(
                 delegate: _SliverAppBarDelegate(
                   TabBar(
-                    indicatorColor: primaryPink, 
+                    indicatorColor: primaryPink,
                     labelColor: textColor,
                     unselectedLabelColor: textColor.withOpacity(0.6),
                     tabs: const [
@@ -258,13 +226,12 @@ class ProfileScreen extends StatelessWidget {
                       Tab(icon: Icon(Icons.check_circle_outline)),
                     ],
                   ),
-                  appBarColor, 
+                  appBarColor,
                 ),
                 pinned: true,
               ),
             ];
           },
-          // --- 3. Tab Content ---
           body: TabBarView(
             children: [
               _buildContentGrid('Events', primaryPink),
@@ -278,7 +245,6 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-// Helper Widget for TabBarView Content (Simulating a Photo Grid)
 Widget _buildContentGrid(String type, Color color) {
   return GridView.builder(
     padding: EdgeInsets.zero,
@@ -287,21 +253,21 @@ Widget _buildContentGrid(String type, Color color) {
       crossAxisSpacing: 1.5,
       mainAxisSpacing: 1.5,
     ),
-    itemCount: 9, // Example items
+    itemCount: 9,
     itemBuilder: (context, index) {
       return Container(
         color: color.withOpacity(0.3),
         alignment: Alignment.center,
         child: Text(
           '$type ${index + 1}',
-          style: const TextStyle(color: Colors.white12, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+              color: Colors.white12, fontWeight: FontWeight.bold),
         ),
       );
     },
   );
 }
 
-// Custom Delegate to make the TabBar sticky (SliverPersistentHeader)
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar, this._backgroundColor);
 
@@ -314,16 +280,10 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(color: _backgroundColor, child: _tabBar);
   }
 
   @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return false;
-  }
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
 }

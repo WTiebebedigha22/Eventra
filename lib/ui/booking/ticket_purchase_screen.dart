@@ -107,7 +107,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                 child: Image.network(
                   widget.event['imageUrl'], 
                   width: 80, height: 80, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(color: Colors.grey, width: 80, height: 80),
+                  errorBuilder: (_, _, __) => Container(color: Colors.grey, width: 80, height: 80),
                 ),
               ),
               const SizedBox(width: 15),

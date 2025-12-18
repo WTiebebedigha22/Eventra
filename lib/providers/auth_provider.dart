@@ -1,225 +1,248 @@
-import 'dart:io'; 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; 
-import 'package:firebase_storage/firebase_storage.dart'; 
-import 'package:flutter/foundation.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
-  
+
+  // -----------------------------
+  // STATE
+  // -----------------------------
   bool _isLoading = false;
-  
-  bool _hasSeenOnboarding = false; 
+  bool _isInitializing = true;
+  bool _hasSeenOnboarding = false;
+
   static const String _onboardingKey = 'hasSeenOnboarding';
 
-  // --- Profile State ---
-  String? _currentUserFirstName; 
-  String? _currentUserLastName;  
-  DateTime? _currentUserDOB;     
-  String? _currentBio;
-  DateTime? _currentUserCreatedAt; 
+  // Profile data
+  String? _firstName;
+  String? _lastName;
+  String? _bio;
+  DateTime? _dob;
+  DateTime? _createdAt;
 
-  // --- Getters ---
-  Stream<User?> get authStateChangesStream => _auth.authStateChanges();
-  bool get isLoggedIn => _auth.currentUser != null;
-  String? get currentUserEmail => _auth.currentUser?.email;
+  String? profilePhotoUrl; // stores uploaded photo URL
+
+  // -----------------------------
+  // GETTERS
+  // -----------------------------
   bool get isLoading => _isLoading;
+  bool get isInitializing => _isInitializing;
+  bool get isLoggedIn => _auth.currentUser != null;
   bool get hasSeenOnboarding => _hasSeenOnboarding;
 
-  String get currentUserName => _auth.currentUser?.displayName ?? 'Guest';
-  String? get profilePhotoUrl => _auth.currentUser?.photoURL;
+  User? get currentUser => _auth.currentUser;
 
-  String get currentUserFullName {
-    if (_currentUserFirstName != null && _currentUserLastName != null) {
-      return '${_currentUserFirstName!} ${_currentUserLastName!}';
+  String get displayName => _auth.currentUser?.displayName ?? 'Guest';
+  String? get photoURL => _auth.currentUser?.photoURL ?? profilePhotoUrl;
+
+  String get fullName {
+    if (_firstName != null && _lastName != null) {
+      return '$_firstName $_lastName';
     }
-    if (_currentUserFirstName != null) return _currentUserFirstName!;
-    return 'Update your Full Name';
+    return _firstName ?? _auth.currentUser?.displayName ?? 'Guest';
   }
 
-  String get currentUserFirstName => _currentUserFirstName ?? ''; 
-  String get currentUserLastName => _currentUserLastName ?? ''; 
-  DateTime? get currentUserDOB => _currentUserDOB; 
-  DateTime? get currentUserCreatedAt => _currentUserCreatedAt; 
-  String get currentBio => _currentBio ?? 'No bio yet.';
+  String get bio => _bio ?? 'No bio yet.';
+  String get currentUserFullName => fullName;
+  String get currentUserFirstName => _firstName ?? '';
+  String get currentUserLastName => _lastName ?? '';
+  String get currentBio => _bio ?? '';
+  DateTime? get currentUserDOB => _dob;
+  String? get currentUserEmail => _auth.currentUser?.email;
+  DateTime? get createdAt => _createdAt;
 
-  // --- Initialization ---
+  // -----------------------------
+  // INITIALIZATION
+  // -----------------------------
   Future<void> initialize() async {
+    _isInitializing = true;
+    notifyListeners();
+
     final prefs = await SharedPreferences.getInstance();
     _hasSeenOnboarding = prefs.getBool(_onboardingKey) ?? false;
-    
+
     _auth.authStateChanges().listen((user) {
       if (user != null) {
-        _fetchUserData(user.uid); 
+        _loadUserProfile(user.uid);
       } else {
-        _clearProfileData();
+        _clearProfile();
       }
-      notifyListeners(); 
+      notifyListeners();
     });
-    
+
+    _isInitializing = false;
     notifyListeners();
   }
 
-  Future<void> _fetchUserData(String uid) async {
+  // -----------------------------
+  // PROFILE LOAD
+  // -----------------------------
+  Future<void> _loadUserProfile(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
-      if (doc.exists) {
-        final data = doc.data()!;
-        _currentUserFirstName = data['firstName'] as String?; 
-        _currentUserLastName = data['lastName'] as String?;  
-        _currentBio = data['bio'] as String?;
-        
-        final dobTimestamp = data['dob'] as Timestamp?;
-        _currentUserDOB = dobTimestamp?.toDate();           
+      if (!doc.exists) return;
 
-        final createdAtTimestamp = data['createdAt'] as Timestamp?;
-        _currentUserCreatedAt = createdAtTimestamp?.toDate();
-      }
+      final data = doc.data()!;
+      _firstName = data['firstName'];
+      _lastName = data['lastName'];
+      _bio = data['bio'];
+      _dob = (data['dob'] as Timestamp?)?.toDate();
+      _createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+      profilePhotoUrl = _auth.currentUser?.photoURL;
     } catch (e) {
-      debugPrint('Error fetching user data: $e');
-    } finally {
-      notifyListeners();
+      debugPrint('Profile load error: $e');
     }
-  }
-
-  void _clearProfileData() {
-    _currentUserFirstName = null; 
-    _currentUserLastName = null;  
-    _currentUserDOB = null;        
-    _currentBio = null;
-    _currentUserCreatedAt = null; 
     notifyListeners();
   }
 
+  void _clearProfile() {
+    _firstName = null;
+    _lastName = null;
+    _bio = null;
+    _dob = null;
+    _createdAt = null;
+    profilePhotoUrl = null;
+    notifyListeners();
+  }
+
+  // -----------------------------
+  // ONBOARDING
+  // -----------------------------
   Future<void> completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
-    _hasSeenOnboarding = true;
     await prefs.setBool(_onboardingKey, true);
+    _hasSeenOnboarding = true;
     notifyListeners();
   }
 
-  // --- Authentication Methods ---
+  // -----------------------------
+  // AUTH
+  // -----------------------------
   Future<void> login(String email, String password) async {
-    _isLoading = true; notifyListeners();
-    try {
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-    } catch (e) {
-      rethrow;
-    } finally {
-      _isLoading = false; notifyListeners();
-    }
-  }
-
-  Future<void> signup(String email, String password) async {
-    _isLoading = true; notifyListeners();
-    try {
-      final userCredential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
-      final user = userCredential.user;
-      if (user != null) {
-        final defaultUsername = email.split('@')[0];
-        final creationDate = DateTime.now();
-        
-        await user.updateDisplayName(defaultUsername);
-        await _firestore.collection('users').doc(user.uid).set({ 
-          'email': email,
-          'firstName': defaultUsername, 
-          'lastName': '',              
-          'bio': '', 
-          'createdAt': FieldValue.serverTimestamp(),
-          'dob': null,                 
-        });
-        
-        _currentUserFirstName = defaultUsername;
-        _currentUserLastName = '';
-        _currentUserDOB = null;
-        _currentBio = '';
-        _currentUserCreatedAt = creationDate; 
-      }
-    } catch (e) {
-      rethrow;
-    } finally {
-      _isLoading = false; notifyListeners();
-    }
-  }
-
-  Future<void> logout() async {
-    await _auth.signOut();
-    _clearProfileData();
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  // --- Profile Update ---
-  Future<void> updateProfile({
-    required String username, 
-    required String firstName,  
-    required String lastName,   
-    required String bio,
-    DateTime? dob,              
-  }) async {
-    _isLoading = true; notifyListeners();
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        await user.updateDisplayName(username);
-        await _firestore.collection('users').doc(user.uid).update({ 
-          'firstName': firstName, 
-          'lastName': lastName, 
-          'bio': bio, 
-          'dob': dob != null ? Timestamp.fromDate(dob) : null, 
-          'updatedAt': FieldValue.serverTimestamp()
-        });
-        
-        _currentUserFirstName = firstName;
-        _currentUserLastName = lastName;
-        _currentBio = bio;
-        _currentUserDOB = dob;
-      }
-    } catch (e) {
-      rethrow;
-    } finally {
-      _isLoading = false; 
-      notifyListeners(); 
-    }
-  }
-
-  // --- Upload Profile Picture ---
-  Future<void> uploadProfilePicture(File imageFile) async {
     _isLoading = true;
     notifyListeners();
     try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        final storageRef = _storage.ref().child('profile_pictures/${user.uid}.jpg');
-        await storageRef.putFile(imageFile);
-        final photoUrl = await storageRef.getDownloadURL();
-        await user.updatePhotoURL(photoUrl);
-      }
-    } catch (e) {
-      rethrow;
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // --- Forgot / Reset Password ---
+  Future<void> signup(String email, String password) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final cred = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final user = cred.user;
+      if (user == null) return;
+
+      final username = email.split('@')[0];
+      await user.updateDisplayName(username);
+
+      await _firestore.collection('users').doc(user.uid).set({
+        'email': email,
+        'firstName': username,
+        'lastName': '',
+        'bio': '',
+        'dob': null,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      _firstName = username;
+      _lastName = '';
+      _bio = '';
+      profilePhotoUrl = user.photoURL;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> logout() async {
+    await _auth.signOut();
+    _clearProfile();
+  }
+
+  // -----------------------------
+  // PROFILE UPDATE
+  // -----------------------------
+  Future<void> updateProfile({
+    required String username,
+    required String firstName,
+    required String lastName,
+    required String bio,
+    DateTime? dob,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      await user.updateDisplayName(username);
+
+      await _firestore.collection('users').doc(user.uid).update({
+        'firstName': firstName,
+        'lastName': lastName,
+        'bio': bio,
+        'dob': dob != null ? Timestamp.fromDate(dob) : null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      _firstName = firstName;
+      _lastName = lastName;
+      _bio = bio;
+      _dob = dob;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // -----------------------------
+  // PROFILE PHOTO
+  // -----------------------------
+  Future<void> uploadProfilePicture(File file) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      final ref = _storage.ref('profile_pictures/${user.uid}.jpg');
+      await ref.putFile(file);
+      final url = await ref.getDownloadURL();
+      await user.updatePhotoURL(url);
+
+      profilePhotoUrl = url;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // -----------------------------
+  // PASSWORD RESET
+  // -----------------------------
   Future<void> forgotPassword(String email) async {
-    _isLoading = true; 
-    notifyListeners(); // Notify UI to show loading spinner
-    
+    _isLoading = true;
+    notifyListeners();
     try {
       await _auth.sendPasswordResetEmail(email: email);
-    } catch (e) {
-      // Rethrow so your UI catch block can show the error SnackBar
-      rethrow; 
     } finally {
-      _isLoading = false; 
-      notifyListeners(); // Notify UI to stop loading spinner
+      _isLoading = false;
+      notifyListeners();
     }
   }
 }

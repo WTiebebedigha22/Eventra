@@ -1,15 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-
-// Your UI Imports
 import '../providers/auth_provider.dart';
+
+// UI imports
 import '../ui/splash/splash_screen.dart';
 import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
 import '../ui/auth/register_screen.dart';
 import '../ui/auth/forgot_password.dart';
-
 import '../ui/home/home_screen.dart';
 import '../ui/events/event_list_screen.dart';
 import '../ui/events/event_detail_screen.dart';
@@ -25,52 +22,70 @@ import '../ui/settings/notifications.dart';
 import '../ui/settings/privacy.dart';
 import '../ui/settings/security.dart';
 import '../ui/settings/theme.dart';
-
-// 💡 NEW IMPORTS for Post Creation and Tagging
-import '../ui/post/create_post.dart'; 
-import '../ui/post/tag_people.dart'; // ASSUME this file/widget exists
+import '../ui/post/create_post.dart';
+import '../ui/post/tag_people.dart';
 
 class AppRouter {
-  static GoRouter router(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-    
-    return GoRouter(
-      initialLocation: '/splash',
-      refreshListenable: auth, 
-      
-      routes: [
-        GoRoute(path: '/splash', builder: (c, state) => const SplashScreen()),
-        GoRoute(path: '/onboarding', builder: (c, state) => const OnboardingScreen()),
-        GoRoute(path: '/login', builder: (c, state) => const LoginScreen()),
-        GoRoute(path: '/register', builder: (c, state) => const RegisterScreen()),
+  late final GoRouter _router;
 
-        // --- NEW: Forgot Password Route ---
+  GoRouter router(AuthProvider auth) {
+    _router = GoRouter(
+      initialLocation: '/splash',
+      refreshListenable: auth,
+
+      redirect: (context, state) {
+        final loggedIn = auth.isLoggedIn;
+        final onboardingComplete = auth.hasSeenOnboarding;
+        final location = state.matchedLocation;
+
+        final isAuthRoute = location == '/login' ||
+            location == '/register' ||
+            location == '/forgot-password';
+
+        final isOnboarding = location == '/onboarding';
+
+        if (location == '/splash') return null;
+
+        if (!loggedIn) {
+          if (!onboardingComplete) return '/onboarding';
+          if (!isAuthRoute) return '/login';
+          return null;
+        }
+
+        if (loggedIn && (isAuthRoute || isOnboarding)) {
+          return '/home/explore';
+        }
+
+        return null;
+      },
+
+      routes: [
+        GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
+        GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
+        GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+        GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
         GoRoute(
           path: '/forgot-password',
-          builder: (c, state) => const ForgotPasswordScreen(),
+          builder: (_, _) => const ForgotPasswordScreen(),
         ),
 
-        // --- StatefulShellRoute for Main Tabs (Home Screen) ---
-        StatefulShellRoute.indexedStack( 
+        /// MAIN TABS
+        StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            return HomeScreen(
-              navigationShell: navigationShell,
-              child: navigationShell,
-            );
+            return HomeScreen(navigationShell: navigationShell, child: navigationShell);
           },
           branches: [
             StatefulShellBranch(
               routes: [
                 GoRoute(
-                  path: '/home/explore', 
-                  builder: (c, state) => const EventListScreen(),
+                  path: '/home/explore',
+                  builder: (_, _) => const EventListScreen(),
                   routes: [
                     GoRoute(
                       path: 'event/:id',
-                      builder: (c, state) {
-                        final id = state.pathParameters['id']!;
-                        return EventDetailScreen(eventId: id);
-                      }),
+                      builder: (_, state) =>
+                          EventDetailScreen(eventId: state.pathParameters['id']!),
+                    ),
                   ],
                 ),
               ],
@@ -78,15 +93,14 @@ class AppRouter {
             StatefulShellBranch(
               routes: [
                 GoRoute(
-                  path: '/home/chat', 
-                  builder: (c, state) => const ChatListScreen(),
+                  path: '/home/chat',
+                  builder: (_, _) => const ChatListScreen(),
                   routes: [
                     GoRoute(
                       path: 'chat/:chatId',
-                      builder: (c, state) {
-                        final chatId = state.pathParameters['chatId']!;
-                        return ChatRoomScreen(chatId: chatId);
-                      }),
+                      builder: (_, state) =>
+                          ChatRoomScreen(chatId: state.pathParameters['chatId']!),
+                    ),
                   ],
                 ),
               ],
@@ -95,11 +109,11 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/home/profile',
-                  builder: (c, state) => const ProfileScreen(),
+                  builder: (_, _) => const ProfileScreen(),
                   routes: [
                     GoRoute(
                       path: 'edit',
-                      builder: (c, state) => const EditProfileScreen(),
+                      builder: (_, _) => const EditProfileScreen(),
                     ),
                   ],
                 ),
@@ -108,58 +122,35 @@ class AppRouter {
           ],
         ),
 
-        // --- CREATE POST ROUTE ---
+        /// CREATE POST
         GoRoute(
           path: '/create-post',
-          builder: (c, state) => const CreatePostScreen(),
+          builder: (_, _) => const CreatePostScreen(),
           routes: [
             GoRoute(
               path: 'tag-people',
-              builder: (c, state) => const TagPeopleScreen(),
+              builder: (_, _) => const TagPeopleScreen(),
             ),
           ],
         ),
 
-        // --- SETTINGS ROUTES ---
+        /// SETTINGS
         GoRoute(
-          path: '/settings', 
-          builder: (c, state) => const ProfileSettingsScreen(),
+          path: '/settings',
+          builder: (_, _) => const ProfileSettingsScreen(),
           routes: [
-            GoRoute(path: 'security', builder: (c, state) => const SecurityScreen()),
-            GoRoute(path: 'activity', builder: (c, state) => const ActivityScreen()),
-            GoRoute(path: 'notifications', builder: (c, state) => const NotificationsScreen()),
-            GoRoute(path: 'theme', builder: (c, state) => const ThemeScreen()),
-            GoRoute(path: 'language', builder: (c, state) => const LanguageScreen()),
-            GoRoute(path: 'help', builder: (c, state) => const HelpScreen()),
-            GoRoute(path: 'privacy', builder: (c, state) => const PrivacyPolicyScreen()),
+            GoRoute(path: 'security', builder: (_, _) => const SecurityScreen()),
+            GoRoute(path: 'activity', builder: (_, _) => const ActivityScreen()),
+            GoRoute(path: 'notifications', builder: (_, _) => const NotificationsScreen()),
+            GoRoute(path: 'theme', builder: (_, _) => const ThemeScreen()),
+            GoRoute(path: 'language', builder: (_, _) => const LanguageScreen()),
+            GoRoute(path: 'help', builder: (_, _) => const HelpScreen()),
+            GoRoute(path: 'privacy', builder: (_, _) => const PrivacyPolicyScreen()),
           ],
         ),
       ],
-      
-      // --- REDIRECT LOGIC ---
-      redirect: (context, state) {
-        final authProv = Provider.of<AuthProvider>(context, listen: false);
-        final loggedIn = authProv.isLoggedIn;
-        final onboardingComplete = authProv.hasSeenOnboarding; 
-        final goingTo = state.matchedLocation; 
-        final isAuthOrOnboardingRoute = 
-            goingTo == '/login' || goingTo == '/register' || goingTo == '/onboarding' || goingTo == '/forgot-password';
-
-        if (goingTo == '/splash') return null;
-
-        if (!loggedIn) {
-            if (!isAuthOrOnboardingRoute) {
-                return onboardingComplete ? '/login' : '/onboarding'; 
-            }
-            return null;
-        }
-
-        if (isAuthOrOnboardingRoute) {
-            return '/home/explore'; 
-        }
-
-        return null;
-      },
     );
+
+    return _router;
   }
 }
