@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1001219178644",
+    "firebase_url": "https://ventra-da88e-default-rtdb.firebaseio.com",
+    "project_id": "ventra-da88e",
+    "storage_bucket": "ventra-da88e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1001219178644:android:2cdf8bf6645f0a356ab481",
+        "android_client_info": {
+          "package_name": "com.example.ventra"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1001219178644-gp9p57ct9kddot6higaijpbc0f58le9q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnNLHLI_IxiIN0wXHh4cvob0osfhbakNE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1001219178644-gp9p57ct9kddot6higaijpbc0f58le9q.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1001219178644-apo5v95fi3ah5table49krs9f3m97iiu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.ventra"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
