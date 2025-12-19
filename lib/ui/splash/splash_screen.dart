@@ -1,39 +1,51 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
+
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  // Define your color scheme (consistent with Login/Register screens)
+  // --- Styling Constants ---
   static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Colors.black;
+  static const Color backgroundColor = Color(0xFF0F0F0F); // Matching your Eventra theme
   static const Color textColor = Colors.white;
 
-  // --- Configuration for Asset Logo ---
-  static const String appLogoAssetPath = 'assets/icon.png';
-  static const double logoSize = 150.0; // Define a suitable size for your logo
+  // --- Configuration for Animated GIF ---
+  static const String appLogoGifPath = 'assets/logo/logo.gif'; 
+  static const double logoSize = 200.0;
 
   @override
   void initState() {
     super.initState();
-    // Navigate after a slightly longer delay to show the loading animation
-    Future.delayed(const Duration(milliseconds: 2500), () {
+    _startAppFlow();
+  }
+
+  void _startAppFlow() {
+    // 1. Duration should match the length of your GIF animation
+    Future.delayed(const Duration(milliseconds: 3000), () {
       if (!mounted) return;
-      
-      // IMPORTANT: Add your app startup logic here (e.g., check auth status)
-      // For now, we navigate to the onboarding screen.
-      // context.go(isAuthenticated ? '/home' : '/onboarding');
-      context.go('/onboarding');
+
+      // 2. Real-time Auth Check
+      final User? user = FirebaseAuth.instance.currentUser;
+
+      if (user != null) {
+        // User is logged in, sync them and go to Explore (Home)
+        context.go('/explore'); 
+      } else {
+        // First-time user or logged out
+        context.go('/onboarding');
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Determine the size for spacing and scaling
     final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
@@ -42,39 +54,37 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 1. The Main App Logo (Replaced Text with Image.asset)
+            // 1. The Animated GIF
             Image.asset(
-              appLogoAssetPath,
+              appLogoGifPath,
               width: logoSize,
               height: logoSize,
-              // If the asset is a simple graphic, you can use a color filter
-              // to match your theme (optional):
-              // color: textColor,
+              fit: BoxFit.contain,
             ),
 
-            // Optional: Keep the app name text below the logo
+            // 2. Branding Text
             const Padding(
-              padding: EdgeInsets.only(top: 16.0),
+              padding: EdgeInsets.only(top: 24.0),
               child: Text(
-                'Eventra',
+                'EVENTRA',
                 style: TextStyle(
-                  fontSize: 40,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
                   color: textColor,
-                  letterSpacing: 1.5,
+                  letterSpacing: 6.0, // Wider spacing for "Premium" look
                 ),
               ),
             ),
 
-            SizedBox(height: screenHeight * 0.15),
+            SizedBox(height: screenHeight * 0.1),
 
-            // 2. Linear Progress Indicator
+            // 3. Elegant Progress Bar
             SizedBox(
-              width: 150,
+              width: 120,
               child: LinearProgressIndicator(
-                backgroundColor: primaryPink.withOpacity(0.3),
+                backgroundColor: primaryPink.withOpacity(0.1),
                 valueColor: const AlwaysStoppedAnimation<Color>(primaryPink),
-                minHeight: 4.0,
+                minHeight: 2.0, // Thinner line looks more modern
               ),
             ),
           ],
