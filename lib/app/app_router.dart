@@ -1,7 +1,7 @@
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 
-// UI imports
+// UI imports (Kept as provided)
 import '../ui/splash/splash_screen.dart';
 import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
@@ -26,13 +26,14 @@ import '../ui/post/create_post.dart';
 import '../ui/post/tag_people.dart';
 
 class AppRouter {
-  late final GoRouter _router;
+  // FIX: Change 'late final' to a nullable private variable.
+  GoRouter? _router;
 
   GoRouter router(AuthProvider auth) {
-    _router = GoRouter(
+    // FIX: Use '??=' to only initialize the router if it hasn't been created yet.
+    _router ??= GoRouter(
       initialLocation: '/splash',
       refreshListenable: auth,
-
       redirect: (context, state) {
         final loggedIn = auth.isLoggedIn;
         final onboardingComplete = auth.hasSeenOnboarding;
@@ -58,7 +59,6 @@ class AppRouter {
 
         return null;
       },
-
       routes: [
         GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
         GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
@@ -151,6 +151,6 @@ class AppRouter {
       ],
     );
 
-    return _router;
+    return _router!;
   }
 }
