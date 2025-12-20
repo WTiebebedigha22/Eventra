@@ -49,19 +49,15 @@ flutter:
     - assets/onboarding/
     - assets/logo/
     - assets/icon.png
-    - assets/logo/logo.gif # Path for your Animated Splash
+    - assets/logo/logo.gif
 
-# --- Native Splash Configuration ---
-# Run this: flutter pub run flutter_native_splash:create
 flutter_native_splash:
-  color: "#0F0F0F" # Matches Eventra background
-  image: assets/icon.png # Static logo shown while Flutter boots
+  color: "#0F0F0F" 
+  image: assets/icon.png
   android_12:
     image: assets/icon.png
     color: "#0F0F0F"
 
-# --- App Icon Configuration ---
-# Run this: flutter pub run flutter_launcher_icons
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
