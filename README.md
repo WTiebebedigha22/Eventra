@@ -56,7 +56,7 @@ Installation and Setup
 
 Clone the repository:
 
-git clone [https://github.com/your-username/eventra.git](https://github.com/your-username/eventra.git)
+git clone [https://github.com/wtiebebedigha22/eventra.git](https://github.com/wtiebebedigha22/eventra.git)
 
 
 Navigate to the project directory:
