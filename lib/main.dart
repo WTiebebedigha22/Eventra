@@ -49,7 +49,6 @@ void main() async {
         ),
         ChangeNotifierProvider(create: (_) => ChatService()),
         ChangeNotifierProvider(create: (_) => PostProvider()),
-        // NEW: BookingService added to global provider tree
         ChangeNotifierProvider(create: (_) => BookingService()), 
       ],
       child: const EventraApp(),

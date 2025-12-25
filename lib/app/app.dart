@@ -24,7 +24,6 @@ class _EventraAppState extends State<EventraApp> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
 
-    // 🔹 Show loading screen while auth initializes
     if (auth.isInitializing) {
       return const MaterialApp(
         home: Scaffold(

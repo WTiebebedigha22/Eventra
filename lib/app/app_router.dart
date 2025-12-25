@@ -1,7 +1,7 @@
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 
-// UI imports (Kept as provided)
+// UI imports
 import '../ui/splash/splash_screen.dart';
 import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
@@ -26,94 +26,123 @@ import '../ui/post/create_post.dart';
 import '../ui/post/tag_people.dart';
 
 class AppRouter {
-  // FIX: Change 'late final' to a nullable private variable.
   GoRouter? _router;
 
   GoRouter router(AuthProvider auth) {
-    // FIX: Use '??=' to only initialize the router if it hasn't been created yet.
     _router ??= GoRouter(
-      initialLocation: '/splash',
+      initialLocation: '/',
+
       refreshListenable: auth,
+
+      /// 🔐 AUTH & STARTUP REDIRECTS
       redirect: (context, state) {
         final loggedIn = auth.isLoggedIn;
         final onboardingComplete = auth.hasSeenOnboarding;
         final location = state.matchedLocation;
 
-        final isAuthRoute = location == '/login' ||
-            location == '/register' ||
-            location == '/forgot-password';
-
-        final isOnboarding = location == '/onboarding';
+        // Root always goes to splash
+        if (location == '/') return '/splash';
 
         if (location == '/splash') return null;
 
         if (!loggedIn) {
           if (!onboardingComplete) return '/onboarding';
-          if (!isAuthRoute) return '/login';
+
+          if (location != '/login' &&
+              location != '/register' &&
+              location != '/forgot-password') {
+            return '/login';
+          }
           return null;
         }
 
-        if (loggedIn && (isAuthRoute || isOnboarding)) {
+        if (loggedIn && location == '/login') {
           return '/home/explore';
         }
 
         return null;
       },
+
       routes: [
-        GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
-        GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
-        GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
-        GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
+        /// ROOT
         GoRoute(
-          path: '/forgot-password',
-          builder: (_, _) => const ForgotPasswordScreen(),
+          path: '/',
+          redirect: (_, __) => '/splash',
         ),
 
-        /// MAIN TABS
+        /// AUTH FLOW
+        GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
+        GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
+        GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+        GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+        GoRoute(
+          path: '/forgot-password',
+          builder: (_, __) => const ForgotPasswordScreen(),
+        ),
+
+        /// SHELL ENTRY
+        GoRoute(
+          path: '/home',
+          redirect: (_, __) => '/home/explore',
+        ),
+
+        /// MAIN APP SHELL
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
-            return HomeScreen(navigationShell: navigationShell, child: navigationShell);
+            return HomeScreen(
+              navigationShell: navigationShell,
+              child: navigationShell,
+            );
           },
           branches: [
+            /// EXPLORE TAB
             StatefulShellBranch(
               routes: [
                 GoRoute(
                   path: '/home/explore',
-                  builder: (_, _) => const EventListScreen(),
+                  builder: (_, __) => const EventListScreen(),
                   routes: [
                     GoRoute(
                       path: 'event/:id',
                       builder: (_, state) =>
-                          EventDetailScreen(eventId: state.pathParameters['id']!),
+                          EventDetailScreen(
+                            eventId: state.pathParameters['id']!,
+                          ),
                     ),
                   ],
                 ),
               ],
             ),
+
+            /// CHAT TAB
             StatefulShellBranch(
               routes: [
                 GoRoute(
                   path: '/home/chat',
-                  builder: (_, _) => const ChatListScreen(),
+                  builder: (_, __) => const ChatListScreen(),
                   routes: [
                     GoRoute(
                       path: 'chat/:chatId',
                       builder: (_, state) =>
-                          ChatRoomScreen(chatId: state.pathParameters['chatId']!),
+                          ChatRoomScreen(
+                            chatId: state.pathParameters['chatId']!,
+                          ),
                     ),
                   ],
                 ),
               ],
             ),
+
+            /// PROFILE TAB
             StatefulShellBranch(
               routes: [
                 GoRoute(
                   path: '/home/profile',
-                  builder: (_, _) => const ProfileScreen(),
+                  builder: (_, __) => const ProfileScreen(),
                   routes: [
                     GoRoute(
                       path: 'edit',
-                      builder: (_, _) => const EditProfileScreen(),
+                      builder: (_, __) => const EditProfileScreen(),
                     ),
                   ],
                 ),
@@ -125,11 +154,11 @@ class AppRouter {
         /// CREATE POST
         GoRoute(
           path: '/create-post',
-          builder: (_, _) => const CreatePostScreen(),
+          builder: (_, __) => const CreatePostScreen(),
           routes: [
             GoRoute(
               path: 'tag-people',
-              builder: (_, _) => const TagPeopleScreen(),
+              builder: (_, __) => const TagPeopleScreen(),
             ),
           ],
         ),
@@ -137,15 +166,21 @@ class AppRouter {
         /// SETTINGS
         GoRoute(
           path: '/settings',
-          builder: (_, _) => const ProfileSettingsScreen(),
+          builder: (_, __) => const ProfileSettingsScreen(),
           routes: [
-            GoRoute(path: 'security', builder: (_, _) => const SecurityScreen()),
-            GoRoute(path: 'activity', builder: (_, _) => const ActivityScreen()),
-            GoRoute(path: 'notifications', builder: (_, _) => const NotificationsScreen()),
-            GoRoute(path: 'theme', builder: (_, _) => const ThemeScreen()),
-            GoRoute(path: 'language', builder: (_, _) => const LanguageScreen()),
-            GoRoute(path: 'help', builder: (_, _) => const HelpScreen()),
-            GoRoute(path: 'privacy', builder: (_, _) => const PrivacyPolicyScreen()),
+            GoRoute(path: 'security', builder: (_, __) => const SecurityScreen()),
+            GoRoute(path: 'activity', builder: (_, __) => const ActivityScreen()),
+            GoRoute(
+              path: 'notifications',
+              builder: (_, __) => const NotificationsScreen(),
+            ),
+            GoRoute(path: 'theme', builder: (_, __) => const ThemeScreen()),
+            GoRoute(path: 'language', builder: (_, __) => const LanguageScreen()),
+            GoRoute(path: 'help', builder: (_, __) => const HelpScreen()),
+            GoRoute(
+              path: 'privacy',
+              builder: (_, __) => const PrivacyPolicyScreen(),
+            ),
           ],
         ),
       ],
