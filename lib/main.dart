@@ -9,7 +9,7 @@ import 'config/firebase_options.dart';
 import 'providers/auth_provider.dart'; 
 import 'providers/post_provider.dart';
 import 'services/chat_service.dart';
-import 'services/booking_service.dart'; // NEW: Import the Booking Service
+import 'services/booking_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
