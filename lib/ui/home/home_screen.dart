@@ -20,7 +20,6 @@ class HomeScreen extends StatelessWidget {
   static const Color textColor = Colors.white;
   static const Color borderColor = Color(0xFF262626);
 
-  /// ✅ FIXED NAVIGATION LOGIC
   void _onTap(int index, BuildContext context) {
     HapticFeedback.mediumImpact();
 

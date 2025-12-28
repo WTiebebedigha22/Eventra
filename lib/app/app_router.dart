@@ -1,7 +1,10 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+// Provider Import
 import '../providers/auth_provider.dart';
 
-// UI imports
+// UI Imports
 import '../ui/splash/splash_screen.dart';
 import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
@@ -25,13 +28,16 @@ import '../ui/settings/theme.dart';
 import '../ui/post/create_post.dart';
 import '../ui/post/tag_people.dart';
 
+// This key allows us to push screens on top of the bottom navigation bar
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
+
 class AppRouter {
   GoRouter? _router;
 
   GoRouter router(AuthProvider auth) {
     _router ??= GoRouter(
-      initialLocation: '/',
-
+      navigatorKey: _rootNavigatorKey,
+      initialLocation: '/splash',
       refreshListenable: auth,
 
       /// 🔐 AUTH & STARTUP REDIRECTS
@@ -40,23 +46,20 @@ class AppRouter {
         final onboardingComplete = auth.hasSeenOnboarding;
         final location = state.matchedLocation;
 
-        // Root always goes to splash
-        if (location == '/') return '/splash';
-
         if (location == '/splash') return null;
 
         if (!loggedIn) {
           if (!onboardingComplete) return '/onboarding';
-
-          if (location != '/login' &&
-              location != '/register' &&
+          if (location != '/login' && 
+              location != '/register' && 
               location != '/forgot-password') {
             return '/login';
           }
           return null;
         }
 
-        if (loggedIn && location == '/login') {
+        // If logged in and at root or login, go to the Shell's first tab
+        if (loggedIn && (location == '/login' || location == '/')) {
           return '/home/explore';
         }
 
@@ -64,38 +67,23 @@ class AppRouter {
       },
 
       routes: [
-        /// ROOT
-        GoRoute(
-          path: '/',
-          redirect: (_, __) => '/splash',
-        ),
-
-        /// AUTH FLOW
+        /// AUTH FLOW (Full Screen)
         GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
         GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
         GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
         GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
-        GoRoute(
-          path: '/forgot-password',
-          builder: (_, __) => const ForgotPasswordScreen(),
-        ),
+        GoRoute(path: '/forgot-password', builder: (_, __) => const ForgotPasswordScreen()),
 
-        /// SHELL ENTRY
-        GoRoute(
-          path: '/home',
-          redirect: (_, __) => '/home/explore',
-        ),
-
-        /// MAIN APP SHELL
+        /// MAIN APP SHELL (Bottom Nav)
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return HomeScreen(
               navigationShell: navigationShell,
-              child: navigationShell,
+              child: navigationShell, 
             );
           },
           branches: [
-            /// EXPLORE TAB
+            /// BRANCH 0: EXPLORE
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -104,17 +92,16 @@ class AppRouter {
                   routes: [
                     GoRoute(
                       path: 'event/:id',
-                      builder: (_, state) =>
-                          EventDetailScreen(
-                            eventId: state.pathParameters['id']!,
-                          ),
+                      builder: (_, state) => EventDetailScreen(
+                        eventId: state.pathParameters['id']!,
+                      ),
                     ),
                   ],
                 ),
               ],
             ),
 
-            /// CHAT TAB
+            /// BRANCH 1: CHAT
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -123,17 +110,16 @@ class AppRouter {
                   routes: [
                     GoRoute(
                       path: 'chat/:chatId',
-                      builder: (_, state) =>
-                          ChatRoomScreen(
-                            chatId: state.pathParameters['chatId']!,
-                          ),
+                      builder: (_, state) => ChatRoomScreen(
+                        chatId: state.pathParameters['chatId']!,
+                      ),
                     ),
                   ],
                 ),
               ],
             ),
 
-            /// PROFILE TAB
+            /// BRANCH 2: PROFILE
             StatefulShellBranch(
               routes: [
                 GoRoute(
@@ -151,9 +137,10 @@ class AppRouter {
           ],
         ),
 
-        /// CREATE POST
+        /// CREATE POST (Pushed with parentNavigatorKey to hide the Bottom Nav)
         GoRoute(
           path: '/create-post',
+          parentNavigatorKey: _rootNavigatorKey, 
           builder: (_, __) => const CreatePostScreen(),
           routes: [
             GoRoute(
@@ -163,24 +150,19 @@ class AppRouter {
           ],
         ),
 
-        /// SETTINGS
+        /// SETTINGS (Pushed with parentNavigatorKey to hide the Bottom Nav)
         GoRoute(
           path: '/settings',
+          parentNavigatorKey: _rootNavigatorKey,
           builder: (_, __) => const ProfileSettingsScreen(),
           routes: [
             GoRoute(path: 'security', builder: (_, __) => const SecurityScreen()),
             GoRoute(path: 'activity', builder: (_, __) => const ActivityScreen()),
-            GoRoute(
-              path: 'notifications',
-              builder: (_, __) => const NotificationsScreen(),
-            ),
+            GoRoute(path: 'notifications', builder: (_, __) => const NotificationsScreen()),
             GoRoute(path: 'theme', builder: (_, __) => const ThemeScreen()),
             GoRoute(path: 'language', builder: (_, __) => const LanguageScreen()),
             GoRoute(path: 'help', builder: (_, __) => const HelpScreen()),
-            GoRoute(
-              path: 'privacy',
-              builder: (_, __) => const PrivacyPolicyScreen(),
-            ),
+            GoRoute(path: 'privacy', builder: (_, __) => const PrivacyPolicyScreen()),
           ],
         ),
       ],
