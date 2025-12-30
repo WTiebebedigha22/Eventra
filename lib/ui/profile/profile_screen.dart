@@ -15,6 +15,15 @@ class ProfileScreen extends StatelessWidget {
   static const Color appBarColor = Color(0xFF181818);
   static const Color textColor = Colors.white;
 
+  /// Helper to format numbers (e.g., 1200 -> 1.2k)
+  String _formatCount(int count) {
+    if (count >= 1000) {
+      return '${(count / 1000).toStringAsFixed(1)}k';
+    }
+    return count.toString();
+  }
+
+  /// Builds the stat columns (Events, Followers, Following)
   Widget _buildStatColumn(String label, String value) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -36,15 +45,45 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  /// Builds the grid content for the Tabs
+  Widget _buildContentGrid(String type, Color color) {
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 1.5,
+        mainAxisSpacing: 1.5,
+      ),
+      itemCount: 9,
+      itemBuilder: (context, index) {
+        return Container(
+          color: color.withOpacity(0.3),
+          alignment: Alignment.center,
+          child: Text(
+            '$type ${index + 1}',
+            style: const TextStyle(
+                color: Colors.white12, fontWeight: FontWeight.bold),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
 
-    final userName = auth.currentUserFullName;
+    // Data from AuthProvider
+    final userName = auth.displayName;
     final fullName = auth.currentUserFullName;
     final bio = auth.currentBio;
     final photoUrl = auth.photoURL;
     final createdAt = auth.createdAt;
+    
+    // Formatted Stats
+    final eventCount = _formatCount(auth.eventCount);
+    final followers = _formatCount(auth.followerCount);
+    final following = _formatCount(auth.followingCount);
 
     final email = auth.currentUserEmail ?? 'Unknown';
     final initialLetter = userName.isNotEmpty
@@ -119,11 +158,11 @@ class ProfileScreen extends StatelessWidget {
                               ),
                             ),
                             const Expanded(child: SizedBox()),
-                            _buildStatColumn('Events', '12'),
+                            _buildStatColumn('Events', eventCount),
                             const SizedBox(width: 25),
-                            _buildStatColumn('Followers', '1.2k'),
+                            _buildStatColumn('Followers', followers),
                             const SizedBox(width: 25),
-                            _buildStatColumn('Following', '80'),
+                            _buildStatColumn('Following', following),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -154,7 +193,7 @@ class ProfileScreen extends StatelessWidget {
                                   color: primaryPink, size: 16),
                               const SizedBox(width: 4),
                               Text(
-                                'Joined Eventra $formattedJoinedDate',
+                                'Joined Ventra $formattedJoinedDate',
                                 style: TextStyle(
                                   color: textColor.withOpacity(0.6),
                                   fontSize: 13,
@@ -202,7 +241,9 @@ class ProfileScreen extends StatelessWidget {
                                 ),
                                 onPressed: () async {
                                   await auth.logout();
-                                  context.go('/login');
+                                  if (context.mounted) {
+                                    context.go('/login');
+                                  }
                                 },
                                 child: const Text('Logout'),
                               ),
@@ -245,29 +286,8 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-Widget _buildContentGrid(String type, Color color) {
-  return GridView.builder(
-    padding: EdgeInsets.zero,
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 3,
-      crossAxisSpacing: 1.5,
-      mainAxisSpacing: 1.5,
-    ),
-    itemCount: 9,
-    itemBuilder: (context, index) {
-      return Container(
-        color: color.withOpacity(0.3),
-        alignment: Alignment.center,
-        child: Text(
-          '$type ${index + 1}',
-          style: const TextStyle(
-              color: Colors.white12, fontWeight: FontWeight.bold),
-        ),
-      );
-    },
-  );
-}
-
+/// This class MUST be defined outside of the ProfileScreen class 
+/// or defined as a static inner class.
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar, this._backgroundColor);
 
@@ -280,7 +300,8 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(color: _backgroundColor, child: _tabBar);
   }
 
