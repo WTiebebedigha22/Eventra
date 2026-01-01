@@ -36,6 +36,50 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  // UPDATED: Logic to handle empty states for real data
+  Widget _buildContentGrid(String type, Color color, List<dynamic>? items) {
+    if (items == null || items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons. layers_clear_outlined,
+              size: 48,
+              color: textColor.withOpacity(0.2),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "No ${type.toLowerCase()} available yet",
+              style: TextStyle(
+                color: textColor.withOpacity(0.5),
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 1.5,
+        mainAxisSpacing: 1.5,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        // Replace with your actual Item Widget
+        return Container(
+          color: color.withOpacity(0.3),
+          alignment: Alignment.center,
+          child: const Icon(Icons.image, color: Colors.white10),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
@@ -45,6 +89,11 @@ class ProfileScreen extends StatelessWidget {
     final bio = auth.currentBio;
     final photoUrl = auth.photoURL;
     final createdAt = auth.createdAt;
+
+    // Logic for your data lists (replace with actual data from your provider)
+    final userEvents = []; // auth.userEvents;
+    final savedEvents = []; // auth.savedEvents;
+    final attendedEvents = []; // auth.attendedEvents;
 
     final email = auth.currentUserEmail ?? 'Unknown';
     final initialLetter = userName.isNotEmpty
@@ -119,11 +168,11 @@ class ProfileScreen extends StatelessWidget {
                               ),
                             ),
                             const Expanded(child: SizedBox()),
-                            _buildStatColumn('Events', '12'),
+                            _buildStatColumn('Events', '${userEvents.length}'),
                             const SizedBox(width: 25),
-                            _buildStatColumn('Followers', '1.2k'),
+                            _buildStatColumn('Followers', '0'),
                             const SizedBox(width: 25),
-                            _buildStatColumn('Following', '80'),
+                            _buildStatColumn('Following', '0'),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -154,7 +203,7 @@ class ProfileScreen extends StatelessWidget {
                                   color: primaryPink, size: 16),
                               const SizedBox(width: 4),
                               Text(
-                                'Joined Eventra $formattedJoinedDate',
+                                'Joined Ventra $formattedJoinedDate',
                                 style: TextStyle(
                                   color: textColor.withOpacity(0.6),
                                   fontSize: 13,
@@ -202,7 +251,7 @@ class ProfileScreen extends StatelessWidget {
                                 ),
                                 onPressed: () async {
                                   await auth.logout();
-                                  context.go('/login');
+                                  if (context.mounted) context.go('/login');
                                 },
                                 child: const Text('Logout'),
                               ),
@@ -234,38 +283,15 @@ class ProfileScreen extends StatelessWidget {
           },
           body: TabBarView(
             children: [
-              _buildContentGrid('Events', primaryPink),
-              _buildContentGrid('Saved', secondaryPurple),
-              _buildContentGrid('Attended', primaryPink),
+              _buildContentGrid('Events', primaryPink, userEvents),
+              _buildContentGrid('Saved', secondaryPurple, savedEvents),
+              _buildContentGrid('Attended', primaryPink, attendedEvents),
             ],
           ),
         ),
       ),
     );
   }
-}
-
-Widget _buildContentGrid(String type, Color color) {
-  return GridView.builder(
-    padding: EdgeInsets.zero,
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 3,
-      crossAxisSpacing: 1.5,
-      mainAxisSpacing: 1.5,
-    ),
-    itemCount: 9,
-    itemBuilder: (context, index) {
-      return Container(
-        color: color.withOpacity(0.3),
-        alignment: Alignment.center,
-        child: Text(
-          '$type ${index + 1}',
-          style: const TextStyle(
-              color: Colors.white12, fontWeight: FontWeight.bold),
-        ),
-      );
-    },
-  );
 }
 
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
