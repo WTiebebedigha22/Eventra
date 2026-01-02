@@ -1,11 +1,11 @@
 import 'dart:io';
-import 'dart:convert'; // Added for Base64 and JSON
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http; // Added for external API upload
+import 'package:http/http.dart' as http;
 
 class AuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -19,6 +19,7 @@ class AuthProvider extends ChangeNotifier {
   bool _hasSeenOnboarding = false;
 
   static const String _onboardingKey = 'hasSeenOnboarding';
+  static const String _imgBBKey = '5558a317e6889711facf0a9502619fc0';
 
   // Profile data
   String? _firstName;
@@ -106,7 +107,6 @@ class AuthProvider extends ChangeNotifier {
       _followerCount = data['followerCount'] ?? 0;
       _followingCount = data['followingCount'] ?? 0;
 
-      // photoURL can come from Firebase Auth or our Firestore doc
       profilePhotoUrl = data['photoURL'] ?? _auth.currentUser?.photoURL;
 
       await fetchUserEvents();
@@ -140,7 +140,62 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // -----------------------------
-  // ALTERNATIVE PHOTO UPLOAD (ImgBB)
+  // CREATE POST / EVENT
+  // -----------------------------
+  Future<void> createPost({
+    required String title,
+    required String description,
+    required File imageFile,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) throw Exception("User must be logged in to post.");
+
+      // 1. Upload Image to ImgBB
+      final bytes = await imageFile.readAsBytes();
+      String base64Image = base64Encode(bytes);
+
+      final response = await http.post(
+        Uri.parse('https://api.imgbb.com/1/upload'),
+        body: {
+          'key': _imgBBKey,
+          'image': base64Image,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception("Image upload failed: ${response.body}");
+      }
+
+      final data = jsonDecode(response.body);
+      final String imageUrl = data['data']['url'];
+
+      // 2. Add Document to Firestore
+      await _firestore.collection('events').add({
+        'title': title,
+        'description': description,
+        'imageUrl': imageUrl,
+        'creatorId': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Refresh list
+      await fetchUserEvents();
+      
+    } catch (e) {
+      debugPrint('Exception: Failed to create post: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // -----------------------------
+  // PHOTO UPLOAD (ImgBB)
   // -----------------------------
   Future<void> uploadProfilePicture(File file) async {
     _isLoading = true;
@@ -152,12 +207,10 @@ class AuthProvider extends ChangeNotifier {
       final bytes = await file.readAsBytes();
       String base64Image = base64Encode(bytes);
 
-      const String apiKey = '5558a317e6889711facf0a9502619fc0'; 
-      
       final response = await http.post(
         Uri.parse('https://api.imgbb.com/1/upload'),
         body: {
-          'key': apiKey,
+          'key': _imgBBKey,
           'image': base64Image,
         },
       );
@@ -166,18 +219,12 @@ class AuthProvider extends ChangeNotifier {
         final data = jsonDecode(response.body);
         final String uploadedUrl = data['data']['url'];
 
-        // 3. Update Firebase Auth Profile
         await user.updatePhotoURL(uploadedUrl);
-
-        // 4. Update Firestore User Document
         await _firestore.collection('users').doc(user.uid).update({
           'photoURL': uploadedUrl,
         });
 
         profilePhotoUrl = uploadedUrl;
-        debugPrint('Image uploaded successfully to ImgBB: $uploadedUrl');
-      } else {
-        debugPrint('ImgBB Upload Failed: ${response.body}');
       }
     } catch (e) {
       debugPrint('Upload error: $e');
@@ -249,9 +296,7 @@ class AuthProvider extends ChangeNotifier {
     await _auth.signOut();
     _clearProfile();
   }
-  // -----------------------------
-  // PROFILE UPDATE
-  // -----------------------------
+
   Future<void> updateProfile({
     required String username,
     required String firstName,
@@ -285,9 +330,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // -----------------------------
-  // PASSWORD RESET
-  // -----------------------------
   Future<void> forgotPassword(String email) async {
     _isLoading = true;
     notifyListeners();
