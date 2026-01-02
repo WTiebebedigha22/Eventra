@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+<<<<<<< HEAD
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+=======
+import 'package:firebase_storage/firebase_storage.dart';
+>>>>>>> 175e0ad1666df687fd104c4994b60c006a602e26
 
 class AuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -27,6 +31,7 @@ class AuthProvider extends ChangeNotifier {
   String? _bio;
   DateTime? _dob;
   DateTime? _createdAt;
+<<<<<<< HEAD
   
   // Stats & Posts State
   int _eventCount = 0;
@@ -35,6 +40,14 @@ class AuthProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _userEvents = [];
 
   String? profilePhotoUrl; 
+=======
+  String? profilePhotoUrl;
+
+  // Event Management State
+  List<Map<String, dynamic>> _userEvents = [];
+  List<Map<String, dynamic>> _savedEvents = [];
+  List<Map<String, dynamic>> _attendedEvents = [];
+>>>>>>> 175e0ad1666df687fd104c4994b60c006a602e26
 
   // -----------------------------
   // GETTERS
@@ -45,24 +58,20 @@ class AuthProvider extends ChangeNotifier {
   bool get hasSeenOnboarding => _hasSeenOnboarding;
   User? get currentUser => _auth.currentUser;
 
-  String get displayName => _auth.currentUser?.displayName ?? 'Guest';
-  String? get photoURL => _auth.currentUser?.photoURL ?? profilePhotoUrl;
+  String get fullName => (_firstName != null && _lastName != null) 
+      ? '$_firstName $_lastName' 
+      : (_firstName ?? _auth.currentUser?.displayName ?? 'User');
 
-  String get fullName {
-    if (_firstName != null && _lastName != null) {
-      return '$_firstName $_lastName';
-    }
-    return _firstName ?? _auth.currentUser?.displayName ?? 'Guest';
-  }
-
-  String get bio => _bio ?? 'No bio yet.';
+  String get currentBio => _bio ?? 'No bio yet.';
   String get currentUserFullName => fullName;
-  String get currentUserFirstName => _firstName ?? '';
-  String get currentUserLastName => _lastName ?? '';
-  String get currentBio => _bio ?? '';
-  DateTime? get currentUserDOB => _dob;
-  String? get currentUserEmail => _auth.currentUser?.email;
   DateTime? get createdAt => _createdAt;
+  String? get photoURL => _auth.currentUser?.photoURL ?? profilePhotoUrl;
+  String? get currentUserEmail => _auth.currentUser?.email;
+
+  // Event Getters for the UI
+  List<Map<String, dynamic>> get userEvents => _userEvents;
+  List<Map<String, dynamic>> get savedEvents => _savedEvents;
+  List<Map<String, dynamic>> get attendedEvents => _attendedEvents;
 
   int get eventCount => _eventCount;
   int get followerCount => _followerCount;
@@ -79,9 +88,10 @@ class AuthProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _hasSeenOnboarding = prefs.getBool(_onboardingKey) ?? false;
 
-    _auth.authStateChanges().listen((user) {
+    _auth.authStateChanges().listen((user) async {
       if (user != null) {
-        _loadUserProfile(user.uid);
+        await _loadUserProfile(user.uid);
+        _listenToUserActivity(user.uid); // Start listening to events/saves
       } else {
         _clearProfile();
       }
@@ -92,6 +102,44 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+<<<<<<< HEAD
+=======
+  // -----------------------------
+  // EVENT & ACTIVITY LISTENERS
+  // -----------------------------
+  // This connects your app to real-time updates for the Profile Screen
+  void _listenToUserActivity(String uid) {
+    // 1. Listen to Events Created by User
+    _firestore.collection('events')
+        .where('organizerId', isEqualTo: uid)
+        .snapshots()
+        .listen((snapshot) {
+      _userEvents = snapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+      notifyListeners();
+    });
+
+    // 2. Listen to Saved/Bookmarked Events
+    // Assuming a 'bookmarks' sub-collection under user
+    _firestore.collection('users').doc(uid).collection('bookmarks')
+        .snapshots()
+        .listen((snapshot) {
+      _savedEvents = snapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+      notifyListeners();
+    });
+
+    // 3. Listen to Attended/Past Events
+    _firestore.collection('users').doc(uid).collection('attended')
+        .snapshots()
+        .listen((snapshot) {
+      _attendedEvents = snapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+      notifyListeners();
+    });
+  }
+
+  // -----------------------------
+  // PROFILE LOAD & CLEAR
+  // -----------------------------
+>>>>>>> 175e0ad1666df687fd104c4994b60c006a602e26
   Future<void> _loadUserProfile(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
@@ -103,6 +151,7 @@ class AuthProvider extends ChangeNotifier {
       _bio = data['bio'];
       _dob = (data['dob'] as Timestamp?)?.toDate();
       _createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+<<<<<<< HEAD
       
       _followerCount = data['followerCount'] ?? 0;
       _followingCount = data['followingCount'] ?? 0;
@@ -111,12 +160,15 @@ class AuthProvider extends ChangeNotifier {
 
       await fetchUserEvents();
       
+=======
+      profilePhotoUrl = data['photoUrl'] ?? _auth.currentUser?.photoURL;
+>>>>>>> 175e0ad1666df687fd104c4994b60c006a602e26
     } catch (e) {
       debugPrint('Profile load error: $e');
     }
-    notifyListeners();
   }
 
+<<<<<<< HEAD
   Future<void> fetchUserEvents() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
@@ -136,10 +188,23 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error fetching user events: $e');
     }
+=======
+  void _clearProfile() {
+    _firstName = null;
+    _lastName = null;
+    _bio = null;
+    _dob = null;
+    _createdAt = null;
+    profilePhotoUrl = null;
+    _userEvents = [];
+    _savedEvents = [];
+    _attendedEvents = [];
+>>>>>>> 175e0ad1666df687fd104c4994b60c006a602e26
     notifyListeners();
   }
 
   // -----------------------------
+<<<<<<< HEAD
   // CREATE POST / EVENT
   // -----------------------------
   Future<void> createPost({
@@ -237,6 +302,10 @@ class AuthProvider extends ChangeNotifier {
   // -----------------------------
   // AUTH & UTILS
   // -----------------------------
+=======
+  // AUTH LOGIC (TUNED)
+  // -----------------------------
+>>>>>>> 175e0ad1666df687fd104c4994b60c006a602e26
   Future<void> signup(String email, String password) async {
     _isLoading = true;
     notifyListeners();
@@ -246,15 +315,18 @@ class AuthProvider extends ChangeNotifier {
       if (user == null) return;
 
       final username = email.split('@')[0];
-      await user.updateDisplayName(username);
-
+      
+      // Initialize a proper User Document for a Social App
       await _firestore.collection('users').doc(user.uid).set({
+        'uid': user.uid,
         'email': email,
         'firstName': username,
         'lastName': '',
-        'bio': '',
-        'photoURL': null,
-        'dob': null,
+        'bio': 'Hey there! I am using Ventra.',
+        'photoUrl': null,
+        'followerCount': 0,
+        'followingCount': 0,
+        'eventCount': 0,
         'createdAt': FieldValue.serverTimestamp(),
         'eventCount': 0,
         'followerCount': 0,
@@ -294,11 +366,9 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     await _auth.signOut();
-    _clearProfile();
   }
 
   Future<void> updateProfile({
-    required String username,
     required String firstName,
     required String lastName,
     required String bio,
@@ -307,12 +377,10 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final user = _auth.currentUser;
-      if (user == null) return;
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
 
-      await user.updateDisplayName(username);
-
-      await _firestore.collection('users').doc(user.uid).update({
+      await _firestore.collection('users').doc(uid).update({
         'firstName': firstName,
         'lastName': lastName,
         'bio': bio,
@@ -329,6 +397,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+<<<<<<< HEAD
 
   Future<void> forgotPassword(String email) async {
     _isLoading = true;
@@ -341,3 +410,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 }
+=======
+}
+>>>>>>> 175e0ad1666df687fd104c4994b60c006a602e26
