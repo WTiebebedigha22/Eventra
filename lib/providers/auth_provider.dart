@@ -149,13 +149,10 @@ class AuthProvider extends ChangeNotifier {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // 1. Convert image to Base64 string
       final bytes = await file.readAsBytes();
       String base64Image = base64Encode(bytes);
 
-      // 2. Upload to ImgBB (Free API)
-      // Get your free key at https://api.imgbb.com/
-      const String apiKey = 'YOUR_FREE_IMGBB_API_KEY'; 
+      const String apiKey = '5558a317e6889711facf0a9502619fc0'; 
       
       final response = await http.post(
         Uri.parse('https://api.imgbb.com/1/upload'),
@@ -282,28 +279,6 @@ class AuthProvider extends ChangeNotifier {
       _lastName = lastName;
       _bio = bio;
       _dob = dob;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  // -----------------------------
-  // PROFILE PHOTO
-  // -----------------------------
-  Future<void> uploadProfilePicture(File file) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      final ref = _storage.ref('profile_pictures/${user.uid}.jpg');
-      await ref.putFile(file);
-      final url = await ref.getDownloadURL();
-      await user.updatePhotoURL(url);
-
-      profilePhotoUrl = url;
     } finally {
       _isLoading = false;
       notifyListeners();
