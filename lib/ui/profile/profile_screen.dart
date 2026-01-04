@@ -15,7 +15,6 @@ class ProfileScreen extends StatelessWidget {
   static const Color appBarColor = Color(0xFF181818);
   static const Color textColor = Colors.white;
 
-  /// Helper to format numbers (e.g., 1200 -> 1.2k)
   String _formatCount(int count) {
     if (count >= 1000) {
       return '${(count / 1000).toStringAsFixed(1)}k';
@@ -23,7 +22,6 @@ class ProfileScreen extends StatelessWidget {
     return count.toString();
   }
 
-  /// Builds the stat columns (Events, Followers, Following)
   Widget _buildStatColumn(String label, String value) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -45,15 +43,14 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  // UPDATED: Logic to handle empty states for real data
-  Widget _buildContentGrid(String type, Color color, List<dynamic>? items) {
-    if (items == null || items.isEmpty) {
+  Widget _buildContentGrid(String type, Color color, List<Map<String, dynamic>> items) {
+    if (items.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons. layers_clear_outlined,
+              Icons.layers_clear_outlined,
               size: 48,
               color: textColor.withOpacity(0.2),
             ),
@@ -79,35 +76,19 @@ class ProfileScreen extends StatelessWidget {
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {
-        // Replace with your actual Item Widget
-        return Container(
-          color: color.withOpacity(0.3),
-          alignment: Alignment.center,
-          child: const Icon(Icons.image, color: Colors.white10),
-        );
-      },
-    );
-  }
+        final item = items[index];
+        final imageUrl = item['imageUrl'] as String?;
 
-  /// Builds the grid content for the Tabs
-  Widget _buildContentGrid(String type, Color color) {
-    return GridView.builder(
-      padding: EdgeInsets.zero,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 1.5,
-        mainAxisSpacing: 1.5,
-      ),
-      itemCount: 9,
-      itemBuilder: (context, index) {
         return Container(
-          color: color.withOpacity(0.3),
-          alignment: Alignment.center,
-          child: Text(
-            '$type ${index + 1}',
-            style: const TextStyle(
-                color: Colors.white12, fontWeight: FontWeight.bold),
-          ),
+          color: color.withOpacity(0.1),
+          child: imageUrl != null
+              ? Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const Icon(Icons.broken_image, color: Colors.white10),
+                )
+              : const Icon(Icons.image, color: Colors.white10),
         );
       },
     );
@@ -115,22 +96,13 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Listen to changes in AuthProvider
     final auth = Provider.of<AuthProvider>(context);
 
-    // Data from AuthProvider
-    final userName = auth.displayName;
-    final fullName = auth.currentUserFullName;
-    final bio = auth.currentBio;
-    final photoUrl = auth.photoURL;
-    final createdAt = auth.createdAt;
-
-    final email = auth.currentUserEmail ?? 'Unknown';
-    final initialLetter = userName.isNotEmpty
-        ? userName[0].toUpperCase()
-        : (email.isNotEmpty ? email[0].toUpperCase() : 'G');
-
-    final formattedJoinedDate = createdAt != null
-        ? DateFormat('MMM/yyyy').format(createdAt)
+    // Derived Data
+    final initialLetter = auth.displayName.isNotEmpty ? auth.displayName[0].toUpperCase() : 'U';
+    final formattedJoinedDate = auth.createdAt != null 
+        ? DateFormat('MMM yyyy').format(auth.createdAt!) 
         : null;
 
     return DefaultTabController(
@@ -141,7 +113,7 @@ class ProfileScreen extends StatelessWidget {
           backgroundColor: appBarColor,
           elevation: 0,
           title: Text(
-            userName,
+            auth.displayName,
             style: const TextStyle(
               color: textColor,
               fontWeight: FontWeight.bold,
@@ -155,7 +127,8 @@ class ProfileScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => const ProfileSettingsScreen()),
+                    builder: (context) => const ProfileSettingsScreen(),
+                  ),
                 );
               },
             ),
@@ -182,10 +155,10 @@ class ProfileScreen extends StatelessWidget {
                               child: CircleAvatar(
                                 radius: 40,
                                 backgroundColor: appBarColor,
-                                backgroundImage: photoUrl != null
-                                    ? NetworkImage(photoUrl)
+                                backgroundImage: auth.photoURL != null
+                                    ? NetworkImage(auth.photoURL!)
                                     : null,
-                                child: photoUrl == null
+                                child: auth.photoURL == null
                                     ? Text(
                                         initialLetter,
                                         style: const TextStyle(
@@ -196,24 +169,25 @@ class ProfileScreen extends StatelessWidget {
                                     : null,
                               ),
                             ),
-                            const Expanded(child: SizedBox()),
-                            _buildStatColumn('Events', '12'),
+                            const Spacer(),
+                            _buildStatColumn('Events', _formatCount(auth.eventCount)),
                             const SizedBox(width: 25),
-                            _buildStatColumn('Followers', '1.2k'),
+                            _buildStatColumn('Followers', _formatCount(auth.followerCount)),
                             const SizedBox(width: 25),
-                            _buildStatColumn('Following', '80'),
+                            _buildStatColumn('Following', _formatCount(auth.followingCount)),
                           ],
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          fullName,
+                          auth.fullName,
                           style: const TextStyle(
                             color: textColor,
                             fontWeight: FontWeight.bold,
+                            fontSize: 16,
                           ),
                         ),
                         Text(
-                          '@$userName',
+                          '@${auth.displayName}',
                           style: TextStyle(
                             color: textColor.withOpacity(0.6),
                             fontSize: 12,
@@ -221,18 +195,18 @@ class ProfileScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          bio,
+                          auth.bio,
                           style: TextStyle(color: textColor.withOpacity(0.8)),
                         ),
                         if (formattedJoinedDate != null) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Icon(Icons.access_time,
-                                  color: primaryPink, size: 16),
-                              const SizedBox(width: 4),
+                              const Icon(Icons.calendar_today_outlined,
+                                  color: primaryPink, size: 14),
+                              const SizedBox(width: 6),
                               Text(
-                                'Joined Ventra $formattedJoinedDate',
+                                'Joined $formattedJoinedDate',
                                 style: TextStyle(
                                   color: textColor.withOpacity(0.6),
                                   fontSize: 13,
@@ -247,21 +221,17 @@ class ProfileScreen extends StatelessWidget {
                             Expanded(
                               child: OutlinedButton(
                                 style: OutlinedButton.styleFrom(
-                                  side: BorderSide(
-                                    color: textColor.withOpacity(0.5),
-                                  ),
+                                  side: BorderSide(color: textColor.withOpacity(0.2)),
                                   foregroundColor: textColor,
                                   backgroundColor: appBarColor,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
                                 ),
                                 onPressed: () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                        builder: (context) =>
-                                            const EditProfileScreen()),
+                                      builder: (context) => const EditProfileScreen(),
+                                    ),
                                   );
                                 },
                                 child: const Text('Edit Profile'),
@@ -274,15 +244,13 @@ class ProfileScreen extends StatelessWidget {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: primaryPink,
                                   foregroundColor: Colors.black,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
                                 ),
                                 onPressed: () async {
                                   await auth.logout();
-                                  context.go('/login');
+                                  if (context.mounted) context.go('/login');
                                 },
-                                child: const Text('Logout'),
+                                child: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ],
@@ -312,38 +280,15 @@ class ProfileScreen extends StatelessWidget {
           },
           body: TabBarView(
             children: [
-              _buildContentGrid('Events', primaryPink, userEvents),
-              _buildContentGrid('Saved', secondaryPurple, savedEvents),
-              _buildContentGrid('Attended', primaryPink, attendedEvents),
+              _buildContentGrid('Events', primaryPink, auth.userEvents),
+              _buildContentGrid('Saved', secondaryPurple, auth.savedEvents),
+              _buildContentGrid('Attended', primaryPink, auth.attendedEvents),
             ],
           ),
         ),
       ),
     );
   }
-}
-
-Widget _buildContentGrid(String type, Color color) {
-  return GridView.builder(
-    padding: EdgeInsets.zero,
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 3,
-      crossAxisSpacing: 1.5,
-      mainAxisSpacing: 1.5,
-    ),
-    itemCount: 9,
-    itemBuilder: (context, index) {
-      return Container(
-        color: color.withOpacity(0.3),
-        alignment: Alignment.center,
-        child: Text(
-          '$type ${index + 1}',
-          style: const TextStyle(
-              color: Colors.white12, fontWeight: FontWeight.bold),
-        ),
-      );
-    },
-  );
 }
 
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
@@ -358,8 +303,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(color: _backgroundColor, child: _tabBar);
   }
 
