@@ -10,8 +10,9 @@ import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
 import '../ui/auth/register_screen.dart';
 import '../ui/auth/forgot_password.dart';
-import '../ui/home/home_screen.dart';
-import '../ui/events/event_list_screen.dart';
+import '../ui/home/home_screen.dart';        
+import '../ui/home/search_screen.dart';      
+import '../ui/events/event_list_screen.dart'; 
 import '../ui/events/event_detail_screen.dart';
 import '../ui/chat/chat_list_screen.dart';
 import '../ui/chat/chat_room_screen.dart';
@@ -28,8 +29,10 @@ import '../ui/settings/theme.dart';
 import '../ui/post/create_post.dart';
 import '../ui/post/tag_people.dart';
 
-// This key allows us to push screens on top of the bottom navigation bar
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final _shellNavigatorHomeKey = GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
+final _shellNavigatorChatKey = GlobalKey<NavigatorState>(debugLabel: 'chat');
+final _shellNavigatorProfileKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
 
 class AppRouter {
   GoRouter? _router;
@@ -40,41 +43,44 @@ class AppRouter {
       initialLocation: '/splash',
       refreshListenable: auth,
 
-      /// 🔐 AUTH & STARTUP REDIRECTS
       redirect: (context, state) {
         final loggedIn = auth.isLoggedIn;
         final onboardingComplete = auth.hasSeenOnboarding;
         final location = state.matchedLocation;
 
+        // Don't redirect while on the splash screen
         if (location == '/splash') return null;
 
+        // 1. Handle Unauthenticated Users
         if (!loggedIn) {
           if (!onboardingComplete) return '/onboarding';
-          if (location != '/login' && 
-              location != '/register' && 
-              location != '/forgot-password') {
-            return '/login';
-          }
-          return null;
+          
+          final isAuthPage = location == '/login' || 
+                             location == '/register' || 
+                             location == '/forgot-password';
+          
+          return isAuthPage ? null : '/login';
         }
 
-        // If logged in and at root or login, go to the Shell's first tab
-        if (loggedIn && (location == '/login' || location == '/')) {
-          return '/home/explore';
+        // 2. Handle Authenticated Users (Landing Page)
+        // If logged in and trying to go to login, splash, or the root '/', 
+        // redirect them to the Live Home Feed.
+        if (loggedIn && (location == '/login' || location == '/' || location == '/splash')) {
+          return '/home';
         }
 
         return null;
       },
 
       routes: [
-        /// AUTH FLOW (Full Screen)
+        /// --- FULL SCREEN AUTH ---
         GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
         GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
         GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
         GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
         GoRoute(path: '/forgot-password', builder: (_, __) => const ForgotPasswordScreen()),
 
-        /// MAIN APP SHELL (Bottom Nav)
+        /// --- MAIN APP SHELL (Bottom Nav) ---
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return HomeScreen(
@@ -83,13 +89,18 @@ class AppRouter {
             );
           },
           branches: [
-            /// BRANCH 0: EXPLORE
+            /// BRANCH 0: HOME (LIVE POSTS)
             StatefulShellBranch(
+              navigatorKey: _shellNavigatorHomeKey,
               routes: [
                 GoRoute(
-                  path: '/home/explore',
-                  builder: (_, __) => const EventListScreen(),
+                  path: '/home',
+                  builder: (_, __) => const EventListScreen(), // THIS IS YOUR FIRST PAGE
                   routes: [
+                    GoRoute(
+                      path: 'search', 
+                      builder: (_, __) => const SearchScreen(),
+                    ),
                     GoRoute(
                       path: 'event/:id',
                       builder: (_, state) => EventDetailScreen(
@@ -103,13 +114,14 @@ class AppRouter {
 
             /// BRANCH 1: CHAT
             StatefulShellBranch(
+              navigatorKey: _shellNavigatorChatKey,
               routes: [
                 GoRoute(
-                  path: '/home/chat',
+                  path: '/chat',
                   builder: (_, __) => const ChatListScreen(),
                   routes: [
                     GoRoute(
-                      path: 'chat/:chatId',
+                      path: 'room/:chatId',
                       builder: (_, state) => ChatRoomScreen(
                         chatId: state.pathParameters['chatId']!,
                       ),
@@ -121,9 +133,10 @@ class AppRouter {
 
             /// BRANCH 2: PROFILE
             StatefulShellBranch(
+              navigatorKey: _shellNavigatorProfileKey,
               routes: [
                 GoRoute(
-                  path: '/home/profile',
+                  path: '/profile',
                   builder: (_, __) => const ProfileScreen(),
                   routes: [
                     GoRoute(
@@ -137,7 +150,7 @@ class AppRouter {
           ],
         ),
 
-        /// CREATE POST (Pushed with parentNavigatorKey to hide the Bottom Nav)
+        /// --- UTILITY (Pushed on top of Nav Bar) ---
         GoRoute(
           path: '/create-post',
           parentNavigatorKey: _rootNavigatorKey, 
@@ -150,7 +163,6 @@ class AppRouter {
           ],
         ),
 
-        /// SETTINGS (Pushed with parentNavigatorKey to hide the Bottom Nav)
         GoRoute(
           path: '/settings',
           parentNavigatorKey: _rootNavigatorKey,

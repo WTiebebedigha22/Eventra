@@ -20,41 +20,41 @@ class HomeScreen extends StatelessWidget {
   static const Color textColor = Colors.white;
   static const Color borderColor = Color(0xFF262626);
 
+  /// Handles navigation logic and haptics
   void _onTap(int index, BuildContext context) {
-    HapticFeedback.mediumImpact();
+    HapticFeedback.lightImpact();
 
-    // Create Post (center button)
+    // The "Add" button is at index 2, but isn't a branch
     if (index == 2) {
       context.push('/create-post');
       return;
     }
 
+    // Map UI icons to GoRouter branches
+    // Branch 0: Explore, Branch 1: Activity/Chat, Branch 2: Profile
     switch (index) {
-      case 0: // Explore
+      case 0:
         navigationShell.goBranch(0);
         break;
-
-      case 1: // Chat
+      case 1:
         navigationShell.goBranch(1);
         break;
-
-      case 4: // Profile
+      case 4:
         navigationShell.goBranch(2);
         break;
-
       default:
-        // Search tab not implemented yet
+        // Search (index 3) is currently a placeholder
         break;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    /// ✅ FIXED SELECTED INDEX MAPPING
+    // Maps the shell's internal index (0,1,2) back to the 5-item UI layout
     final currentIndex = switch (navigationShell.currentIndex) {
-      0 => 0, // Explore
-      1 => 1, // Chat
-      2 => 4, // Profile
+      0 => 0, // Explore Branch
+      1 => 1, // Activity Branch
+      2 => 4, // Profile Branch
       _ => 0,
     };
 
@@ -81,13 +81,12 @@ class HomeScreen extends StatelessWidget {
                   currentIndex,
                   context,
                 ),
-
-                /// Chat with realtime badge
-                _buildChatNavItem(1, currentIndex, context),
+                
+                // Real-time Chat/Activity Badge
+                _buildLiveActivityNavItem(1, currentIndex, context),
 
                 _buildCreateButton(context),
 
-                /// Search (inactive for now)
                 _buildNavItem(
                   3,
                   Icons.search_rounded,
@@ -113,39 +112,54 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// 🔔 CHAT BADGE
-  Widget _buildChatNavItem(int index, int currentIndex, BuildContext context) {
+  /// 🔔 LIVE ACTIVITY BADGE
+  /// Listens to the 'notifications' collection for the current user
+  Widget _buildLiveActivityNavItem(int index, int currentIndex, BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participants', arrayContains: uid)
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .where('isRead', isEqualTo: false)
           .snapshots(),
       builder: (context, snapshot) {
-        final hasUpdate = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+        final int unreadCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+        final bool hasUpdate = unreadCount > 0;
 
         return Stack(
           clipBehavior: Clip.none,
           children: [
             _buildNavItem(
               index,
-              Icons.chat_bubble_rounded,
-              Icons.chat_bubble_outline_rounded,
-              'Chats',
+              Icons.notifications_rounded,
+              Icons.notifications_none_rounded,
+              'Activity',
               currentIndex,
               context,
             ),
             if (hasUpdate)
-              const Positioned(
-                top: 12,
+              Positioned(
+                top: 10,
                 right: 12,
-                child: DecoratedBox(
+                child: Container(
+                  padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     color: primaryPink,
                     shape: BoxShape.circle,
+                    border: Border.all(color: navBarColor, width: 1.5),
                   ),
-                  child: SizedBox(width: 8, height: 8),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  child: Center(
+                    child: Text(
+                      unreadCount > 9 ? '9+' : '$unreadCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -188,6 +202,8 @@ class HomeScreen extends StatelessWidget {
 
     return InkWell(
       onTap: () => _onTap(index, context),
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
       child: SizedBox(
         width: MediaQuery.of(context).size.width / 5.5,
         child: Column(
@@ -195,19 +211,16 @@ class HomeScreen extends StatelessWidget {
           children: [
             Icon(
               isSelected ? selectedIcon : unselectedIcon,
-              color: isSelected
-                  ? primaryPink
-                  : textColor.withOpacity(0.4),
+              color: isSelected ? primaryPink : textColor.withOpacity(0.4),
               size: 26,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: isSelected
-                    ? primaryPink
-                    : textColor.withOpacity(0.4),
+                color: isSelected ? primaryPink : textColor.withOpacity(0.4),
                 fontSize: 10,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
           ],
