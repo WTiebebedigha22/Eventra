@@ -12,11 +12,11 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final email = TextEditingController();
   final pass = TextEditingController();
+  bool _obscurePass = true; // Added for visibility toggle
 
-  // Apple‑inspired dark UI (clean, minimal, premium)
   static const Color primaryPink = Color(0xFFE91E63);
   static const Color backgroundColor = Colors.black;
-  static const Color inputFillColor = Color(0xFF1C1C1E); // iOS dark field
+  static const Color inputFillColor = Color(0xFF1C1C1E);
   static const Color textColor = Colors.white;
   static const Color subtleText = Colors.white70;
 
@@ -31,6 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
     TextEditingController controller,
     String hintText, {
     bool obscureText = false,
+    Widget? suffixIcon,
   }) {
     return TextField(
       controller: controller,
@@ -42,7 +43,11 @@ class _LoginScreenState extends State<LoginScreen> {
         hintStyle: const TextStyle(color: subtleText),
         filled: true,
         fillColor: inputFillColor,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        suffixIcon: suffixIcon,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 18,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -65,14 +70,9 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
-
-                // 🍎 Apple‑style logo area
                 Column(
                   children: [
-                    Image.asset(
-                      'assets/logo/app_logo.png', // 🔥 add your logo here
-                      height: 72,
-                    ),
+                    Image.asset('assets/logo/app_logo.png', height: 72),
                     const SizedBox(height: 16),
                     const Text(
                       'Sign in with your account',
@@ -89,21 +89,50 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 50),
 
                 _buildTextField(email, 'Email'),
                 const SizedBox(height: 16),
-                _buildTextField(pass, 'Password', obscureText: true),
+
+                // Password field with visibility toggle icon
+                _buildTextField(
+                  pass,
+                  'Password',
+                  obscureText: _obscurePass,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePass
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: subtleText,
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscurePass = !_obscurePass),
+                  ),
+                ),
 
                 const SizedBox(height: 30),
 
-                // Apple‑style primary button
                 ElevatedButton(
                   onPressed: () async {
                     if (auth.isLoading) return;
-                    await auth.login(email.text.trim(), pass.text.trim());
-                    if (auth.isLoggedIn && mounted) context.go('/home');
+
+                    try {
+                      // SYNCHRONIZED: Uses named parameters
+                      await auth.login(
+                        email: email.text.trim(),
+                        password: pass.text.trim(),
+                      );
+
+                      if (auth.isLoggedIn && mounted) context.go('/home');
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(e.toString())));
+                      }
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryPink,
@@ -130,26 +159,85 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                 ),
+                const SizedBox(height: 24),
+
+                // Divider with "or"
+                const Row(
+                  children: [
+                    Expanded(
+                      child: Divider(color: Colors.white10, thickness: 1),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        "or",
+                        style: TextStyle(color: Colors.white38, fontSize: 14),
+                      ),
+                    ),
+                    Expanded(
+                      child: Divider(color: Colors.white10, thickness: 1),
+                    ),
+                  ],
+                ),
 
                 const SizedBox(height: 24),
 
-                // Apple‑style subtle actions
+                // Google Button
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    if (auth.isLoading) return;
+                    try {
+                      await auth.signInWithGoogle();
+                      if (auth.isLoggedIn && mounted) context.go('/home');
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("Google Sign-In failed: $e")),
+                        );
+                      }
+                    }
+                  },
+                  icon: Image.network(
+                    'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_\"G\"_Logo.svg/1200px-Google_\"G\"_Logo.svg.png',
+                    height: 18,
+                  ),
+                  label: auth.isLoading
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          "Continue with Google",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: const BorderSide(color: Colors.white12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
                 TextButton(
-                  onPressed: () => context.go('/forgot-password'),
+                  onPressed: () => context.push('/forgot-password'),
                   child: const Text(
                     'Forgot Password?',
                     style: TextStyle(color: subtleText, fontSize: 13),
                   ),
                 ),
-
                 TextButton(
-                  onPressed: () => context.go('/register'),
+                  onPressed: () => context.push('/register'),
                   child: const Text(
                     'Create a new account here',
                     style: TextStyle(color: subtleText, fontSize: 13),
                   ),
                 ),
-
                 const SizedBox(height: 40),
               ],
             ),

@@ -1,15 +1,22 @@
 import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  
+  // FIX: Explicitly typed list for scopes to satisfy the analyzer
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: <String>['email'],
+  );
 
   StreamSubscription? _userEventsSub;
   StreamSubscription? _bookmarksSub;
@@ -25,13 +32,13 @@ class AuthProvider extends ChangeNotifier {
   static const String _onboardingKey = 'hasSeenOnboarding';
   static const String _imgBBKey = '5558a317e6889711facf0a9502619fc0';
 
-  String? _displayName; 
+  String? _displayName;
   String? _firstName;
   String? _lastName;
   String? _bio;
   DateTime? _dob;
   DateTime? _createdAt;
-  String? _profilePhotoUrl; 
+  String? _profilePhotoUrl;
 
   int _followerCount = 0;
   int _followingCount = 0;
@@ -56,16 +63,15 @@ class AuthProvider extends ChangeNotifier {
   DateTime? get dob => _dob;
   DateTime? get createdAt => _createdAt;
   String? get photoURL => _profilePhotoUrl ?? _auth.currentUser?.photoURL;
-  String? get currentUserEmail => _auth.currentUser?.email;
+  String get currentUserEmail => _auth.currentUser?.email ?? '';
 
-  String get fullName => (_firstName != null && _firstName!.isNotEmpty && _lastName != null) 
-      ? '$_firstName $_lastName' 
+  String get fullName => (_firstName != null && _firstName!.isNotEmpty && _lastName != null)
+      ? '$_firstName $_lastName'
       : displayName;
 
   int get eventCount => _userEvents.length;
   int get followerCount => _followerCount;
   int get followingCount => _followingCount;
-  
 
   List<Map<String, dynamic>> get userEvents => _userEvents;
   List<Map<String, dynamic>> get savedEvents => _savedEvents;
@@ -84,7 +90,7 @@ class AuthProvider extends ChangeNotifier {
     _auth.authStateChanges().listen((user) async {
       if (user != null) {
         await _loadUserProfile(user.uid);
-        _listenToUserActivity(user.uid); 
+        _listenToUserActivity(user.uid);
       } else {
         _clearProfile();
       }
@@ -96,22 +102,32 @@ class AuthProvider extends ChangeNotifier {
   void _listenToUserActivity(String uid) {
     _cancelSubscriptions();
 
-    _userEventsSub = _firestore.collection('events')
+    _userEventsSub = _firestore
+        .collection('events')
         .where('creatorId', isEqualTo: uid)
         .orderBy('createdAt', descending: true)
-        .snapshots().listen((snapshot) {
+        .snapshots()
+        .listen((snapshot) {
       _userEvents = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
       notifyListeners();
     });
 
-    _bookmarksSub = _firestore.collection('users').doc(uid).collection('bookmarks')
-        .snapshots().listen((snapshot) {
+    _bookmarksSub = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('bookmarks')
+        .snapshots()
+        .listen((snapshot) {
       _savedEvents = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
       notifyListeners();
     });
 
-    _attendedSub = _firestore.collection('users').doc(uid).collection('attended')
-        .snapshots().listen((snapshot) {
+    _attendedSub = _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('attended')
+        .snapshots()
+        .listen((snapshot) {
       _attendedEvents = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
       notifyListeners();
     });
@@ -120,7 +136,12 @@ class AuthProvider extends ChangeNotifier {
   // -----------------------------
   // AUTHENTICATION METHODS
   // -----------------------------
-  Future<void> signup(String email, String password) async {
+
+  Future<void> signup({
+    required String email,
+    required String password,
+    required Map<String, dynamic> userData,
+  }) async {
     _isLoading = true;
     notifyListeners();
     try {
@@ -128,32 +149,110 @@ class AuthProvider extends ChangeNotifier {
       final user = cred.user;
       if (user == null) return;
 
-      final defaultUsername = email.split('@')[0];
-      await user.updateDisplayName(defaultUsername);
+      final String fname = userData['firstName'] ?? '';
+      final String lname = userData['lastName'] ?? '';
+      final String uname = userData['username'] ?? email.split('@')[0];
+      final String gender = userData['gender'] ?? 'Not Specified';
+
+      await user.updateDisplayName(uname);
 
       await _firestore.collection('users').doc(user.uid).set({
         'uid': user.uid,
         'email': email,
-        'displayName': defaultUsername,
-        'firstName': defaultUsername,
-        'lastName': '',
+        'username': uname,
+        'displayName': uname,
+        'firstName': fname,
+        'lastName': lname,
+        'gender': gender,
         'bio': 'Hey there! I am using Ventra.',
         'photoURL': null,
         'followerCount': 0,
         'followingCount': 0,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      _displayName = uname;
+      _firstName = fname;
+      _lastName = lname;
+    } catch (e) {
+      debugPrint("Signup Error: $e");
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  Future<void> login(String email, String password) async {
+  Future<void> login({required String email, required String password}) async {
     _isLoading = true;
     notifyListeners();
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
+    } catch (e) {
+      debugPrint("Login Error: $e");
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signInWithGoogle() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      // 1. Trigger the Google sign-in flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      // 2. Fetch authentication details
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      // 3. Create a Firebase Credential
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // 4. Sign in to Firebase
+      final UserCredential userCredential = await _auth.signInWithCredential(credential);
+      final User? user = userCredential.user;
+
+      if (user != null) {
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+
+        if (!userDoc.exists) {
+          // Setup new user profile from Google data
+          List<String> nameParts = (user.displayName ?? "Ventra User").split(' ');
+          String fName = nameParts.first;
+          String lName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+          String baseUname = (user.email ?? "user").split('@')[0];
+          String generatedUsername = '$baseUname${Random().nextInt(999)}';
+
+          await _firestore.collection('users').doc(user.uid).set({
+            'uid': user.uid,
+            'email': user.email,
+            'username': generatedUsername,
+            'displayName': user.displayName ?? generatedUsername,
+            'firstName': fName,
+            'lastName': lName,
+            'gender': 'Not Specified',
+            'bio': 'Hey there! I am using Ventra.',
+            'photoURL': user.photoURL,
+            'followerCount': 0,
+            'followingCount': 0,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+        await _loadUserProfile(user.uid);
+      }
+    } catch (e) {
+      debugPrint("Google Sign-In Error: $e");
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -162,6 +261,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     await _auth.signOut();
+    await _googleSignIn.signOut();
     _clearProfile();
   }
 

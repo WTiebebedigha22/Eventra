@@ -10,8 +10,18 @@ class AuthService {
   Future<UserCredential> signUp(String email, String password) =>
       _auth.createUserWithEmailAndPassword(email: email, password: password);
 
-  Future<UserCredential> signIn(String email, String password) =>
-      _auth.signInWithEmailAndPassword(email: email, password: password);
+  Future<UserCredential?> signIn(String email, String password) async {
+    try {
+      return await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (e) {
+      // You can log the specific error code here (e.g., 'user-not-found')
+      print(e.code);
+      rethrow;
+    }
+  }
 
   Future<void> signOut() => _auth.signOut();
 

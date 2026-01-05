@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -158,6 +157,36 @@ class PostProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Upload error: $e');
       throw Exception('Failed to upload post: $e');
+    }
+  }
+  // --- Post Deletion ---
+  Future<void> deletePost(String postId) async {
+    // 1. Find the post and its index for a potential rollback
+    final index = _posts.indexWhere((p) => p.id == postId);
+    if (index == -1) return;
+
+    final deletedPost = _posts[index];
+
+    // 2. Optimistic UI Update: Remove locally first
+    _posts.removeAt(index);
+    notifyListeners();
+
+    try {
+      // 3. Delete from Firestore
+      await _firestore.collection('posts').doc(postId).delete();
+      
+      // Optional: If you use Firebase Storage for images, 
+      // you would delete the file here as well. 
+      // If using ImgBB, the image remains on their servers.
+      
+      debugPrint('Post deleted successfully from Firestore');
+    } catch (e) {
+      // 4. Rollback: If Firestore fails, put the post back
+      _posts.insert(index, deletedPost);
+      notifyListeners();
+      
+      debugPrint('Error deleting post: $e');
+      throw Exception('Could not delete post. Please try again.');
     }
   }
 }

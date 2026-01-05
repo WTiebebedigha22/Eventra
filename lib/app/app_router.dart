@@ -48,24 +48,30 @@ class AppRouter {
         final onboardingComplete = auth.hasSeenOnboarding;
         final location = state.matchedLocation;
 
-        // Don't redirect while on the splash screen
+        // 1. Always allow Splash
         if (location == '/splash') return null;
 
-        // 1. Handle Unauthenticated Users
+        // 2. Identify Auth-Related pages
+        final isAuthPage = location == '/login' || 
+                           location == '/register' || 
+                           location == '/forgot-password';
+
+        // 3. Handle Unauthenticated Users
         if (!loggedIn) {
-          if (!onboardingComplete) return '/onboarding';
+          // If they are trying to reach Register or Forgot Password, LET THEM PASS
+          if (isAuthPage) return null;
+
+          // If they haven't seen onboarding and aren't on an Auth page, send to onboarding
+          if (!onboardingComplete && location != '/onboarding') {
+            return '/onboarding';
+          }
           
-          final isAuthPage = location == '/login' || 
-                             location == '/register' || 
-                             location == '/forgot-password';
-          
-          return isAuthPage ? null : '/login';
+          // Otherwise, if they aren't logged in, they must be at /login
+          return location == '/login' ? null : '/login';
         }
 
-        // 2. Handle Authenticated Users (Landing Page)
-        // If logged in and trying to go to login, splash, or the root '/', 
-        // redirect them to the Live Home Feed.
-        if (loggedIn && (location == '/login' || location == '/' || location == '/splash')) {
+        // 4. Handle Authenticated Users
+        if (loggedIn && (isAuthPage || location == '/' || location == '/splash')) {
           return '/home';
         }
 
@@ -74,11 +80,11 @@ class AppRouter {
 
       routes: [
         /// --- FULL SCREEN AUTH ---
-        GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
-        GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
-        GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-        GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
-        GoRoute(path: '/forgot-password', builder: (_, __) => const ForgotPasswordScreen()),
+        GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
+        GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
+        GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+        GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
+        GoRoute(path: '/forgot-password', builder: (_, _) => const ForgotPasswordScreen()),
 
         /// --- MAIN APP SHELL (Bottom Nav) ---
         StatefulShellRoute.indexedStack(
@@ -95,11 +101,11 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/home',
-                  builder: (_, __) => const EventListScreen(), // THIS IS YOUR FIRST PAGE
+                  builder: (_, _) => const EventListScreen(), // THIS IS YOUR FIRST PAGE
                   routes: [
                     GoRoute(
                       path: 'search', 
-                      builder: (_, __) => const SearchScreen(),
+                      builder: (_, _) => const SearchScreen(),
                     ),
                     GoRoute(
                       path: 'event/:id',
@@ -118,7 +124,7 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/chat',
-                  builder: (_, __) => const ChatListScreen(),
+                  builder: (_, _) => const ChatListScreen(),
                   routes: [
                     GoRoute(
                       path: 'room/:chatId',
@@ -137,11 +143,11 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/profile',
-                  builder: (_, __) => const ProfileScreen(),
+                  builder: (_, _) => const ProfileScreen(),
                   routes: [
                     GoRoute(
                       path: 'edit',
-                      builder: (_, __) => const EditProfileScreen(),
+                      builder: (_, _) => const EditProfileScreen(),
                     ),
                   ],
                 ),
@@ -154,11 +160,11 @@ class AppRouter {
         GoRoute(
           path: '/create-post',
           parentNavigatorKey: _rootNavigatorKey, 
-          builder: (_, __) => const CreatePostScreen(),
+          builder: (_, _) => const CreatePostScreen(),
           routes: [
             GoRoute(
               path: 'tag-people',
-              builder: (_, __) => const TagPeopleScreen(),
+              builder: (_, _) => const TagPeopleScreen(),
             ),
           ],
         ),
@@ -166,15 +172,15 @@ class AppRouter {
         GoRoute(
           path: '/settings',
           parentNavigatorKey: _rootNavigatorKey,
-          builder: (_, __) => const ProfileSettingsScreen(),
+          builder: (_, _) => const ProfileSettingsScreen(),
           routes: [
-            GoRoute(path: 'security', builder: (_, __) => const SecurityScreen()),
-            GoRoute(path: 'activity', builder: (_, __) => const ActivityScreen()),
-            GoRoute(path: 'notifications', builder: (_, __) => const NotificationsScreen()),
-            GoRoute(path: 'theme', builder: (_, __) => const ThemeScreen()),
-            GoRoute(path: 'language', builder: (_, __) => const LanguageScreen()),
-            GoRoute(path: 'help', builder: (_, __) => const HelpScreen()),
-            GoRoute(path: 'privacy', builder: (_, __) => const PrivacyPolicyScreen()),
+            GoRoute(path: 'security', builder: (_, _) => const SecurityScreen()),
+            GoRoute(path: 'activity', builder: (_, _) => const ActivityScreen()),
+            GoRoute(path: 'notifications', builder: (_, _) => const NotificationsScreen()),
+            GoRoute(path: 'theme', builder: (_, _) => const ThemeScreen()),
+            GoRoute(path: 'language', builder: (_, _) => const LanguageScreen()),
+            GoRoute(path: 'help', builder: (_, _) => const HelpScreen()),
+            GoRoute(path: 'privacy', builder: (_, _) => const PrivacyPolicyScreen()),
           ],
         ),
       ],

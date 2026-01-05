@@ -75,9 +75,9 @@ class HomeScreen extends StatelessWidget {
               children: [
                 _buildNavItem(
                   0,
-                  Icons.home_filled,
-                  Icons.home_filled,
-                  'Explore',
+                  Icons.home_rounded,
+                  Icons.home_outlined,
+                  'Home',
                   currentIndex,
                   context,
                 ),
@@ -131,8 +131,8 @@ class HomeScreen extends StatelessWidget {
           children: [
             _buildNavItem(
               index,
+              Icons.messenger_rounded,
               Icons.messenger_outline_rounded,
-              Icons.messenger,
               'Messages',
               currentIndex,
               context,
@@ -211,16 +211,7 @@ class HomeScreen extends StatelessWidget {
             Icon(
               isSelected ? selectedIcon : unselectedIcon,
               color: isSelected ? primaryPink : textColor.withOpacity(0.4),
-              size: 26,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? primaryPink : textColor.withOpacity(0.4),
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
+              size: 28,
             ),
           ],
         ),
