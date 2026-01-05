@@ -145,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextButton(
                   onPressed: () => context.go('/register'),
                   child: const Text(
-                    'Create an Account',
+                    'Create a new account here',
                     style: TextStyle(color: subtleText, fontSize: 13),
                   ),
                 ),

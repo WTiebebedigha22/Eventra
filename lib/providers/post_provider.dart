@@ -2,19 +2,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:path_provider/path_provider.dart' as path_provider;
 import '../models/posts/post.dart';
 
 class PostProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // --- State ---
   final List<Post> _posts = [];
-  List<Post> get posts => List.unmodifiable(_posts); // Encapsulation
+  List<Post> get posts => List.unmodifiable(_posts); 
   
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -33,7 +29,7 @@ class PostProvider extends ChangeNotifier {
     required String message,
   }) async {
     try {
-      if (_auth.currentUser?.uid == receiverId) return; // Don't notify self
+      if (_auth.currentUser?.uid == receiverId) return; 
       
       await _firestore.collection('notifications').add({
         'userId': receiverId,
@@ -97,7 +93,6 @@ class PostProvider extends ChangeNotifier {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
-    // Find post in local state
     final index = _posts.indexWhere((p) => p.id == postId);
     if (index == -1) return;
 
@@ -112,7 +107,6 @@ class PostProvider extends ChangeNotifier {
     }
     notifyListeners();
 
-    // 2. Firebase Update
     try {
       final postRef = _firestore.collection('posts').doc(postId);
       if (isLiked) {
@@ -127,76 +121,43 @@ class PostProvider extends ChangeNotifier {
         );
       }
     } catch (e) {
-      // 3. Rollback on failure
+      // Rollback on failure
       if (isLiked) {
         _posts[index].likes.add(uid);
       } else {
         _posts[index].likes.remove(uid);
       }
       notifyListeners();
-      debugPrint('Like error: $e');
-    }
-  }
-
-  // --- Image Compression ---
-  Future<File?> _compressImage(File file) async {
-    try {
-      final dir = await path_provider.getTemporaryDirectory();
-      final targetPath = "${dir.absolute.path}/temp_${DateTime.now().millisecondsSinceEpoch}.jpg";
-
-      var result = await FlutterImageCompress.compressAndGetFile(
-        file.absolute.path,
-        targetPath,
-        quality: 70,
-        format: CompressFormat.jpeg,
-      );
-
-      return result != null ? File(result.path) : null;
-    } catch (e) {
-      debugPrint("Compression error: $e");
-      return file; // Fallback to original if compression fails
     }
   }
 
   // --- Post Creation ---
-  Future<void> createPost({
-    required String content,
-    File? mediaFile,
-    DateTime? eventDate,
-    String? location,
-  }) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception("User not logged in.");
-
+  // Updated to receive a Post object from the UI (which already contains the ImgBB URL)
+  Future<void> uploadPost(Post post) async {
     try {
-      String? mediaUrl;
-      if (mediaFile != null) {
-        File? compressedFile = await _compressImage(mediaFile);
-        final storageRef = _storage.ref().child('posts/${user.uid}/${DateTime.now().millisecondsSinceEpoch}.jpg');
-        
-        final uploadTask = await storageRef.putFile(compressedFile ?? mediaFile);
-        mediaUrl = await uploadTask.ref.getDownloadURL();
-      }
+      // 1. Save to Firestore
+      // We use post.toFirestore() which now includes username and userProfileUrl
+      final docRef = await _firestore.collection('posts').add(post.toFirestore());
 
-      final newPostRef = _firestore.collection('posts').doc();
-      
-      final postData = {
-        'userId': user.uid,
-        'content': content,
-        'mediaUrl': mediaUrl,
-        'timestamp': FieldValue.serverTimestamp(),
-        'eventDate': eventDate != null ? Timestamp.fromDate(eventDate) : null,
-        'location': location,
-        'likes': [],
-      };
+      // 2. Local Update: Create a version of the post with the new ID for instant display
+      final postWithId = Post(
+        id: docRef.id,
+        userId: post.userId,
+        username: post.username,
+        userProfileUrl: post.userProfileUrl,
+        content: post.content,
+        mediaUrl: post.mediaUrl,
+        timestamp: DateTime.now(), // Local approximation until refresh
+        likes: [],
+        location: post.location,
+        eventDate: post.eventDate,
+      );
 
-      await newPostRef.set(postData);
-      
-      // Refresh to show the new post at the top
-      await fetchPosts(isRefresh: true);
+      _posts.insert(0, postWithId);
+      notifyListeners();
     } catch (e) {
-      debugPrint('Create post error: $e');
-      throw Exception('Failed to create post: $e');
+      debugPrint('Upload error: $e');
+      throw Exception('Failed to upload post: $e');
     }
   }
 }

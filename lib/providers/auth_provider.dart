@@ -49,6 +49,7 @@ class AuthProvider extends ChangeNotifier {
   User? get currentUser => _auth.currentUser;
 
   String get displayName => _displayName ?? _auth.currentUser?.displayName ?? 'User';
+  String get userId => currentUser?.uid ?? '';
   String get firstName => _firstName ?? '';
   String get lastName => _lastName ?? '';
   String get bio => _bio ?? 'No bio yet.';
@@ -64,6 +65,7 @@ class AuthProvider extends ChangeNotifier {
   int get eventCount => _userEvents.length;
   int get followerCount => _followerCount;
   int get followingCount => _followingCount;
+  
 
   List<Map<String, dynamic>> get userEvents => _userEvents;
   List<Map<String, dynamic>> get savedEvents => _savedEvents;

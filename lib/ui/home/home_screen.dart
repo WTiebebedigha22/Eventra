@@ -75,8 +75,8 @@ class HomeScreen extends StatelessWidget {
               children: [
                 _buildNavItem(
                   0,
-                  Icons.explore_rounded,
-                  Icons.explore_outlined,
+                  Icons.home_filled,
+                  Icons.home_filled,
                   'Explore',
                   currentIndex,
                   context,
@@ -112,7 +112,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// 🔔 LIVE ACTIVITY BADGE
   /// Listens to the 'notifications' collection for the current user
   Widget _buildLiveActivityNavItem(int index, int currentIndex, BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -132,9 +131,9 @@ class HomeScreen extends StatelessWidget {
           children: [
             _buildNavItem(
               index,
-              Icons.notifications_rounded,
-              Icons.notifications_none_rounded,
-              'Activity',
+              Icons.messenger_outline_rounded,
+              Icons.messenger,
+              'Messages',
               currentIndex,
               context,
             ),
@@ -152,7 +151,7 @@ class HomeScreen extends StatelessWidget {
                   constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                   child: Center(
                     child: Text(
-                      unreadCount > 9 ? '9+' : '$unreadCount',
+                      unreadCount > 99 ? '99+' : '$unreadCount',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 9,

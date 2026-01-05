@@ -43,7 +43,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
         decoration: BoxDecoration(
-          // Distinct colors for sender and receiver
           color: isMe ? primaryPink : appBarColor, 
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
@@ -62,7 +61,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         child: Text(
           text,
           style: TextStyle(
-            color: isMe ? Colors.black : textColor, // Black text on pink bubble
+            color: isMe ? Colors.white : textColor, // Black text on pink bubble
             fontSize: 15,
           ),
         ),
@@ -105,7 +104,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           IconButton(
             icon: const Icon(Icons.info_outline, color: primaryPink),
             onPressed: () {
-              // Action: View event or contact profile
+              // Action: View profile
             },
           ),
         ],
@@ -134,7 +133,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 IconButton(
                   icon: const Icon(Icons.camera_alt_outlined, color: primaryPink),
                   onPressed: () {
-                    // Action: Send photo
+                    // Action: Send photo or related media
                   },
                 ),
                 Expanded(
