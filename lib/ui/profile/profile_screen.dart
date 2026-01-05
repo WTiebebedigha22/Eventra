@@ -21,7 +21,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // Only check follow status if we are looking at someone else
+    // Only check follow status if viewing someone else
     if (widget.userId != currentUid) {
       _checkFollowStatus();
     }
@@ -60,45 +60,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final bool isMe = widget.userId == currentUid;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        // Only show back button if we pushed this screen (looking at someone else)
-        leading: !isMe ? IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.pop(),
-        ) : null,
-        title: Text(isMe ? "My Profile" : "Profile", 
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        actions: [
-          if (isMe) IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            onPressed: () => context.push('/settings'),
-          )
-        ],
-      ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: primaryPink));
-          }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text("User not found", style: TextStyle(color: Colors.white)));
-          }
+    // Using DefaultTabController fixes the LateInitializationError
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F0F0F),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: !isMe ? IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => context.pop(),
+          ) : null,
+          title: Text(isMe ? "My Profile" : "Profile", 
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          actions: [
+            if (isMe) IconButton(
+              icon: const Icon(Icons.settings_outlined, color: Colors.white),
+              onPressed: () => context.push('/settings'),
+            )
+          ],
+        ),
+        body: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: primaryPink));
+            }
+            if (!snapshot.hasData || !snapshot.data!.exists) {
+              return const Center(child: Text("User not found", style: TextStyle(color: Colors.white)));
+            }
 
-          final userData = snapshot.data!.data() as Map<String, dynamic>;
+            final userData = snapshot.data!.data() as Map<String, dynamic>;
 
-          return SingleChildScrollView(
-            child: Column(
+            return Column(
               children: [
-                const SizedBox(height: 10),
                 _buildProfileHeader(userData),
                 _buildStatsRow(userData),
                 
-                // Dynamic Action Button
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 10),
                   child: isMe 
@@ -110,21 +109,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                 ),
 
-                const Divider(color: Color(0xFF262626), height: 40),
-                
-                // Grid of User's Posts
-                _buildUserPostsGrid(widget.userId),
+                const SizedBox(height: 10),
+
+                // Tab Selection
+                const TabBar(
+                  indicatorColor: primaryPink,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.grey,
+                  tabs: [
+                    Tab(icon: Icon(Icons.grid_on_rounded)),
+                    Tab(icon: Icon(Icons.event_note_rounded)),
+                    Tab(icon: Icon(Icons.bookmark_outline_rounded)),
+                  ],
+                ),
+
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildUserPostsGrid(widget.userId),
+                      _buildUserEventsList(widget.userId),
+                      _buildSavedEventsList(widget.userId),
+                    ],
+                  ),
+                ),
               ],
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 
+  // --- UI BUILDERS ---
+
   Widget _buildProfileHeader(Map<String, dynamic> data) {
     return Column(
       children: [
+        const SizedBox(height: 10),
         CircleAvatar(
           radius: 45,
           backgroundColor: const Color(0xFF262626),
@@ -145,7 +166,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildStatsRow(Map<String, dynamic> data) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20),
+      padding: const EdgeInsets.symmetric(vertical: 15),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -160,7 +181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _statItem(String label, int count) {
     return Column(
       children: [
-        Text("$count", style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+        Text("$count", style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
       ],
     );
@@ -169,7 +190,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildActionButton(String label, Color color, VoidCallback action) {
     return SizedBox(
       width: double.infinity,
-      height: 44,
+      height: 40,
       child: ElevatedButton(
         onPressed: action,
         style: ElevatedButton.styleFrom(
@@ -182,15 +203,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // TAB 1: POSTS
   Widget _buildUserPostsGrid(String uid) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('posts').where('creatorId', isEqualTo: uid).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .where('creatorId', isEqualTo: uid)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox();
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final docs = snapshot.data!.docs;
+        if (docs.isEmpty) return _buildEmptyState(Icons.camera_alt_outlined, "No posts yet");
+
         return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(2),
           itemCount: docs.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
@@ -200,6 +227,84 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         );
       },
+    );
+  }
+
+  // TAB 2: ORGANIZED EVENTS
+  Widget _buildUserEventsList(String uid) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .where('creatorId', isEqualTo: uid)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: docs.length,
+          itemBuilder: (context, index) => _eventTile(docs[index]),
+        );
+      },
+    );
+  }
+
+  // TAB 3: SAVED EVENTS
+  Widget _buildSavedEventsList(String uid) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('bookmarks')
+          .orderBy('savedAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) return _buildEmptyState(Icons.bookmark_border_rounded, "No saved events");
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: docs.length,
+          itemBuilder: (context, index) => _eventTile(docs[index]),
+        );
+      },
+    );
+  }
+
+  Widget _eventTile(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Card(
+      color: const Color(0xFF1A1A1A),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Image.network(data['imageUrl'] ?? '', width: 50, height: 50, fit: BoxFit.cover),
+        ),
+        title: Text(data['title'] ?? 'Event', 
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        subtitle: Text(data['description'] ?? '', 
+          maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
+        trailing: const Icon(Icons.chevron_right, color: Colors.white24),
+        onTap: () => context.push('/home/event/${doc.id}'),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(IconData icon, String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white24, size: 50),
+          const SizedBox(height: 10),
+          Text(message, style: const TextStyle(color: Colors.grey)),
+        ],
+      ),
     );
   }
 }

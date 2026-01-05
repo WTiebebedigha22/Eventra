@@ -277,12 +277,63 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // -----------------------------
-  // PROFILE & MEDIA METHODS
+  // PROFILE & SOCIAL METHODS
   // -----------------------------
+
+  /// NEW: Fetch any user's profile data by UID 
+  /// This is used by ProfileScreen to show other users
+  Future<Map<String, dynamic>?> fetchUserProfile(String uid) async {
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      if (doc.exists) {
+        return doc.data();
+      }
+    } catch (e) {
+      debugPrint('Error fetching user profile: $e');
+    }
+    return null;
+  }
+
+  /// NEW: Follow/Unfollow Logic with Transaction
+  /// This ensures counts are updated atomically
+  Future<void> toggleFollow(String targetUid, bool isFollowing) async {
+    final myUid = userId;
+    if (myUid.isEmpty || myUid == targetUid) return;
+
+    final targetUserRef = _firestore.collection('users').doc(targetUid);
+    final currentUserRef = _firestore.collection('users').doc(myUid);
+    final followerDocRef = targetUserRef.collection('followers').doc(myUid);
+
+    try {
+      if (!isFollowing) {
+        // FOLLOW
+        await followerDocRef.set({'followedAt': FieldValue.serverTimestamp()});
+        await targetUserRef.update({'followerCount': FieldValue.increment(1)});
+        await currentUserRef.update({'followingCount': FieldValue.increment(1)});
+      } else {
+        // UNFOLLOW
+        await followerDocRef.delete();
+        await targetUserRef.update({'followerCount': FieldValue.increment(-1)});
+        await currentUserRef.update({'followingCount': FieldValue.increment(-1)});
+      }
+      
+      // Update local state if we are looking at our own profile
+      await _loadUserProfile(myUid); 
+    } catch (e) {
+      debugPrint('Follow Toggle Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Keep your existing _loadUserProfile for the logged-in user
   Future<void> _loadUserProfile(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
-      if (!doc.exists) return;
+      if (!doc.exists) {
+        // CRITICAL: Create the document if it's missing (Fixes your blank screen)
+        await _ensureUserDocumentExists(uid);
+        return;
+      }
 
       final data = doc.data()!;
       _displayName = data['displayName'];
@@ -298,6 +349,25 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('Profile load error: $e');
     }
     notifyListeners();
+  }
+
+  /// NEW: Helper to prevent "User Not Found" if Firestore is empty
+  Future<void> _ensureUserDocumentExists(String uid) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    await _firestore.collection('users').doc(uid).set({
+      'uid': uid,
+      'email': user.email,
+      'username': user.email?.split('@')[0] ?? 'user',
+      'displayName': user.displayName ?? 'Ventra User',
+      'bio': 'Hey there! I am using Ventra.',
+      'followerCount': 0,
+      'followingCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    
+    await _loadUserProfile(uid);
   }
 
   Future<void> updateProfile({
