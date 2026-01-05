@@ -6,7 +6,7 @@ import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 import 'app/app.dart';
 import 'config/firebase_options.dart';
-import 'providers/auth_provider.dart'; 
+import 'providers/auth_provider.dart';
 import 'providers/post_provider.dart';
 import 'services/chat_service.dart';
 import 'services/booking_service.dart';

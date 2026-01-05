@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../providers/post_provider.dart';
 import '../../models/posts/post.dart';
+import '../../providers/post_provider.dart';
 
 // Theme Constants
 const Color primaryPink = Color(0xFFE91E63); 

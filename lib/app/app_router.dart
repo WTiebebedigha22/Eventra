@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // Provider Import
-import '../providers/auth_provider.dart';
+import '../providers/auth_provider.dart' as custom;
 
 // UI Imports
 import '../ui/splash/splash_screen.dart';
@@ -10,7 +11,7 @@ import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
 import '../ui/auth/register_screen.dart';
 import '../ui/auth/forgot_password.dart';
-import '../ui/home/home_screen.dart';        
+import '../ui/home/home_screen.dart';         
 import '../ui/home/search_screen.dart';      
 import '../ui/events/event_list_screen.dart'; 
 import '../ui/events/event_detail_screen.dart';
@@ -37,7 +38,7 @@ final _shellNavigatorProfileKey = GlobalKey<NavigatorState>(debugLabel: 'profile
 class AppRouter {
   GoRouter? _router;
 
-  GoRouter router(AuthProvider auth) {
+  GoRouter router(custom.AuthProvider auth) { 
     _router ??= GoRouter(
       navigatorKey: _rootNavigatorKey,
       initialLocation: '/splash',
@@ -48,29 +49,20 @@ class AppRouter {
         final onboardingComplete = auth.hasSeenOnboarding;
         final location = state.matchedLocation;
 
-        // 1. Always allow Splash
         if (location == '/splash') return null;
 
-        // 2. Identify Auth-Related pages
         final isAuthPage = location == '/login' || 
                            location == '/register' || 
                            location == '/forgot-password';
 
-        // 3. Handle Unauthenticated Users
         if (!loggedIn) {
-          // If they are trying to reach Register or Forgot Password, LET THEM PASS
           if (isAuthPage) return null;
-
-          // If they haven't seen onboarding and aren't on an Auth page, send to onboarding
           if (!onboardingComplete && location != '/onboarding') {
             return '/onboarding';
           }
-          
-          // Otherwise, if they aren't logged in, they must be at /login
           return location == '/login' ? null : '/login';
         }
 
-        // 4. Handle Authenticated Users
         if (loggedIn && (isAuthPage || location == '/' || location == '/splash')) {
           return '/home';
         }
@@ -95,13 +87,13 @@ class AppRouter {
             );
           },
           branches: [
-            /// BRANCH 0: HOME (LIVE POSTS)
+            /// BRANCH 0: HOME
             StatefulShellBranch(
               navigatorKey: _shellNavigatorHomeKey,
               routes: [
                 GoRoute(
                   path: '/home',
-                  builder: (_, _) => const EventListScreen(), // THIS IS YOUR FIRST PAGE
+                  builder: (_, _) => const EventListScreen(),
                   routes: [
                     GoRoute(
                       path: 'search', 
@@ -137,13 +129,15 @@ class AppRouter {
               ],
             ),
 
-            /// BRANCH 2: PROFILE
+            /// BRANCH 2: PROFILE (Self-Profile Tab)
             StatefulShellBranch(
               navigatorKey: _shellNavigatorProfileKey,
               routes: [
                 GoRoute(
                   path: '/profile',
-                  builder: (_, _) => const ProfileScreen(),
+                  builder: (_, _) => ProfileScreen(
+                    userId: FirebaseAuth.instance.currentUser?.uid ?? '',
+                  ),
                   routes: [
                     GoRoute(
                       path: 'edit',
@@ -156,7 +150,17 @@ class AppRouter {
           ],
         ),
 
-        /// --- UTILITY (Pushed on top of Nav Bar) ---
+        /// --- TOP-LEVEL PUSH ROUTES (Hides Bottom Nav) ---
+
+        // Dynamic Route for viewing other users' profiles
+        GoRoute(
+          path: '/user/:userId',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (context, state) => ProfileScreen(
+            userId: state.pathParameters['userId']!,
+          ),
+        ),
+
         GoRoute(
           path: '/create-post',
           parentNavigatorKey: _rootNavigatorKey, 
