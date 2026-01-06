@@ -24,37 +24,38 @@ class HomeScreen extends StatelessWidget {
   void _onTap(int index, BuildContext context) {
     HapticFeedback.lightImpact();
 
-    // The "Add" button is at index 2, but isn't a branch
+    // Index 2 is the "Add" floating button - pushes a full-screen route
     if (index == 2) {
       context.push('/create-post');
       return;
     }
 
-    // Map UI icons to GoRouter branches
-    // Branch 0: Explore, Branch 1: Activity/Chat, Branch 2: Profile
+    // Mapping UI indexes to GoRouter branch indexes
+    // Ensure your router.dart matches these branch numbers!
     switch (index) {
       case 0:
-        navigationShell.goBranch(0);
+        navigationShell.goBranch(0); // Explore
         break;
       case 1:
-        navigationShell.goBranch(1);
+        navigationShell.goBranch(1); // Activity/Chat
+        break;
+      case 3:
+        navigationShell.goBranch(3); // Search Branch (New)
         break;
       case 4:
-        navigationShell.goBranch(2);
-        break;
-      default:
-        // Search (index 3) is currently a placeholder
+        navigationShell.goBranch(2); // Profile Branch (Branch 2 in shell)
         break;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Maps the shell's internal index (0,1,2) back to the 5-item UI layout
+    // Maps the shell's internal branch index back to the 5-item UI layout index
     final currentIndex = switch (navigationShell.currentIndex) {
-      0 => 0, // Explore Branch
-      1 => 1, // Activity Branch
-      2 => 4, // Profile Branch
+      0 => 0, // Explore
+      1 => 1, // Activity
+      3 => 3, // Search
+      2 => 4, // Profile (Branch 2 corresponds to UI index 4)
       _ => 0,
     };
 
@@ -73,37 +74,15 @@ class HomeScreen extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(
-                  0,
-                  Icons.home_rounded,
-                  Icons.home_outlined,
-                  'Home',
-                  currentIndex,
-                  context,
-                ),
+                _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Home', currentIndex, context),
                 
-                // Real-time Chat/Activity Badge
                 _buildLiveActivityNavItem(1, currentIndex, context),
 
                 _buildCreateButton(context),
 
-                _buildNavItem(
-                  3,
-                  Icons.search_rounded,
-                  Icons.search_rounded,
-                  'Search',
-                  currentIndex,
-                  context,
-                ),
+                _buildNavItem(3, Icons.search_rounded, Icons.search_outlined, 'Search', currentIndex, context),
 
-                _buildNavItem(
-                  4,
-                  Icons.person_rounded,
-                  Icons.person_outline_rounded,
-                  'Profile',
-                  currentIndex,
-                  context,
-                ),
+                _buildNavItem(4, Icons.person_rounded, Icons.person_outline_rounded, 'Profile', currentIndex, context),
               ],
             ),
           ),
@@ -112,7 +91,8 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// Listens to the 'notifications' collection for the current user
+  // --- UI COMPONENTS ---
+
   Widget _buildLiveActivityNavItem(int index, int currentIndex, BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
@@ -129,14 +109,7 @@ class HomeScreen extends StatelessWidget {
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            _buildNavItem(
-              index,
-              Icons.messenger_rounded,
-              Icons.messenger_outline_rounded,
-              'Messages',
-              currentIndex,
-              context,
-            ),
+            _buildNavItem(index, Icons.messenger_rounded, Icons.messenger_outline_rounded, 'Messages', currentIndex, context),
             if (hasUpdate)
               Positioned(
                 top: 10,
@@ -152,11 +125,7 @@ class HomeScreen extends StatelessWidget {
                   child: Center(
                     child: Text(
                       unreadCount > 99 ? '99+' : '$unreadCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -175,7 +144,7 @@ class HomeScreen extends StatelessWidget {
         height: 48,
         decoration: BoxDecoration(
           color: primaryPink,
-          shape: BoxShape.circle,
+          borderRadius: BorderRadius.circular(16), // Slightly more modern curve
           boxShadow: [
             BoxShadow(
               color: primaryPink.withOpacity(0.3),
@@ -189,14 +158,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildNavItem(
-    int index,
-    IconData selectedIcon,
-    IconData unselectedIcon,
-    String label,
-    int currentIndex,
-    BuildContext context,
-  ) {
+  Widget _buildNavItem(int index, IconData selectedIcon, IconData unselectedIcon, String label, int currentIndex, BuildContext context) {
     final isSelected = currentIndex == index;
 
     return InkWell(

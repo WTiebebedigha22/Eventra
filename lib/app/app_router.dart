@@ -34,6 +34,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorHomeKey = GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
 final _shellNavigatorChatKey = GlobalKey<NavigatorState>(debugLabel: 'chat');
 final _shellNavigatorProfileKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
+final _shellNavigatorSearchKey = GlobalKey<NavigatorState>(debugLabel: 'search');
 
 class AppRouter {
   GoRouter? _router;
@@ -60,7 +61,7 @@ class AppRouter {
           if (!onboardingComplete && location != '/onboarding') {
             return '/onboarding';
           }
-          return location == '/login' ? null : '/login';
+          return '/login';
         }
 
         if (loggedIn && (isAuthPage || location == '/' || location == '/splash')) {
@@ -71,14 +72,14 @@ class AppRouter {
       },
 
       routes: [
-        /// --- FULL SCREEN AUTH ---
+        /// --- FULL SCREEN AUTH ROUTES ---
         GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
         GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
         GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
         GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
         GoRoute(path: '/forgot-password', builder: (_, _) => const ForgotPasswordScreen()),
 
-        /// --- MAIN APP SHELL (Bottom Nav) ---
+        /// --- MAIN APP SHELL (Bottom Navigation) ---
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return HomeScreen(
@@ -87,7 +88,7 @@ class AppRouter {
             );
           },
           branches: [
-            /// BRANCH 0: HOME
+            /// BRANCH 0: EXPLORE / HOME
             StatefulShellBranch(
               navigatorKey: _shellNavigatorHomeKey,
               routes: [
@@ -95,10 +96,6 @@ class AppRouter {
                   path: '/home',
                   builder: (_, _) => const EventListScreen(),
                   routes: [
-                    GoRoute(
-                      path: 'search', 
-                      builder: (_, _) => const SearchScreen(),
-                    ),
                     GoRoute(
                       path: 'event/:id',
                       builder: (_, state) => EventDetailScreen(
@@ -110,7 +107,7 @@ class AppRouter {
               ],
             ),
 
-            /// BRANCH 1: CHAT
+            /// BRANCH 1: CHAT / MESSAGES
             StatefulShellBranch(
               navigatorKey: _shellNavigatorChatKey,
               routes: [
@@ -129,7 +126,7 @@ class AppRouter {
               ],
             ),
 
-            /// BRANCH 2: PROFILE (Self-Profile Tab)
+            /// BRANCH 2: MY PROFILE (Index 4 in UI)
             StatefulShellBranch(
               navigatorKey: _shellNavigatorProfileKey,
               routes: [
@@ -147,12 +144,23 @@ class AppRouter {
                 ),
               ],
             ),
+
+            /// BRANCH 3: SEARCH (Index 3 in UI)
+            StatefulShellBranch(
+              navigatorKey: _shellNavigatorSearchKey,
+              routes: [
+                GoRoute(
+                  path: '/search',
+                  builder: (_, _) => const SearchScreen(),
+                ),
+              ],
+            ),
           ],
         ),
 
         /// --- TOP-LEVEL PUSH ROUTES (Hides Bottom Nav) ---
 
-        // Dynamic Route for viewing other users' profiles
+        // Dynamic Route for viewing other users' profiles from Search or Events
         GoRoute(
           path: '/user/:userId',
           parentNavigatorKey: _rootNavigatorKey,
@@ -161,6 +169,7 @@ class AppRouter {
           ),
         ),
 
+        // Create Post flow
         GoRoute(
           path: '/create-post',
           parentNavigatorKey: _rootNavigatorKey, 
@@ -173,6 +182,7 @@ class AppRouter {
           ],
         ),
 
+        // Settings stack
         GoRoute(
           path: '/settings',
           parentNavigatorKey: _rootNavigatorKey,
