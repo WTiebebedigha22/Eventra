@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
-
   const ProfileScreen({required this.userId, super.key});
 
   @override
@@ -16,12 +15,12 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
   bool isFollowing = false;
+  bool isLoadingFollow = false; 
   static const Color primaryPink = Color(0xFFE91E63);
 
   @override
   void initState() {
     super.initState();
-    // Only check follow status if viewing someone else
     if (widget.userId != currentUid) {
       _checkFollowStatus();
     }
@@ -38,21 +37,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _toggleFollow() async {
+    if (isLoadingFollow) return;
+
+    setState(() {
+      isFollowing = !isFollowing; // Optimistic Update
+      isLoadingFollow = true;
+    });
+    
     HapticFeedback.mediumImpact();
+
     final userRef = FirebaseFirestore.instance.collection('users').doc(widget.userId);
     final currentUserRef = FirebaseFirestore.instance.collection('users').doc(currentUid);
     final followerRef = userRef.collection('followers').doc(currentUid);
 
-    setState(() => isFollowing = !isFollowing);
-
-    if (isFollowing) {
-      await followerRef.set({'followedAt': FieldValue.serverTimestamp()});
-      await userRef.update({'followerCount': FieldValue.increment(1)});
-      await currentUserRef.update({'followingCount': FieldValue.increment(1)});
-    } else {
-      await followerRef.delete();
-      await userRef.update({'followerCount': FieldValue.increment(-1)});
-      await currentUserRef.update({'followingCount': FieldValue.increment(-1)});
+    try {
+      if (isFollowing) {
+        await followerRef.set({'followedAt': FieldValue.serverTimestamp()});
+        await userRef.update({'followerCount': FieldValue.increment(1)});
+        await currentUserRef.update({'followingCount': FieldValue.increment(1)});
+      } else {
+        await followerRef.delete();
+        await userRef.update({'followerCount': FieldValue.increment(-1)});
+        await currentUserRef.update({'followingCount': FieldValue.increment(-1)});
+      }
+    } catch (e) {
+      // Rollback on error
+      if (mounted) {
+        setState(() => isFollowing = !isFollowing);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Action failed. Check connection.")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoadingFollow = false);
     }
   }
 
@@ -60,7 +77,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final bool isMe = widget.userId == currentUid;
 
-    // Using DefaultTabController fixes the LateInitializationError
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -84,6 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         body: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
           builder: (context, snapshot) {
+            if (snapshot.hasError) return _buildErrorState();
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: primaryPink));
             }
@@ -111,7 +128,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 const SizedBox(height: 10),
 
-                // Tab Selection
                 const TabBar(
                   indicatorColor: primaryPink,
                   labelColor: Colors.white,
@@ -149,11 +165,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         CircleAvatar(
           radius: 45,
           backgroundColor: const Color(0xFF262626),
-          backgroundImage: data['photoURL'] != null ? NetworkImage(data['photoURL']) : null,
-          child: data['photoURL'] == null ? const Icon(Icons.person, size: 40, color: Colors.white) : null,
+          backgroundImage: (data['photoURL'] != null && data['photoURL'].toString().isNotEmpty) 
+              ? NetworkImage(data['photoURL']) 
+              : null,
+          child: (data['photoURL'] == null || data['photoURL'].toString().isEmpty) 
+              ? const Icon(Icons.person, size: 40, color: Colors.white) 
+              : null,
         ),
         const SizedBox(height: 12),
-        Text("@${data['username']}", 
+        Text("${data['username'] ?? 'unknown'}", 
           style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         if (data['bio'] != null) Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
@@ -203,7 +223,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // TAB 1: POSTS
   Widget _buildUserPostsGrid(String uid) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -212,7 +231,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return _buildErrorState(); // Likely missing index
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) return _buildEmptyState(Icons.camera_alt_outlined, "No posts yet");
 
@@ -223,14 +244,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
           itemBuilder: (context, index) {
             final post = docs[index].data() as Map<String, dynamic>;
-            return Image.network(post['imageUrl'], fit: BoxFit.cover);
+            return Image.network(post['imageUrl'] ?? '', fit: BoxFit.cover, 
+              errorBuilder: (c, e, s) => Container(color: Colors.grey[900]));
           },
         );
       },
     );
   }
 
-  // TAB 2: ORGANIZED EVENTS
   Widget _buildUserEventsList(String uid) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -239,6 +260,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return _buildErrorState();
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
@@ -252,7 +274,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // TAB 3: SAVED EVENTS
   Widget _buildSavedEventsList(String uid) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -262,6 +283,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .orderBy('savedAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return _buildErrorState();
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) return _buildEmptyState(Icons.bookmark_border_rounded, "No saved events");
@@ -283,7 +305,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: ListTile(
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(4),
-          child: Image.network(data['imageUrl'] ?? '', width: 50, height: 50, fit: BoxFit.cover),
+          child: (data['imageUrl'] != null) 
+            ? Image.network(data['imageUrl'], width: 50, height: 50, fit: BoxFit.cover)
+            : Container(width: 50, height: 50, color: Colors.grey[800], child: const Icon(Icons.event)),
         ),
         title: Text(data['title'] ?? 'Event', 
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -304,6 +328,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 10),
           Text(message, style: const TextStyle(color: Colors.grey)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(20.0),
+        child: Text("Data fetch error. Make sure you have created Firestore indexes for composite queries.",
+          textAlign: TextAlign.center, style: TextStyle(color: Colors.redAccent)),
       ),
     );
   }

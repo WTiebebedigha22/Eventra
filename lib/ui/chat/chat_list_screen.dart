@@ -86,7 +86,6 @@ class ChatListScreen extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           trailing: Text(
-                            // Update: Use your ChatService's improved formatter
                             chatService.formatTimestamp(chatData['lastMessageTime']),
                             style: TextStyle(color: textColor.withOpacity(0.4), fontSize: 12),
                           ),
@@ -104,14 +103,13 @@ class ChatListScreen extends StatelessWidget {
     );
   }
 
-  // ... (Keeping your helper widgets: _buildEmptyState, _buildStoriesSection, _buildStoryItem)
   
   Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 64, color: textColor.withOpacity(0.2)),
+          Icon(Icons.chat_rounded, size: 64, color: textColor.withOpacity(0.2)),
           const SizedBox(height: 16),
           Text("No conversations yet", style: TextStyle(color: textColor.withOpacity(0.5))),
         ],
@@ -125,7 +123,7 @@ class ChatListScreen extends StatelessWidget {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        itemCount: 5,
+        itemCount: 7,
         itemBuilder: (context, index) => _buildStoryItem("User $index"),
       ),
     );

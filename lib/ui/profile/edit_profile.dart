@@ -32,11 +32,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // Use listen: false because we just want the initial values
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
 
-      _emailController.text = auth.currentUserEmail ?? '';
+      _emailController.text = auth.currentUserEmail;
       _usernameController.text = auth.displayName; 
       _firstNameController.text = auth.firstName; 
       _lastNameController.text = auth.lastName;
