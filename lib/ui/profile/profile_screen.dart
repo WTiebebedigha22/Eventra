@@ -18,6 +18,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool isLoadingFollow = false; 
   static const Color primaryPink = Color(0xFFE91E63);
 
+  // --- REPAIR LOGIC START ---
+  Future<void> _runDatabaseRepair() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Starting database repair...")),
+    );
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      int repairedCount = 0;
+
+      // 1. Repair Posts (Check for missing createdAt)
+      final postQuery = await FirebaseFirestore.instance
+          .collection('posts')
+          .where('creatorId', isEqualTo: widget.userId)
+          .get();
+
+      for (var doc in postQuery.docs) {
+        if (!doc.data().containsKey('createdAt') || doc.data()['createdAt'] == null) {
+          batch.update(doc.reference, {'createdAt': FieldValue.serverTimestamp()});
+          repairedCount++;
+        }
+      }
+
+      // 2. Repair Events (Check for missing createdAt)
+      final eventQuery = await FirebaseFirestore.instance
+          .collection('events')
+          .where('creatorId', isEqualTo: widget.userId)
+          .get();
+
+      for (var doc in eventQuery.docs) {
+        if (!doc.data().containsKey('createdAt') || doc.data()['createdAt'] == null) {
+          batch.update(doc.reference, {'createdAt': FieldValue.serverTimestamp()});
+          repairedCount++;
+        }
+      }
+
+      if (repairedCount > 0) {
+        await batch.commit();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Fixed $repairedCount items! Refreshing...")),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("No broken data found. Check your UIDs.")),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Repair failed: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+  // --- REPAIR LOGIC END ---
+
   @override
   void initState() {
     super.initState();
@@ -38,14 +98,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _toggleFollow() async {
     if (isLoadingFollow) return;
-
     setState(() {
-      isFollowing = !isFollowing; // Optimistic Update
+      isFollowing = !isFollowing;
       isLoadingFollow = true;
     });
-    
     HapticFeedback.mediumImpact();
-
     final userRef = FirebaseFirestore.instance.collection('users').doc(widget.userId);
     final currentUserRef = FirebaseFirestore.instance.collection('users').doc(currentUid);
     final followerRef = userRef.collection('followers').doc(currentUid);
@@ -61,7 +118,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await currentUserRef.update({'followingCount': FieldValue.increment(-1)});
       }
     } catch (e) {
-      // Rollback on error
       if (mounted) {
         setState(() => isFollowing = !isFollowing);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -91,6 +147,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: Text(isMe ? "My Profile" : "Profile", 
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           actions: [
+            // REPAIR BUTTON - Click this once to fix data!, just a Test feature
+            IconButton(
+              icon: const Icon(Icons.build_circle_outlined, color: Colors.orange),
+              onPressed: _runDatabaseRepair,
+            ),
             if (isMe) IconButton(
               icon: const Icon(Icons.settings_outlined, color: Colors.white),
               onPressed: () => context.push('/settings'),
@@ -157,7 +218,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // --- UI BUILDERS ---
-
   Widget _buildProfileHeader(Map<String, dynamic> data) {
     return Column(
       children: [
@@ -224,33 +284,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildUserPostsGrid(String uid) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('posts')
-          .where('creatorId', isEqualTo: uid)
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) return _buildErrorState(); // Likely missing index
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _buildEmptyState(Icons.camera_alt_outlined, "No posts yet");
+  return StreamBuilder<QuerySnapshot>(
+    stream: FirebaseFirestore.instance
+        .collection('posts')
+        .where('userId', isEqualTo: uid) // Changed from 'creatorId'
+        .orderBy('timestamp', descending: true) // Changed from 'createdAt'
+        .snapshots(),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        debugPrint("Query Error: ${snapshot.error}");
+        return _buildErrorState();
+      }
+      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+      
+      final docs = snapshot.data!.docs;
+      if (docs.isEmpty) return _buildEmptyState(Icons.camera_alt_outlined, "No posts yet");
 
-        return GridView.builder(
-          padding: const EdgeInsets.all(2),
-          itemCount: docs.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
-          itemBuilder: (context, index) {
-            final post = docs[index].data() as Map<String, dynamic>;
-            return Image.network(post['imageUrl'] ?? '', fit: BoxFit.cover, 
-              errorBuilder: (c, e, s) => Container(color: Colors.grey[900]));
-          },
-        );
-      },
-    );
-  }
+      return GridView.builder(
+        padding: const EdgeInsets.all(2),
+        itemCount: docs.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
+        itemBuilder: (context, index) {
+          final data = docs[index].data() as Map<String, dynamic>;
+          // Your model uses 'mediaUrl' for the image
+          return Image.network(
+            data['mediaUrl'] ?? '', 
+            fit: BoxFit.cover,
+            errorBuilder: (c, e, s) => Container(color: Colors.grey[900]),
+          );
+        },
+      );
+    },
+  );
+}
 
   Widget _buildUserEventsList(String uid) {
     return StreamBuilder<QuerySnapshot>(
@@ -264,7 +331,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
-
         return ListView.builder(
           padding: const EdgeInsets.all(12),
           itemCount: docs.length,
@@ -287,7 +353,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) return _buildEmptyState(Icons.bookmark_border_rounded, "No saved events");
-
         return ListView.builder(
           padding: const EdgeInsets.all(12),
           itemCount: docs.length,
@@ -336,7 +401,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return const Center(
       child: Padding(
         padding: EdgeInsets.all(20.0),
-        child: Text("Data fetch error. Make sure you have created Firestore indexes for composite queries.",
+        child: Text("Data fetch error. Check Firestore indexes.",
           textAlign: TextAlign.center, style: TextStyle(color: Colors.redAccent)),
       ),
     );
