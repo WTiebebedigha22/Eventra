@@ -324,13 +324,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
       stream: FirebaseFirestore.instance
           .collection('events')
           .where('creatorId', isEqualTo: uid)
-          .orderBy('createdAt', descending: true)
+          // 1. TEMPORARY FIX: Comment out the orderBy line below. 
+          // If the events appear, you know the issue is a missing 'createdAt' field or a missing Index.
+          .orderBy('createdAt', descending: true) 
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return _buildErrorState();
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
+        if (snapshot.hasError) {
+          // 2. CRITICAL: Print the error to the console.
+          // If an Index is missing, Firestore will provide a LINK in the log to create it.
+          debugPrint("Firestore Error: ${snapshot.error}");
+          return _buildErrorState();
+        }
+        
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: primaryPink));
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        
+        if (docs.isEmpty) {
+          return _buildEmptyState(Icons.event_note_rounded, "No events organized");
+        }
+
         return ListView.builder(
           padding: const EdgeInsets.all(12),
           itemCount: docs.length,

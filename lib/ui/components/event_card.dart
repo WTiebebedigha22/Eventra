@@ -2,28 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:ventra/ui/components/likes.dart'; 
-import 'package:ventra/ui/components/comments.dart'; 
+import 'package:ventra/ui/components/comment_sheet.dart'; 
 
 class EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
   const EventCard({super.key, required this.event});
 
   void _openComments(BuildContext context) {
+    HapticFeedback.lightImpact(); // Consistent with your home screen feel
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent, // Allows for rounded top corners
+      backgroundColor: Colors.transparent,
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.5,
+        initialChildSize: 0.6, // Start at 60% of screen
+        minChildSize: 0.4,
         maxChildSize: 0.95,
+        expand: false, // CRITICAL: Fixes the 'height' error in BottomSheets
         builder: (_, controller) => Container(
           decoration: const BoxDecoration(
             color: Color(0xFF0F0F0F),
             borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
           ),
-          child: CommentsScreen(postId: event['id']),
+          // Pass the scroll controller to allow scrolling inside the sheet
+          child: CommentsScreen(postId: event['id']), 
         ),
       ),
     );
@@ -32,22 +37,24 @@ class EventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final String imageUrl = event['imageUrl'] ?? '';
 
     return GestureDetector(
       onTap: () => context.push('/home/event/${event['id']}'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 20),
-        height: 280, // Slightly increased height for better spacing
+        height: 280,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          image: DecorationImage(
-            image: NetworkImage(event['imageUrl'] ?? ''),
-            fit: BoxFit.cover,
-          ),
+          // Added a fallback color if image fails to load
+          color: Colors.grey[900], 
+          image: imageUrl.isNotEmpty 
+            ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover)
+            : null,
         ),
         child: Stack(
           children: [
-            // Dark Gradient Overlay
+            // Dark Gradient Overlay - Optimized colors
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
@@ -55,15 +62,15 @@ class EventCard extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.transparent, 
-                    Colors.black.withOpacity(0.2),
+                    Colors.black.withOpacity(0.1), 
+                    Colors.black.withOpacity(0.4),
                     Colors.black.withOpacity(0.9)
                   ],
                 ),
               ),
             ),
             
-            // Price Tag (Top Right)
+            // Price Tag
             Positioned(
               top: 15,
               right: 15,
@@ -72,21 +79,25 @@ class EventCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: const Color(0xFFE91E63),
                   borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black26, blurRadius: 4, offset: const Offset(0, 2))
+                  ],
                 ),
                 child: Text(
-                  event['price'] == 0 ? "FREE" : "\$${event['price']}", 
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                  (event['price'] == 0 || event['price'] == null) ? "FREE" : "\$${event['price']}", 
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
                 ),
               ),
             ),
 
-            // Event Details (Bottom Left)
+            // Event Details
             Positioned(
               bottom: 20,
               left: 20,
-              right: 100, // Space for stacked action buttons
+              right: 80, // Prevent text from overlapping the vertical buttons
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     event['title'] ?? 'Untitled Event', 
@@ -101,9 +112,10 @@ class EventCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          "${event['location']} • ${event['date'] ?? 'Soon'}", 
+                          "${event['location'] ?? 'Location'} • ${event['date'] ?? 'Soon'}", 
                           style: const TextStyle(color: Colors.white70, fontSize: 13),
                           maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -112,34 +124,26 @@ class EventCard extends StatelessWidget {
               ),
             ),
 
-            // Action Buttons (Bottom Right - Stacked Vertically)
+            // Vertical Action Column
             Positioned(
-              bottom: 10,
+              bottom: 15,
               right: 10,
               child: Column(
                 children: [
-                  // Bookmark Button
-                  IconButton(
-                    icon: const Icon(Icons.bookmark_border_rounded, color: Colors.white, size: 24),
-                    onPressed: () => _toggleBookmark(context, currentUid),
+                  _buildIconButton(
+                    icon: Icons.bookmark_border_rounded, 
+                    onTap: () => _toggleBookmark(context, currentUid),
                   ),
-                  // Comment Button with Count
-                  Column(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 24),
-                        onPressed: () => _openComments(context),
-                      ),
-                      Text(
-                        "${event['commentCount'] ?? 0}",
-                        style: const TextStyle(color: Colors.white, fontSize: 10),
-                      ),
-                    ],
+                  const SizedBox(height: 5),
+                  _buildIconButton(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    label: "${event['commentCount'] ?? 0}",
+                    onTap: () => _openComments(context),
                   ),
-                  // Like Button
+                  const SizedBox(height: 5),
                   LikeButton(
                     postId: event['id'], 
-                    likes: event['likes'] ?? [],
+                    likes: List<String>.from(event['likes'] ?? []),
                   ),
                 ],
               ),
@@ -147,6 +151,22 @@ class EventCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  // Helper to keep the vertical column clean
+  Widget _buildIconButton({required IconData icon, String? label, required VoidCallback onTap}) {
+    return Column(
+      children: [
+        IconButton(
+          icon: Icon(icon, color: Colors.white, size: 26),
+          onPressed: onTap,
+          constraints: const BoxConstraints(), // Removes extra padding
+          padding: const EdgeInsets.all(8),
+        ),
+        if (label != null)
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
+      ],
     );
   }
 

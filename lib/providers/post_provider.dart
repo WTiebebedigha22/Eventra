@@ -141,7 +141,7 @@ class PostProvider extends ChangeNotifier {
       // 2. Local Update: Create a version of the post with the new ID for instant display
       final postWithId = Post(
         id: docRef.id,
-        userId: post.userId,
+        creatorId: post.creatorId,
         username: post.username,
         userProfileUrl: post.userProfileUrl,
         content: post.content,

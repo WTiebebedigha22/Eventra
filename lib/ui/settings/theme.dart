@@ -3,14 +3,14 @@ import 'package:flutter/material.dart';
 class ThemeScreen extends StatelessWidget {
   const ThemeScreen({super.key});
 
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Colors.black;
-  static const Color appBarColor = Color(0xFF181818);
-  static const Color textColor = Colors.white;
+  static const Color primaryPink = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white;
+  static const Color appBarColor = Colors.white;
+  static const Color textColor = Colors.black;
 
   @override
   Widget build(BuildContext context) {
-    String selectedTheme = 'Dark'; // Mock value
+    String selectedTheme = 'Light'; // Mock value
     
     return Scaffold(
       backgroundColor: backgroundColor,

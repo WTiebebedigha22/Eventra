@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../models/posts/post.dart';
+
+// Internal Imports
 import '../../providers/post_provider.dart';
+import '../components/event_card.dart'; // Import the unified component
 
 // Theme Constants
 const Color primaryPink = Color(0xFFE91E63); 
-const Color backgroundColor = Colors.black;
-const Color cardColor = Color(0xFF181818); 
+const Color backgroundColor = Color(0xFF0F0F0F); // Matches your HomeShell
 const Color textColor = Colors.white;
 
 class EventListScreen extends StatefulWidget {
@@ -24,20 +25,23 @@ class _EventListScreenState extends State<EventListScreen> {
   @override
   void initState() {
     super.initState();
-    // Fetch live posts immediately upon landing
+    // Fetch live posts immediately
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PostProvider>().fetchPosts(isRefresh: true);
     });
 
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
-        context.read<PostProvider>().fetchPosts();
-      }
-    });
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
+      context.read<PostProvider>().fetchPosts();
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -46,61 +50,75 @@ class _EventListScreenState extends State<EventListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        elevation: 0,
-        title: const Text(
-          'EVENTRA',
-          style: TextStyle(color: primaryPink, fontWeight: FontWeight.bold, fontSize: 24),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search, color: textColor),
-            onPressed: () => context.push('/home/search'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_none, color: textColor),
-            onPressed: () => context.push('/settings/activity'),
-          ),
-        ],
-      ),
       body: Consumer<PostProvider>(
         builder: (context, provider, child) {
-          // 1. Show Skeleton if data is loading for the first time
-          if (provider.isLoading && provider.posts.isEmpty) {
-            return _buildSkeletonLoader();
-          }
-
-          // 2. Handle Empty State
-          if (provider.posts.isEmpty) {
-            return _buildEmptyState();
-          }
-
-          // 3. Main Live Feed
           return RefreshIndicator(
+            backgroundColor: const Color(0xFF181818),
             color: primaryPink,
             onRefresh: () => provider.fetchPosts(isRefresh: true),
             child: CustomScrollView(
               controller: _scrollController,
+              physics: const BouncingScrollPhysics(),
               slivers: [
-                SliverToBoxAdapter(child: _buildCategoryFilters()),
-                const SliverToBoxAdapter(child: SizedBox(height: 10)),
-                
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      if (index < provider.posts.length) {
-                        return _buildPostCard(context, provider.posts[index]);
-                      } else {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 32),
-                          child: Center(child: CircularProgressIndicator(color: primaryPink)),
-                        );
-                      }
-                    },
-                    childCount: provider.posts.length + (provider.hasMore ? 1 : 0),
+                // 1. Dynamic AppBar
+                SliverAppBar(
+                  backgroundColor: backgroundColor,
+                  floating: true,
+                  pinned: false,
+                  elevation: 0,
+                  title: const Text(
+                    'EVENTRA',
+                    style: TextStyle(
+                      color: primaryPink, 
+                      fontWeight: FontWeight.w900, 
+                      fontSize: 22,
+                      letterSpacing: -1,
+                    ),
                   ),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.search, color: textColor),
+                      onPressed: () => context.push('/search'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.notifications_none, color: textColor),
+                      onPressed: () => context.push('/settings/activity'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                 ),
+
+                // 2. Category Filters
+                SliverToBoxAdapter(child: _buildCategoryFilters()),
+
+                // 3. Conditional Content
+                if (provider.isLoading && provider.posts.isEmpty)
+                  SliverFillRemaining(child: _buildSkeletonLoader())
+                else if (provider.posts.isEmpty)
+                  SliverFillRemaining(child: _buildEmptyState())
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.all(16),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          if (index < provider.posts.length) {
+                            final post = provider.posts[index];
+                            
+                            // Transform Post model to Map for the EventCard 
+                            // ensuring the 'id' is explicitly passed.
+                            return EventCard(event: post.toMap()..['id'] = post.id);
+                          } else {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 32),
+                              child: Center(child: CircularProgressIndicator(color: primaryPink)),
+                            );
+                          }
+                        },
+                        childCount: provider.posts.length + (provider.hasMore ? 1 : 0),
+                      ),
+                    ),
+                  ),
               ],
             ),
           );
@@ -109,115 +127,50 @@ class _EventListScreenState extends State<EventListScreen> {
     );
   }
 
-  // --- SKELETON LOADER UI ---
-  Widget _buildSkeletonLoader() {
-    return ListView.builder(
-      itemCount: 3,
-      itemBuilder: (context, index) => Shimmer.fromColors(
-        baseColor: Colors.grey[900]!,
-        highlightColor: Colors.grey[800]!,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ListTile(
-              leading: const CircleAvatar(backgroundColor: Colors.white),
-              title: Container(height: 10, width: 100, color: Colors.white),
+  // --- UI COMPONENTS ---
+
+  Widget _buildCategoryFilters() {
+    final categories = ['All', 'Parties', 'Seminars', 'Tech', 'Art', 'Rentals'];
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: categories.length,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemBuilder: (context, index) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            label: Text(categories[index]),
+            selected: index == 0,
+            selectedColor: primaryPink,
+            labelStyle: TextStyle(
+              color: index == 0 ? Colors.white : Colors.white54,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
             ),
-            Container(height: 300, width: double.infinity, color: Colors.white),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(height: 10, width: 200, color: Colors.white),
-            ),
-            const SizedBox(height: 30),
-          ],
+            backgroundColor: const Color(0xFF181818),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            onSelected: (_) {},
+          ),
         ),
       ),
     );
   }
 
-  // --- LIVE POST CARD ---
-  Widget _buildPostCard(BuildContext context, Post post) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            leading: CircleAvatar(
-              backgroundImage: post.userProfileUrl != null 
-                  ? NetworkImage(post.userProfileUrl!) 
-                  : null,
-              backgroundColor: Colors.white,
-              child: post.userProfileUrl == null ? const Icon(Icons.person, color: primaryPink) : null,
-            ),
-            title: Text(post.username ?? "Eventra User", 
-                style: const TextStyle(color: textColor, fontWeight: FontWeight.bold)),
-            subtitle: post.location != null 
-                ? Text(post.location!, style: const TextStyle(color: primaryPink, fontSize: 12))
-                : null,
-            trailing: const Icon(Icons.more_vert, color: Colors.white54),
-          ),
-          
-          GestureDetector(
-            onDoubleTap: () => context.read<PostProvider>().toggleLike(post.id, "currentUserId", "Current User"),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: post.mediaUrl != null 
-                  ? Image.network(post.mediaUrl!, fit: BoxFit.cover)
-                  : Container(color: cardColor),
-            ),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Icon(post.likes.contains("currentUserId") ? Icons.favorite : Icons.favorite_border, 
-                     color: post.likes.contains("currentUserId") ? primaryPink : Colors.white),
-                const SizedBox(width: 16),
-                const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white),
-                const SizedBox(width: 16),
-                const Icon(Icons.share_rounded, color: Colors.white),
-                const Spacer(),
-                if (post.eventDate != null)
-                  const Icon(Icons.calendar_today_outlined, color: primaryPink, size: 20),
-              ],
-            ),
-          ),
-          
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(text: "${post.username ?? 'User'} ", style: const TextStyle(fontWeight: FontWeight.bold)),
-                  TextSpan(text: post.content),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryFilters() {
-    const categories = ['All', 'Parties', 'Seminars', 'Tech Events', 'Art', 'Rentals', 'Services'];
-    return SizedBox(
-      height: 50,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: categories.length,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemBuilder: (context, index) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: ChoiceChip(
-            label: Text(categories[index]),
-            selected: index == 0,
-            selectedColor: primaryPink,
-            onSelected: (_) {},
+  Widget _buildSkeletonLoader() {
+    return ListView.builder(
+      itemCount: 2,
+      padding: const EdgeInsets.all(16),
+      itemBuilder: (context, index) => Shimmer.fromColors(
+        baseColor: Colors.grey[900]!,
+        highlightColor: Colors.grey[800]!,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          height: 280,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(24),
           ),
         ),
       ),
@@ -229,8 +182,10 @@ class _EventListScreenState extends State<EventListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.feed_outlined, size: 64, color: textColor.withOpacity(0.2)),
-          const Text("No live posts yet.", style: TextStyle(color: Colors.white54)),
+          Icon(Icons.event_available_outlined, size: 64, color: Colors.white10),
+          const SizedBox(height: 16),
+          const Text("No live events right now.", 
+            style: TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.w500)),
         ],
       ),
     );

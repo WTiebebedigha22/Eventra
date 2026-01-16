@@ -136,7 +136,7 @@ class PostDetailScreen extends StatelessWidget {
                   IconButton(
                     icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, color: isLiked ? Colors.red : Colors.white),
                     onPressed: () {
-                      context.read<PostProvider>().toggleLike(post.id, post.userId, auth.displayName);
+                      context.read<PostProvider>().toggleLike(post.id, post.creatorId, auth.displayName);
                     },
                   ),
                   Text('${post.likeCount}', style: const TextStyle(color: Colors.white)),

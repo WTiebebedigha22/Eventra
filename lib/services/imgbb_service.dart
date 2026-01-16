@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ImgBBService {
-  // Get your free API key from https://api.imgbb.com/
+  // Your provided API Key
   static const String _apiKey = '5558a317e6889711facf0a9502619fc0'; 
 
   static Future<String?> uploadImage(File imageFile) async {
@@ -13,6 +13,7 @@ class ImgBBService {
         Uri.parse('https://api.imgbb.com/1/upload?key=$_apiKey'),
       );
 
+      // This line prevents the "No host specified" error
       request.files.add(
         await http.MultipartFile.fromPath('image', imageFile.path),
       );
@@ -24,9 +25,11 @@ class ImgBBService {
       if (response.statusCode == 200) {
         return jsonResponse['data']['url']; // Direct link to image
       } else {
+        print('ImgBB Upload Failed: ${response.statusCode}');
         return null;
       }
     } catch (e) {
+      print('ImgBB Exception: $e');
       return null;
     }
   }
