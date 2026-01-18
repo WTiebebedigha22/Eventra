@@ -14,48 +14,37 @@ class HomeScreen extends StatelessWidget {
     super.key,
   });
 
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Color(0xFF0F0F0F);
-  static const Color navBarColor = Color(0xFF181818);
-  static const Color textColor = Colors.white;
-  static const Color borderColor = Color(0xFF262626);
+  // --- Theme Colors ---
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white;
+  static const Color inactiveColor = Color(0xFFBDC3C7);
+  static const Color borderStroke = Color(0xFFF1F3F5);
 
-  /// Handles navigation logic and haptics
   void _onTap(int index, BuildContext context) {
-    HapticFeedback.lightImpact();
+    HapticFeedback.selectionClick(); // Use selectionClick for nav feedback
 
-    // Index 2 is the "Add" floating button - pushes a full-screen route
     if (index == 2) {
       context.push('/create-post');
       return;
     }
 
-    // Mapping UI indexes to GoRouter branch indexes
-    // Ensure your router.dart matches these branch numbers!
+    // Index mapping for GoRouter branches
     switch (index) {
-      case 0:
-        navigationShell.goBranch(0); // Explore
-        break;
-      case 1:
-        navigationShell.goBranch(1); // Activity/Chat
-        break;
-      case 3:
-        navigationShell.goBranch(3); // Search Branch (New)
-        break;
-      case 4:
-        navigationShell.goBranch(2); // Profile Branch (Branch 2 in shell)
-        break;
+      case 0: navigationShell.goBranch(0); break; // Home
+      case 1: navigationShell.goBranch(1); break; // Messages
+      case 3: navigationShell.goBranch(3); break; // Search
+      case 4: navigationShell.goBranch(2); break; // Profile
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Maps the shell's internal branch index back to the 5-item UI layout index
+    // Current UI active index calculation
     final currentIndex = switch (navigationShell.currentIndex) {
-      0 => 0, // Explore
-      1 => 1, // Activity
-      3 => 3, // Search
-      2 => 4, // Profile (Branch 2 corresponds to UI index 4)
+      0 => 0,
+      1 => 1,
+      3 => 3,
+      2 => 4,
       _ => 0,
     };
 
@@ -64,25 +53,21 @@ class HomeScreen extends StatelessWidget {
       body: child,
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
-          color: navBarColor,
-          border: Border(top: BorderSide(color: borderColor, width: 0.5)),
+          color: backgroundColor,
+          border: Border(top: BorderSide(color: borderStroke, width: 1.5)),
         ),
         child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 70,
+          child: Container(
+            height: 65,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Home', currentIndex, context),
-                
-                _buildLiveActivityNavItem(1, currentIndex, context),
-
+                _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, currentIndex, context),
+                const NotificationBadgeItem(index: 1), // Optimized Stream component
                 _buildCreateButton(context),
-
-                _buildNavItem(3, Icons.search_rounded, Icons.search_outlined, 'Search', currentIndex, context),
-
-                _buildNavItem(4, Icons.person_rounded, Icons.person_outline_rounded, 'Profile', currentIndex, context),
+                _buildNavItem(3, Icons.search_rounded, Icons.search_outlined, currentIndex, context),
+                _buildNavItem(4, Icons.person_rounded, Icons.person_outline_rounded, currentIndex, context),
               ],
             ),
           ),
@@ -91,89 +76,101 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // --- UI COMPONENTS ---
-
-  Widget _buildLiveActivityNavItem(int index, int currentIndex, BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('notifications')
-          .where('userId', isEqualTo: uid)
-          .where('isRead', isEqualTo: false)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final int unreadCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-        final bool hasUpdate = unreadCount > 0;
-
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            _buildNavItem(index, Icons.messenger_rounded, Icons.messenger_outline_rounded, 'Messages', currentIndex, context),
-            if (hasUpdate)
-              Positioned(
-                top: 10,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: primaryPink,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: navBarColor, width: 1.5),
-                  ),
-                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                  child: Center(
-                    child: Text(
-                      unreadCount > 99 ? '99+' : '$unreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildCreateButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _onTap(2, context),
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: primaryPink,
-          borderRadius: BorderRadius.circular(16), // Slightly more modern curve
-          boxShadow: [
-            BoxShadow(
-              color: primaryPink.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
+  Widget _buildNavItem(int index, IconData selectedIcon, IconData unselectedIcon, int currentIndex, BuildContext context) {
+    final isSelected = currentIndex == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () => _onTap(index, context),
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
+        child: Icon(
+          isSelected ? selectedIcon : unselectedIcon,
+          color: isSelected ? primaryColor : inactiveColor,
+          size: 28,
         ),
-        child: const Icon(Icons.add, color: Colors.white, size: 30),
       ),
     );
   }
 
-  Widget _buildNavItem(int index, IconData selectedIcon, IconData unselectedIcon, String label, int currentIndex, BuildContext context) {
-    final isSelected = currentIndex == index;
+  Widget _buildCreateButton(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _onTap(2, context),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          decoration: BoxDecoration(
+            color: primaryColor,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: primaryColor.withOpacity(0.25),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.add, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+  }
+}
 
-    return InkWell(
-      onTap: () => _onTap(index, context),
-      splashColor: Colors.transparent,
-      highlightColor: Colors.transparent,
-      child: SizedBox(
-        width: MediaQuery.of(context).size.width / 5.5,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+/// Extracted Component to prevent full Nav rebuilds on database updates
+class NotificationBadgeItem extends StatelessWidget {
+  final int index;
+  const NotificationBadgeItem({required this.index, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final parent = context.findAncestorWidgetOfExactType<HomeScreen>();
+    
+    // Calculate if this item is selected via the navigation shell
+    final shell = parent?.navigationShell;
+    final isSelected = shell?.currentIndex == 1;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () => parent?._onTap(1, context),
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
             Icon(
-              isSelected ? selectedIcon : unselectedIcon,
-              color: isSelected ? primaryPink : textColor.withOpacity(0.4),
-              size: 28,
+              isSelected ? Icons.messenger_rounded : Icons.messenger_outline_rounded,
+              color: isSelected ? HomeScreen.primaryColor : HomeScreen.inactiveColor,
+              size: 26,
+            ),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('userId', isEqualTo: uid)
+                  .where('isRead', isEqualTo: false)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox();
+                
+                return Positioned(
+                  top: 12,
+                  right: MediaQuery.of(context).size.width * 0.04,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 16),
+                    child: Text(
+                      '${snapshot.data!.docs.length}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),

@@ -24,10 +24,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool agreedToTerms = false;
   String? selectedGender;
 
-  static const Color backgroundColor = Colors.black;
-  static const Color inputFillColor = Color(0xFF1C1C1E);
-  static const Color primaryColor = Colors.white;
-  static const Color secondaryText = Colors.white70;
+  // --- Theme Colors (Aligned with Login/Settings) ---
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white;
+  static const Color inputFillColor = Color(0xFFF8F9FA); 
+  static const Color textColor = Color(0xFF1C1E21);
+  static const Color subtleText = Colors.black54;
 
   @override
   void dispose() {
@@ -40,7 +42,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  // --- Logic: Random Username Generator ---
   void _generateUsername() {
     final adjectives = ['Cool', 'Swift', 'Bright', 'Neon', 'Urban', 'Wild', 'Silent'];
     final nouns = ['Vibes', 'User', 'Pulse', 'Star', 'Quest', 'Soul', 'Gamer'];
@@ -59,22 +60,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
     VoidCallback? onToggleVisibility,
     bool? isObscured,
     Widget? suffixIcon,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return TextField(
       controller: controller,
       obscureText: obscure,
-      style: const TextStyle(color: primaryColor),
+      keyboardType: keyboardType,
+      style: const TextStyle(color: textColor, fontSize: 15),
       cursorColor: primaryColor,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: secondaryText),
+        hintStyle: TextStyle(color: subtleText.withOpacity(0.4)),
         filled: true,
         fillColor: inputFillColor,
         suffixIcon: suffixIcon ?? (onToggleVisibility != null
             ? IconButton(
                 icon: Icon(
-                  isObscured! ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                  color: secondaryText,
+                  isObscured! ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                  color: Colors.grey,
                   size: 20,
                 ),
                 onPressed: onToggleVisibility,
@@ -84,6 +87,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.grey.withOpacity(0.05), width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: primaryColor, width: 1.5),
         ),
       ),
     );
@@ -95,162 +106,181 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     return Scaffold(
       backgroundColor: backgroundColor,
+      appBar: AppBar(
+        backgroundColor: backgroundColor,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: textColor, size: 20),
+          onPressed: () => context.pop(),
+        ),
+      ),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 20),
-                const Text(
-                  'Join Ventra',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: primaryColor),
-                ),
-                const SizedBox(height: 30),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Create Account',
+                textAlign: TextAlign.left,
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: textColor),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Fill in your details to get started',
+                style: TextStyle(color: subtleText, fontSize: 15),
+              ),
+              const SizedBox(height: 32),
 
-                // Name Row
-                Row(
-                  children: [
-                    Expanded(child: _buildTextField(firstName, 'First Name')),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildTextField(lastName, 'Last Name')),
-                  ],
-                ),
-                const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(child: _buildTextField(firstName, 'First Name')),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildTextField(lastName, 'Last Name')),
+                ],
+              ),
+              const SizedBox(height: 14),
 
-                // Username with Generator Button
-                _buildTextField(
-                  username, 
-                  'Username',
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.blueAccent),
-                    onPressed: _generateUsername,
-                    tooltip: 'Generate random username',
+              _buildTextField(
+                username, 
+                'Username',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.auto_awesome, color: primaryColor, size: 18),
+                  onPressed: _generateUsername,
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+                decoration: BoxDecoration(
+                  color: inputFillColor,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.grey.withOpacity(0.05)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedGender,
+                    hint: const Text('Select Gender', style: TextStyle(color: subtleText, fontSize: 15)),
+                    dropdownColor: Colors.white,
+                    icon: const Icon(Icons.keyboard_arrow_down, color: subtleText),
+                    isExpanded: true,
+                    items: ['Male', 'Female', 'Non-binary', 'Prefer not to say']
+                        .map((g) => DropdownMenuItem(
+                              value: g,
+                              child: Text(g, style: const TextStyle(color: textColor)),
+                            ))
+                        .toList(),
+                    onChanged: (val) => setState(() => selectedGender = val),
                   ),
                 ),
-                const SizedBox(height: 14),
+              ),
+              const SizedBox(height: 14),
 
-                // Gender Dropdown
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  decoration: BoxDecoration(
-                    color: inputFillColor,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: selectedGender,
-                      hint: const Text('Select Gender', style: TextStyle(color: secondaryText)),
-                      dropdownColor: inputFillColor,
-                      icon: const Icon(Icons.keyboard_arrow_down, color: secondaryText),
-                      isExpanded: true,
-                      items: ['Male', 'Female', 'Non-binary', 'Prefer not to say']
-                          .map((g) => DropdownMenuItem(
-                                value: g,
-                                child: Text(g, style: const TextStyle(color: primaryColor)),
-                              ))
-                          .toList(),
-                      onChanged: (val) => setState(() => selectedGender = val),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
+              _buildTextField(email, 'Email address', keyboardType: TextInputType.emailAddress),
+              const SizedBox(height: 14),
 
-                _buildTextField(email, 'Email address'),
-                const SizedBox(height: 14),
+              _buildTextField(
+                pass, 
+                'Password', 
+                obscure: _obscurePass,
+                isObscured: _obscurePass,
+                onToggleVisibility: () => setState(() => _obscurePass = !_obscurePass),
+              ),
+              const SizedBox(height: 14),
 
-                // Password with Visibility Toggle
-                _buildTextField(
-                  pass, 
-                  'Password', 
-                  obscure: _obscurePass,
-                  isObscured: _obscurePass,
-                  onToggleVisibility: () => setState(() => _obscurePass = !_obscurePass),
-                ),
-                const SizedBox(height: 14),
+              _buildTextField(
+                confirmPass, 
+                'Confirm Password', 
+                obscure: _obscureConfirm,
+                isObscured: _obscureConfirm,
+                onToggleVisibility: () => setState(() => _obscureConfirm = !_obscureConfirm),
+              ),
 
-                _buildTextField(
-                  confirmPass, 
-                  'Confirm Password', 
-                  obscure: _obscureConfirm,
-                  isObscured: _obscureConfirm,
-                  onToggleVisibility: () => setState(() => _obscureConfirm = !_obscureConfirm),
-                ),
+              const SizedBox(height: 14),
 
-                const SizedBox(height: 18),
-
-                // Terms
-                Row(
-                  children: [
-                    Checkbox(
+              Row(
+                children: [
+                  SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: Checkbox(
                       value: agreedToTerms,
                       onChanged: (value) => setState(() => agreedToTerms = value ?? false),
-                      activeColor: Colors.blueAccent,
-                      checkColor: Colors.white,
+                      activeColor: primaryColor,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                     ),
-                    const Expanded(
-                      child: Text(
-                        'I agree to the Terms & Privacy Policy',
-                        style: TextStyle(color: secondaryText, fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                ElevatedButton(
-                  onPressed: () async {
-                    if (!agreedToTerms || selectedGender == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please complete all fields and accept terms')),
-                      );
-                      return;
-                    }
-
-                    if (pass.text != confirmPass.text) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Passwords do not match')),
-                      );
-                      return;
-                    }
-
-                    await auth.signup(
-                      email: email.text.trim(),
-                      password: pass.text.trim(),
-                      userData: {
-                        'firstName': firstName.text.trim(),
-                        'lastName': lastName.text.trim(),
-                        'username': username.text.trim(),
-                        'gender': selectedGender,
-                      }
-                    );
-
-                    if (auth.isLoggedIn && mounted) context.go('/home');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  child: auth.isLoading
-                      ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                      : const Text('Create Account', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'I agree to the Terms & Privacy Policy',
+                      style: TextStyle(color: subtleText, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
 
-                const SizedBox(height: 20),
-                TextButton(
-                  onPressed: () => context.go('/login'),
-                  child: const Text('Already have an account? Log in', style: TextStyle(color: secondaryText)),
+              const SizedBox(height: 32),
+
+              ElevatedButton(
+                onPressed: auth.isLoading ? null : () async {
+                  if (!agreedToTerms || selectedGender == null) {
+                    _showSnackBar('Please complete all fields and accept terms');
+                    return;
+                  }
+                  if (pass.text != confirmPass.text) {
+                    _showSnackBar('Passwords do not match');
+                    return;
+                  }
+
+                  await auth.signup(
+                    email: email.text.trim(),
+                    password: pass.text.trim(),
+                    userData: {
+                      'firstName': firstName.text.trim(),
+                      'lastName': lastName.text.trim(),
+                      'username': username.text.trim(),
+                      'gender': selectedGender,
+                    }
+                  );
+
+                  if (auth.isLoggedIn && mounted) context.go('/home');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                const SizedBox(height: 30),
-              ],
-            ),
+                child: auth.isLoading
+                    ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Create Account', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Already have an account?', style: TextStyle(color: subtleText)),
+                  TextButton(
+                    onPressed: () => context.go('/login'),
+                    child: const Text('Log in', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 30),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 }

@@ -8,10 +8,10 @@ import '../../services/chat_service.dart';
 class ChatListScreen extends StatelessWidget {
   const ChatListScreen({super.key});
 
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Colors.black;
-  static const Color navBarColor = Color(0xFF181818);
-  static const Color textColor = Colors.white;
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white;
+  static const Color navBarColor = Colors.transparent;
+  static const Color textColor = Colors.black54;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +38,7 @@ class ChatListScreen extends StatelessWidget {
               stream: chatService.getConversationsStream(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: primaryPink));
+                  return const Center(child: CircularProgressIndicator(color: primaryColor));
                 }
 
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -69,10 +69,10 @@ class ChatListScreen extends StatelessWidget {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           leading: CircleAvatar(
                             radius: 28,
-                            backgroundColor: primaryPink.withOpacity(0.1),
+                            backgroundColor: primaryColor.withOpacity(0.1),
                             backgroundImage: profilePic != null ? NetworkImage(profilePic) : null,
                             child: profilePic == null 
-                                ? Text(displayName[0].toUpperCase(), style: const TextStyle(color: primaryPink)) 
+                                ? Text(displayName[0].toUpperCase(), style: const TextStyle(color: primaryColor)) 
                                 : null,
                           ),
                           title: Text(

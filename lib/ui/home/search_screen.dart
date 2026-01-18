@@ -14,37 +14,37 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
-  static const Color primaryPink = Color(0xFFE91E63);
+  static const Color primaryColor = Color(0xFF3E5992);
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F0F0F),
+        backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           title: Container(
             height: 45,
             decoration: BoxDecoration(
-              color: const Color(0xFF181818),
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFF262626)),
             ),
             child: TextField(
               controller: _searchController,
               onChanged: (value) => setState(() => _searchQuery = value.trim()),
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: Colors.black),
               decoration: InputDecoration(
                 hintText: "Search events or people...",
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
-                prefixIcon: const Icon(Icons.search_rounded, color: primaryPink, size: 20),
+                hintStyle: TextStyle(color: Colors.black38, fontSize: 14),
+                prefixIcon: const Icon(Icons.search_rounded, color: primaryColor, size: 20),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 suffixIcon: _searchQuery.isNotEmpty 
                   ? IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 18),
+                      icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 18),
                       onPressed: () {
                         _searchController.clear();
                         setState(() => _searchQuery = "");
@@ -55,9 +55,9 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           bottom: const TabBar(
-            indicatorColor: primaryPink,
+            indicatorColor: primaryColor,
             indicatorWeight: 3,
-            labelColor: Colors.white,
+            labelColor: Colors.blue,
             unselectedLabelColor: Colors.grey,
             tabs: [
               Tab(text: "Events"),
@@ -82,10 +82,10 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.manage_search_rounded, size: 80, color: Colors.white.withOpacity(0.1)),
+          Icon(Icons.manage_search_rounded, size: 80, color: Colors.black54),
           const SizedBox(height: 16),
           Text("Find your next experience or friend", 
-            style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 16)),
+            style: TextStyle(color: Colors.black54, fontSize: 16)),
         ],
       ),
     );
@@ -101,7 +101,7 @@ class _SearchScreenState extends State<SearchScreen> {
           .limit(10)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryPink));
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
         final results = snapshot.data!.docs;
 
         if (results.isEmpty) return _buildNoResultsText("No events found.");
@@ -129,7 +129,7 @@ class _SearchScreenState extends State<SearchScreen> {
           .limit(15)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryPink));
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
         final results = snapshot.data!.docs;
 
         if (results.isEmpty) return _buildNoResultsText("No users found.");
@@ -141,11 +141,11 @@ class _SearchScreenState extends State<SearchScreen> {
             final user = results[index].data() as Map<String, dynamic>;
             return ListTile(
               leading: CircleAvatar(
-                backgroundColor: Colors.white10,
+                backgroundColor: Colors.black54,
                 backgroundImage: user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
                 child: user['photoURL'] == null ? const Icon(Icons.person, color: Colors.white54) : null,
               ),
-              title: Text(user['displayName'] ?? 'User', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              title: Text(user['displayName'] ?? 'User', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
               subtitle: Text("@${user['username']}", style: const TextStyle(color: Colors.grey)),
               onTap: () => context.push('/profile/${user['uid']}'), // Navigates to the ProfileScreen you just fixed!
             );
@@ -159,7 +159,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.only(top: 50),
-        child: Text(text, style: const TextStyle(color: Colors.white54)),
+        child: Text(text, style: const TextStyle(color: Colors.black54)),
       ),
     );
   }

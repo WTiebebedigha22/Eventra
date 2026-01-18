@@ -103,7 +103,7 @@ class PostDetailScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(post.username ?? 'Anonymous', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(post.username ?? 'Anonymous', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14)),
                         if (post.location != null)
                           Text(post.location!, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
                       ],
@@ -124,7 +124,7 @@ class PostDetailScreen extends StatelessWidget {
                       color: const Color(0xFF181818),
                       alignment: Alignment.center,
                       padding: const EdgeInsets.all(24),
-                      child: Text(post.content, style: const TextStyle(color: Colors.white, fontSize: 18), textAlign: TextAlign.center),
+                      child: Text(post.content, style: const TextStyle(color: Colors.black, fontSize: 18), textAlign: TextAlign.center),
                     ),
             ),
 
@@ -139,11 +139,11 @@ class PostDetailScreen extends StatelessWidget {
                       context.read<PostProvider>().toggleLike(post.id, post.creatorId, auth.displayName);
                     },
                   ),
-                  Text('${post.likeCount}', style: const TextStyle(color: Colors.white)),
+                  Text('${post.likeCount}', style: const TextStyle(color: Colors.black)),
                   const SizedBox(width: 16),
                   const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 22),
                   const SizedBox(width: 8),
-                  Text('${post.commentCount}', style: const TextStyle(color: Colors.white)),
+                  Text('${post.commentCount}', style: const TextStyle(color: Colors.black)),
                 ],
               ),
             ),
@@ -159,7 +159,7 @@ class PostDetailScreen extends StatelessWidget {
                       text: TextSpan(
                         children: [
                           TextSpan(text: '${post.username} ', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                          TextSpan(text: post.content, style: const TextStyle(color: Colors.white)),
+                          TextSpan(text: post.content, style: const TextStyle(color: Colors.black)),
                         ],
                       ),
                     ),
@@ -172,11 +172,11 @@ class PostDetailScreen extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
-                          const Icon(Icons.event, size: 14, color: Color(0xFFE91E63)),
+                          const Icon(Icons.event, size: 14, color: Color(0xFF3E5992)),
                           const SizedBox(width: 4),
                           Text(
                             "Event on ${DateFormat('MMM dd, yyyy').format(post.eventDate!)}",
-                            style: const TextStyle(color: Color(0xFFE91E63), fontSize: 13, fontWeight: FontWeight.w500),
+                            style: const TextStyle(color: Color(0xFF3E5992), fontSize: 13, fontWeight: FontWeight.w500),
                           ),
                         ],
                       ),

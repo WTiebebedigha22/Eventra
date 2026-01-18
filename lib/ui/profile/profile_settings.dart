@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart'; // Import Provider
-import '../../providers/auth_provider.dart'; // Import AuthProvider
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 
 class ProfileSettingsScreen extends StatelessWidget {
   const ProfileSettingsScreen({super.key});
 
-  // Define your color scheme (consistent with other screens)
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Colors.black;
-  static const Color appBarColor = Color(0xFF181818);
-  static const Color textColor = Colors.white;
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white;
+  static const Color surfaceColor = Color(0xFFF8F9FA); // Light grey for tiles
+  static const Color textColor = Color(0xFF1C1E21);
+  static const Color dangerColor = Color(0xFFD93025);
 
-  // Mock data structure for grouped settings
   final List<Map<String, dynamic>> settingGroups = const [
     {
       'title': 'Account',
@@ -37,7 +36,6 @@ class ProfileSettingsScreen extends StatelessWidget {
         {'title': 'Privacy Policy', 'icon': Icons.verified_user_outlined, 'route': '/settings/privacy', 'isDanger': false},
       ],
     },
-    // --- NEW: Danger Zone Group for Log out and Delete Account ---
     {
       'title': 'Danger Zone',
       'items': [
@@ -47,157 +45,164 @@ class ProfileSettingsScreen extends StatelessWidget {
     },
   ];
 
-  // --- Updated Widget for a single setting item (handles navigation or action) ---
-  Widget _buildSettingTile(
-    BuildContext context, 
-    String title, 
-    IconData icon, 
-    {
-      String? route, 
-      String? action,
-      bool isDanger = false,
-    }
-  ) {
-    // Get AuthProvider instance (listen: false as we only call methods)
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-
-    VoidCallback? onTapHandler;
-
-    if (route != null) {
-      onTapHandler = () => context.push(route);
-    } else if (action == 'logout') {
-      onTapHandler = () async {
-        // Show loading indicator or confirmation dialog if desired
-        await auth.logout();
-        // Navigate to login screen after successful logout
-        context.go('/login');
-      };
-    } else if (action == 'delete') {
-      onTapHandler = () {
-        // TODO: Implement a confirmation dialog for account deletion
-        // Example: showDialog(...)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete Account action triggered!')),
-        );
-      };
-    }
-
-    return ListTile(
-      leading: Icon(icon, color: isDanger ? primaryPink : textColor.withOpacity(0.8)),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: isDanger ? primaryPink : textColor, 
-          fontSize: 16,
-          fontWeight: isDanger ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
-      trailing: onTapHandler != null 
-          ? Icon(Icons.keyboard_arrow_right, color: textColor.withOpacity(0.5))
-          : null,
-      onTap: onTapHandler,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      tileColor: appBarColor, 
-    );
-  }
-  // ----------------------------------------
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: appBarColor, 
+      backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: appBarColor,
-        elevation: 1, 
+        backgroundColor: backgroundColor,
+        elevation: 0,
+        centerTitle: true,
         title: const Text(
-          'Settings and Privacy',
-          style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+          'Settings',
+          style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: textColor),
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: textColor),
           onPressed: () => context.pop(),
         ),
       ),
       body: CustomScrollView(
         slivers: [
-          // --- 1. Search Bar (Sticky/Pinned) ---
-          SliverAppBar(
-            backgroundColor: appBarColor,
-            automaticallyImplyLeading: false, 
-            pinned: true,
-            toolbarHeight: 70,
-            flexibleSpace: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          // --- Search Bar ---
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
               child: TextField(
-                style: const TextStyle(color: textColor),
                 decoration: InputDecoration(
                   hintText: 'Search settings...',
-                  hintStyle: TextStyle(color: textColor.withOpacity(0.5)),
-                  prefixIcon: Icon(Icons.search, color: textColor.withOpacity(0.7)),
+                  prefixIcon: const Icon(Icons.search, size: 20),
                   filled: true,
-                  fillColor: backgroundColor, 
+                  fillColor: surfaceColor,
+                  contentPadding: EdgeInsets.zero,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 ),
               ),
             ),
           ),
-          
-          // --- 2. Grouped List Tiles ---
+
+          // --- Settings List ---
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, groupIndex) {
                 final group = settingGroups[groupIndex];
-                
-                return Padding(
-                  padding: const EdgeInsets.only(top: 16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Group Title (Pink accent header)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 16.0, bottom: 8.0),
-                        child: Text(
-                          group['title'],
-                          style: TextStyle(
-                            color: primaryPink.withOpacity(0.8), 
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      
-                      // List of Items
-                      ...group['items'].map<Widget>((item) {
-                        return Column(
-                          children: [
-                            _buildSettingTile(
-                                context, 
-                                item['title'], 
-                                item['icon'], 
-                                route: item['route'],
-                                action: item['action'],
-                                isDanger: item['isDanger'],
-                            ),
-                            // Divider between list items
-                            Divider(color: backgroundColor, height: 1.0, thickness: 1.0),
-                          ],
-                        );
-                      }).toList(),
-                    ],
-                  ),
-                );
+                return _buildGroup(context, group);
               },
               childCount: settingGroups.length,
             ),
           ),
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+        ],
+      ),
+    );
+  }
 
-          // --- 3. Footer Spacer ---
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 30),
+  Widget _buildGroup(BuildContext context, Map<String, dynamic> group) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 20, top: 20, bottom: 8),
+          child: Text(
+            group['title'].toString().toUpperCase(),
+            style: const TextStyle(
+              color: Colors.grey,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: surfaceColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: (group['items'] as List).map((item) {
+              final bool isLast = group['items'].last == item;
+              return Column(
+                children: [
+                  _buildSettingTile(
+                    context,
+                    item['title'],
+                    item['icon'],
+                    route: item['route'],
+                    action: item['action'],
+                    isDanger: item['isDanger'],
+                  ),
+                  if (!isLast)
+                    Divider(height: 1, indent: 55, color: Colors.grey.withOpacity(0.1)),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingTile(BuildContext context, String title, IconData icon,
+      {String? route, String? action, bool isDanger = false}) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: isDanger ? dangerColor.withOpacity(0.1) : primaryColor.withOpacity(0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: isDanger ? dangerColor : primaryColor, size: 20),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: isDanger ? dangerColor : textColor,
+          fontWeight: isDanger ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
+      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+      onTap: () {
+        if (route != null) {
+          context.push(route);
+        } else if (action == 'logout') {
+          _showConfirmDialog(context, "Logout", "Are you sure you want to sign out?", "Logout", () async {
+            await auth.logout();
+            if (context.mounted) context.go('/login');
+          });
+        } else if (action == 'delete') {
+          _showConfirmDialog(context, "Delete Account", "This action is permanent and cannot be undone.", "Delete", () {
+            // Implement delete logic
+          }, isDestructive: true);
+        }
+      },
+    );
+  }
+
+  void _showConfirmDialog(BuildContext context, String title, String content, String confirmText, VoidCallback onConfirm, {bool isDestructive = false}) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(onPressed: () => context.pop(), child: const Text("Cancel")),
+          ElevatedButton(
+            onPressed: () {
+              context.pop();
+              onConfirm();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isDestructive ? dangerColor : primaryColor,
+              elevation: 0,
+            ),
+            child: Text(confirmText, style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),

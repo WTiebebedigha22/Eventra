@@ -1,72 +1,166 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Colors.black;
-  static const Color appBarColor = Color(0xFF181818);
-  static const Color textColor = Colors.white;
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  // Mock state for toggles
+  bool _pauseAll = false;
+  bool _reminders = true;
+  bool _messages = true;
+  bool _social = true;
+
+  // --- Theme Colors ---
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Color(0xFFF8F9FA);
+  static const Color textColor = Color(0xFF1C1E21);
+  static const Color subtleText = Colors.black54;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: appBarColor,
-        title: const Text('Notifications', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
-        iconTheme: const IconThemeData(color: textColor),
-        elevation: 1,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textColor, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Push Notifications',
+          style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 18),
+        ),
       ),
       body: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              'Manage your alerts',
-              style: TextStyle(color: primaryPink.withOpacity(0.8), fontSize: 14),
+          _buildHeader("General"),
+          _buildSettingsGroup([
+            _buildSwitchTile(
+              title: 'Pause All',
+              subtitle: 'Temporarily silence all alerts',
+              value: _pauseAll,
+              onChanged: (val) => setState(() => _pauseAll = val),
             ),
-          ),
-          
-          // Pause All Notifications
-          ListTile(
-            title: const Text('Pause All Notifications', style: TextStyle(color: textColor)),
-            trailing: Switch(
-              value: false, 
-              onChanged: (val) {},
-              activeColor: primaryPink,
-            ),
-            tileColor: appBarColor,
-          ),
-          const Divider(color: backgroundColor, height: 1, thickness: 1),
-          
-          // Event Reminders
-          ListTile(
-            title: const Text('Event Reminders', style: TextStyle(color: textColor)),
-            subtitle: Text('Get notified 1 hour before an event starts.', style: TextStyle(color: textColor.withOpacity(0.5))),
-            trailing: Switch(
-              value: true, 
-              onChanged: (val) {},
-              activeColor: primaryPink,
-            ),
-            tileColor: appBarColor,
-          ),
-          const Divider(color: backgroundColor, height: 1, thickness: 1),
+          ]),
 
-          // Chat Messages
-          ListTile(
-            title: const Text('Chat Messages', style: TextStyle(color: textColor)),
-            trailing: Switch(
-              value: true, 
-              onChanged: (val) {},
-              activeColor: primaryPink,
+          _buildHeader("Event Activity"),
+          _buildSettingsGroup([
+            _buildSwitchTile(
+              title: 'Event Reminders',
+              subtitle: '1 hour before your booked events',
+              value: _reminders,
+              onChanged: _pauseAll ? null : (val) => setState(() => _reminders = val),
+              showDivider: true,
             ),
-            tileColor: appBarColor,
+            _buildSwitchTile(
+              title: 'New Events',
+              subtitle: 'Based on your favorite locations',
+              value: _social,
+              onChanged: _pauseAll ? null : (val) => setState(() => _social = val),
+            ),
+          ]),
+
+          _buildHeader("Social"),
+          _buildSettingsGroup([
+            _buildSwitchTile(
+              title: 'Chat Messages',
+              subtitle: 'Direct messages and group chats',
+              value: _messages,
+              onChanged: _pauseAll ? null : (val) => setState(() => _messages = val),
+              showDivider: true,
+            ),
+            _buildSwitchTile(
+              title: 'Likes & Comments',
+              subtitle: 'Activity on your shared posts',
+              value: true,
+              onChanged: _pauseAll ? null : (val) {},
+            ),
+          ]),
+          
+          const Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Text(
+              'To completely turn off notifications, visit your device System Settings.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: subtleText, fontSize: 12),
+            ),
           ),
-          const Divider(color: backgroundColor, height: 1, thickness: 1),
         ],
       ),
     );
   }
-}
+
+  Widget _buildHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          color: subtleText,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsGroup(List<Widget> children) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildSwitchTile({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool>? onChanged,
+    bool showDivider = false,
+  }) {
+    return Column(
+      children: [
+        SwitchListTile.adaptive(
+          value: value,
+          onChanged: onChanged,
+          activeColor: primaryColor,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          title: Text(
+            title,
+            style: TextStyle(
+              color: onChanged == null ? subtleText : textColor,
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: subtleText),
+          ),
+        ),
+        if (showDivider)
+          Divider(indent: 16, endIndent: 16, height: 1, color: Colors.grey[100]),
+      ],
+    );
+  }
+} 

@@ -14,10 +14,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final ScrollController _scrollController = ScrollController();
 
   // Define your color scheme (consistent with other screens)
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Colors.black;
-  static const Color appBarColor = Color(0xFF181818); // Darker shade for contrast
-  static const Color textColor = Colors.white;
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white;
+  static const Color white12 = Color(0xFF181818); // Darker shade for contrast
+  static const Color textColor = Colors.black54;
 
   // Mock messages for demonstration
   final List<Map<String, String>> mockMessages = [
@@ -43,7 +43,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
         decoration: BoxDecoration(
-          color: isMe ? primaryPink : appBarColor, 
+          color: isMe ? primaryColor : white12, 
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
@@ -94,7 +94,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: appBarColor,
+        backgroundColor: white12,
         elevation: 1,
         title: Text(
           'Chat with ${widget.chatId}',
@@ -102,7 +102,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline, color: primaryPink),
+            icon: const Icon(Icons.info_outline, color: primaryColor),
             onPressed: () {
               // Action: View profile
             },
@@ -126,12 +126,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           // --- Input Bar ---
           Container(
             padding: const EdgeInsets.all(8.0),
-            color: appBarColor, 
+            color: white12, 
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.camera_alt_outlined, color: primaryPink),
+                  icon: const Icon(Icons.camera_alt_outlined, color: primaryColor),
                   onPressed: () {
                     // Action: Send photo or related media
                   },
@@ -163,7 +163,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   child: FloatingActionButton(
                     heroTag: 'sendBtn', 
                     mini: true,
-                    backgroundColor: primaryPink,
+                    backgroundColor: primaryColor,
                     onPressed: () async {
                       if (_ctrl.text.trim().isEmpty) return;
                       

@@ -10,25 +10,41 @@ class EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
   const EventCard({super.key, required this.event});
 
+  // --- Theme Colors ---
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color accentColor = Colors.white;
+
   void _openComments(BuildContext context) {
-    HapticFeedback.lightImpact(); // Consistent with your home screen feel
+    HapticFeedback.mediumImpact(); 
     
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6, // Start at 60% of screen
+        initialChildSize: 0.7, 
         minChildSize: 0.4,
         maxChildSize: 0.95,
-        expand: false, // CRITICAL: Fixes the 'height' error in BottomSheets
+        expand: false, 
         builder: (_, controller) => Container(
           decoration: const BoxDecoration(
-            color: Color(0xFF0F0F0F),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+            color: Colors.white, // Updated to Light Theme
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
-          // Pass the scroll controller to allow scrolling inside the sheet
-          child: CommentsScreen(postId: event['id']), 
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(child: CommentsScreen(postId: event['id'])),
+            ],
+          ),
         ),
       ),
     );
@@ -42,108 +58,136 @@ class EventCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => context.push('/home/event/${event['id']}'),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 20),
-        height: 280,
+        height: 320, // Slightly taller for better aspect ratio
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          // Added a fallback color if image fails to load
-          color: Colors.grey[900], 
+          borderRadius: BorderRadius.circular(28),
+          color: Colors.grey[200], 
           image: imageUrl.isNotEmpty 
             ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover)
             : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Stack(
           children: [
-            // Dark Gradient Overlay - Optimized colors
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.1), 
-                    Colors.black.withOpacity(0.4),
-                    Colors.black.withOpacity(0.9)
-                  ],
+            // --- High-Contrast Gradient ---
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.2),
+                      Colors.black.withOpacity(0.85),
+                    ],
+                    stops: const [0.4, 0.6, 1.0],
+                  ),
                 ),
               ),
             ),
             
-            // Price Tag
+            // --- Price Tag ---
             Positioned(
-              top: 15,
-              right: 15,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE91E63),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black26, blurRadius: 4, offset: const Offset(0, 2))
-                  ],
-                ),
-                child: Text(
-                  (event['price'] == 0 || event['price'] == null) ? "FREE" : "\$${event['price']}", 
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
+              top: 16,
+              left: 16, // Moved to left for better visual balance
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  color: primaryColor,
+                  child: Text(
+                    (event['price'] == 0 || event['price'] == null) ? "FREE" : "\$${event['price']}", 
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13),
+                  ),
                 ),
               ),
             ),
 
-            // Event Details
+            // --- Bottom Content ---
             Positioned(
               bottom: 20,
               left: 20,
-              right: 80, // Prevent text from overlapping the vertical buttons
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+              right: 20,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    event['title'] ?? 'Untitled Event', 
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on, size: 14, color: Color(0xFFE91E63)),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          "${event['location'] ?? 'Location'} • ${event['date'] ?? 'Soon'}", 
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
-                          maxLines: 1,
+                  // Text Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          event['title'] ?? 'Untitled Event', 
+                          style: const TextStyle(
+                            fontSize: 24, 
+                            fontWeight: FontWeight.bold, 
+                            color: Colors.white,
+                            letterSpacing: -0.5,
+                          ),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_today_rounded, size: 14, color: Colors.white70),
+                            const SizedBox(width: 6),
+                            Text(
+                              event['date'] ?? 'Soon', 
+                              style: const TextStyle(color: Colors.white70, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_outlined, size: 14, color: Colors.white70),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                event['location'] ?? 'Location', 
+                                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
 
-            // Vertical Action Column
-            Positioned(
-              bottom: 15,
-              right: 10,
-              child: Column(
-                children: [
-                  _buildIconButton(
-                    icon: Icons.bookmark_border_rounded, 
-                    onTap: () => _toggleBookmark(context, currentUid),
-                  ),
-                  const SizedBox(height: 5),
-                  _buildIconButton(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    label: "${event['commentCount'] ?? 0}",
-                    onTap: () => _openComments(context),
-                  ),
-                  const SizedBox(height: 5),
-                  LikeButton(
-                    postId: event['id'], 
-                    likes: List<String>.from(event['likes'] ?? []),
+                  // Actions Column
+                  Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: Column(
+                      children: [
+                        _buildActionButton(
+                          icon: Icons.bookmark_outline_rounded, 
+                          onTap: () => _toggleBookmark(context, currentUid),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildActionButton(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          label: "${event['commentCount'] ?? 0}",
+                          onTap: () => _openComments(context),
+                        ),
+                        const SizedBox(height: 12),
+                        LikeButton(
+                          postId: event['id'], 
+                          likes: List<String>.from(event['likes'] ?? []),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -154,23 +198,31 @@ class EventCard extends StatelessWidget {
     );
   }
 
-  // Helper to keep the vertical column clean
-  Widget _buildIconButton({required IconData icon, String? label, required VoidCallback onTap}) {
+  Widget _buildActionButton({required IconData icon, String? label, required VoidCallback onTap}) {
     return Column(
       children: [
-        IconButton(
-          icon: Icon(icon, color: Colors.white, size: 26),
-          onPressed: onTap,
-          constraints: const BoxConstraints(), // Removes extra padding
-          padding: const EdgeInsets.all(8),
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 22),
+          ),
         ),
-        if (label != null)
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
+        if (label != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            label, 
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)
+          ),
+        ],
       ],
     );
   }
 
-  // --- Logic remains the same ---
   Future<void> _toggleBookmark(BuildContext context, String uid) async {
     final bookmarkRef = FirebaseFirestore.instance
         .collection('users')

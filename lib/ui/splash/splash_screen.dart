@@ -12,9 +12,9 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   // --- Styling Constants ---
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Color(0xFF0F0F0F); // Matching your Eventra theme
-  static const Color textColor = Colors.white;
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white; // Matching your Eventra theme
+  static const Color textColor = Colors.black54;
 
   // --- Configuration for Animated GIF ---
   static const String appLogoGifPath = 'assets/logo/logo.gif'; 
@@ -82,8 +82,8 @@ class _SplashScreenState extends State<SplashScreen> {
             SizedBox(
               width: 120,
               child: LinearProgressIndicator(
-                backgroundColor: primaryPink.withOpacity(0.1),
-                valueColor: const AlwaysStoppedAnimation<Color>(primaryPink),
+                backgroundColor: primaryColor.withOpacity(0.1),
+                valueColor: const AlwaysStoppedAnimation<Color>(primaryColor),
                 minHeight: 2.0, // Thinner line looks more modern
               ),
             ),

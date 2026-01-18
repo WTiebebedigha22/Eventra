@@ -14,11 +14,10 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  static const Color primaryPink = Color(0xFFE91E63);
-  static const Color backgroundColor = Colors.black;
-  static const Color appBarColor = Color(0xFF181818);
-  static const Color inputFillColor = Color(0xFF121212);
-  static const Color textColor = Colors.white;
+  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color backgroundColor = Colors.white;
+  static const Color inputFillColor = Color(0xFFF5F6F9); // Light grey fill
+  static const Color textColor = Color(0xFF1C1E21); // Darker for readability
 
   final _emailController = TextEditingController();
   final _usernameController = TextEditingController();
@@ -66,7 +65,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (image != null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Uploading photo...'), backgroundColor: primaryPink),
+          const SnackBar(content: Text('Uploading photo...'), backgroundColor: primaryColor),
         );
 
         await auth.uploadProfilePicture(File(image.path));
@@ -87,7 +86,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _handleSave(AuthProvider auth) async {
-    // Basic validation
     if (_usernameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Username cannot be empty'), backgroundColor: Colors.red),
@@ -97,7 +95,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     try {
       await auth.updateProfile(
-        displayName: _usernameController.text.trim(), // FIXED: Added missing parameter
+        displayName: _usernameController.text.trim(),
         firstName: _firstNameController.text.trim(),
         lastName: _lastNameController.text.trim(),
         bio: _bioController.text.trim(),
@@ -108,7 +106,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully!'), backgroundColor: Colors.green),
         );
-        context.pop();
+        context.pop(); // Returns to ProfileScreen
       }
     } catch (e) {
       if (mounted) {
@@ -119,52 +117,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Widget _buildTextField(TextEditingController controller, String labelText,
-      {int maxLines = 1, bool readOnly = false}) {
-    return TextField(
-      controller: controller,
-      readOnly: readOnly,
-      maxLines: maxLines,
-      style: TextStyle(color: readOnly ? textColor.withOpacity(0.5) : textColor),
-      cursorColor: primaryPink,
-      decoration: InputDecoration(
-        labelText: labelText,
-        labelStyle: TextStyle(color: textColor.withOpacity(0.5)),
-        filled: true,
-        fillColor: inputFillColor,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: primaryPink, width: 2.0),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    // Use listen: true here (default) to show loading state
     final auth = Provider.of<AuthProvider>(context);
     final photoUrl = auth.photoURL;
-    final initialLetter = auth.displayName.isNotEmpty ? auth.displayName[0].toUpperCase() : 'U';
+    // Safe check for initial letter
+    final initialLetter = (auth.displayName.isNotEmpty) ? auth.displayName[0].toUpperCase() : 'U';
 
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: appBarColor,
-        elevation: 0,
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        centerTitle: true,
         title: const Text('Edit Profile', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
-        leading: IconButton(icon: const Icon(Icons.close, color: textColor), onPressed: () => context.pop()),
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: textColor), 
+          onPressed: () => context.pop()
+        ),
         actions: [
           TextButton(
             onPressed: auth.isLoading ? null : () => _handleSave(auth),
             child: auth.isLoading 
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: primaryPink))
-              : const Text(
-                  'Save',
-                  style: TextStyle(color: primaryPink, fontWeight: FontWeight.bold, fontSize: 16),
-                ),
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: primaryColor))
+              : const Text('Save', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
           ),
         ],
       ),
@@ -195,7 +171,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  // --- UI Helper Components ---
+  Widget _buildTextField(TextEditingController controller, String labelText, {int maxLines = 1, bool readOnly = false}) {
+    return TextField(
+      controller: controller,
+      readOnly: readOnly,
+      maxLines: maxLines,
+      style: TextStyle(color: readOnly ? Colors.grey : textColor, fontSize: 15),
+      decoration: InputDecoration(
+        labelText: labelText,
+        labelStyle: const TextStyle(color: Colors.grey),
+        filled: true,
+        fillColor: readOnly ? Colors.grey[100] : inputFillColor,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: primaryColor, width: 1.5),
+        ),
+      ),
+    );
+  }
 
   Widget _buildProfileImageHeader(AuthProvider auth, String? photoUrl, String initialLetter) {
     return Center(
@@ -204,11 +198,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           Stack(
             children: [
               CircleAvatar(
-                radius: 50,
-                backgroundColor: appBarColor,
-                backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
-                child: photoUrl == null
-                    ? Text(initialLetter, style: const TextStyle(color: primaryPink, fontSize: 40))
+                radius: 55,
+                backgroundColor: primaryColor.withOpacity(0.1),
+                backgroundImage: (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+                child: (photoUrl == null || photoUrl.isEmpty)
+                    ? Text(initialLetter, style: const TextStyle(color: primaryColor, fontSize: 40, fontWeight: FontWeight.bold))
                     : null,
               ),
               Positioned(
@@ -217,17 +211,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: GestureDetector(
                   onTap: () => _pickAndUploadImage(auth),
                   child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(color: primaryPink, shape: BoxShape.circle),
-                    child: const Icon(Icons.camera_alt, color: Colors.black, size: 20),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: primaryColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                    ),
+                    child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
                   ),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 8),
           TextButton(
             onPressed: () => _pickAndUploadImage(auth),
-            child: const Text('Change Photo', style: TextStyle(color: primaryPink)),
+            child: const Text('Change Profile Photo', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -242,31 +241,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           initialDate: _selectedDateOfBirth ?? DateTime(2000),
           firstDate: DateTime(1900),
           lastDate: DateTime.now(),
-          builder: (context, child) {
-            return Theme(
-              data: Theme.of(context).copyWith(
-                colorScheme: const ColorScheme.dark(primary: primaryPink, onPrimary: Colors.black, surface: appBarColor, onSurface: textColor),
-              ),
-              child: child!,
-            );
-          },
+          builder: (context, child) => Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: const ColorScheme.light(primary: primaryColor, onPrimary: Colors.white, onSurface: textColor),
+            ),
+            child: child!,
+          ),
         );
         if (picked != null) setState(() => _selectedDateOfBirth = picked);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         decoration: BoxDecoration(
           color: inputFillColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _selectedDateOfBirth != null ? primaryPink : Colors.transparent, width: 1),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            const Icon(Icons.calendar_today, size: 20, color: primaryPink),
-            const SizedBox(width: 10),
+            const Icon(Icons.calendar_today, size: 20, color: primaryColor),
+            const SizedBox(width: 12),
             Text(
-              _selectedDateOfBirth == null ? 'Select Date of Birth' : DateFormat.yMMMd().format(_selectedDateOfBirth!),
-              style: TextStyle(color: textColor.withOpacity(0.8)),
+              _selectedDateOfBirth == null ? 'Date of Birth' : DateFormat.yMMMd().format(_selectedDateOfBirth!),
+              style: TextStyle(color: _selectedDateOfBirth == null ? Colors.grey : textColor),
             ),
           ],
         ),

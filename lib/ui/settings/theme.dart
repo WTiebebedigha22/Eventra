@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class ThemeScreen extends StatelessWidget {
   const ThemeScreen({super.key});
 
-  static const Color primaryPink = Color(0xFF3E5992);
+  static const Color primaryColor = Color(0xFF3E5992);
   static const Color backgroundColor = Colors.white;
   static const Color appBarColor = Colors.white;
   static const Color textColor = Colors.black;
@@ -27,16 +27,16 @@ class ThemeScreen extends StatelessWidget {
             value: 'Dark',
             groupValue: selectedTheme,
             onChanged: (val) {},
-            activeColor: primaryPink,
+            activeColor: primaryColor,
             tileColor: appBarColor,
           ),
           const Divider(color: backgroundColor, height: 1, thickness: 1),
           RadioListTile<String>(
-            title: const Text('Light (Not Recommended)', style: TextStyle(color: textColor)),
+            title: const Text('Light', style: TextStyle(color: textColor)),
             value: 'Light',
             groupValue: selectedTheme,
             onChanged: (val) {},
-            activeColor: primaryPink,
+            activeColor: primaryColor,
             tileColor: appBarColor,
           ),
           const Divider(color: backgroundColor, height: 1, thickness: 1),
@@ -45,7 +45,7 @@ class ThemeScreen extends StatelessWidget {
             value: 'System Default',
             groupValue: selectedTheme,
             onChanged: (val) {},
-            activeColor: primaryPink,
+            activeColor: primaryColor,
             tileColor: appBarColor,
           ),
         ],

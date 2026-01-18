@@ -8,9 +8,9 @@ import '../../providers/post_provider.dart';
 import '../components/event_card.dart'; // Import the unified component
 
 // Theme Constants
-const Color primaryPink = Color(0xFFE91E63); 
-const Color backgroundColor = Color(0xFF0F0F0F); // Matches your HomeShell
-const Color textColor = Colors.white;
+const Color primaryColor = Color(0xFF3E5992); 
+const Color backgroundColor = Colors.white; // Matches your HomeShell
+const Color textColor = Colors.black54;
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -54,7 +54,7 @@ class _EventListScreenState extends State<EventListScreen> {
         builder: (context, provider, child) {
           return RefreshIndicator(
             backgroundColor: const Color(0xFF181818),
-            color: primaryPink,
+            color: primaryColor,
             onRefresh: () => provider.fetchPosts(isRefresh: true),
             child: CustomScrollView(
               controller: _scrollController,
@@ -69,7 +69,7 @@ class _EventListScreenState extends State<EventListScreen> {
                   title: const Text(
                     'EVENTRA',
                     style: TextStyle(
-                      color: primaryPink, 
+                      color: primaryColor, 
                       fontWeight: FontWeight.w900, 
                       fontSize: 22,
                       letterSpacing: -1,
@@ -111,7 +111,7 @@ class _EventListScreenState extends State<EventListScreen> {
                           } else {
                             return const Padding(
                               padding: EdgeInsets.symmetric(vertical: 32),
-                              child: Center(child: CircularProgressIndicator(color: primaryPink)),
+                              child: Center(child: CircularProgressIndicator(color: primaryColor)),
                             );
                           }
                         },
@@ -143,7 +143,7 @@ class _EventListScreenState extends State<EventListScreen> {
           child: ChoiceChip(
             label: Text(categories[index]),
             selected: index == 0,
-            selectedColor: primaryPink,
+            selectedColor: primaryColor,
             labelStyle: TextStyle(
               color: index == 0 ? Colors.white : Colors.white54,
               fontSize: 12,
@@ -182,7 +182,7 @@ class _EventListScreenState extends State<EventListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.event_available_outlined, size: 64, color: Colors.white10),
+          Icon(Icons.event_available_outlined, size: 64, color: Colors.black54),
           const SizedBox(height: 16),
           const Text("No live events right now.", 
             style: TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.w500)),

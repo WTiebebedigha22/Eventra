@@ -41,9 +41,9 @@ class UserDiscoveryScreen extends StatelessWidget {
                   backgroundImage: photo != null ? NetworkImage(photo) : null,
                   child: photo == null ? Text(name[0]) : null,
                 ),
-                title: Text(name, style: const TextStyle(color: Colors.white)),
+                title: Text(name, style: const TextStyle(color: Colors.black)),
                 subtitle: const Text("Tap to message", style: TextStyle(color: Colors.white54)),
-                trailing: const Icon(Icons.send_rounded, color: Color(0xFFE91E63)),
+                trailing: const Icon(Icons.send_rounded, color: Color(0xFF3E5992)),
                 onTap: () async {
                   // SYNC LOGIC: Get unique ID for these two users
                   String chatId = await chatService.getOrCreateConversation(userId);

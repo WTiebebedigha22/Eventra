@@ -81,7 +81,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
           confettiController: _confettiController,
           blastDirectionality: BlastDirectionality.explosive,
           shouldLoop: false,
-          colors: const [Color(0xFFE91E63), Colors.white, Colors.blue],
+          colors: const [Color(0xFF3E5992), Colors.white, Colors.blue],
           numberOfParticles: 20,
           gravity: 0.1,
         ),
@@ -96,7 +96,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF181818),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Colors.black54),
       ),
       child: Column(
         children: [
@@ -116,7 +116,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(widget.event['title'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                    Text(widget.event['location'], style: const TextStyle(color: Colors.white54)),
+                    Text(widget.event['location'], style: const TextStyle(color: Colors.black54)),
                   ],
                 ),
               ),
@@ -124,7 +124,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
           ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 20),
-            child: Divider(color: Colors.white10, thickness: 1),
+            child: Divider(color: Colors.black54, thickness: 1),
           ),
           _buildDetailRow("Date", widget.event['date']),
           const SizedBox(height: 10),
@@ -149,12 +149,12 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.remove, color: Color(0xFFE91E63)),
+                  icon: const Icon(Icons.remove, color: Color(0xFF3E5992)),
                   onPressed: () => setState(() { if (quantity > 1) quantity--; }),
                 ),
-                Text("$quantity", style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                Text("$quantity", style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
                 IconButton(
-                  icon: const Icon(Icons.add, color: Color(0xFFE91E63)),
+                  icon: const Icon(Icons.add, color: Color(0xFF3E5992)),
                   onPressed: () => setState(() { quantity++; }),
                 ),
               ],
@@ -169,8 +169,8 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white54)),
-        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+        Text(label, style: const TextStyle(color: Colors.black54)),
+        Text(value, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w500)),
       ],
     );
   }
@@ -191,7 +191,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
               children: [
                 const Text("Total Price", style: TextStyle(fontSize: 16, color: Colors.white54)),
                 Text("\$${total.toStringAsFixed(2)}", 
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFFE91E63))),
+                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF3E5992))),
               ],
             ),
             const SizedBox(height: 25),
@@ -200,7 +200,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
               height: 60,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE91E63),
+                  backgroundColor: const Color(0xFF3E5992),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                   elevation: 0,
                 ),
@@ -234,7 +234,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE91E63), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3E5992), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                 onPressed: () {
                   Navigator.pop(context); // Close sheet
                   Navigator.pop(context); // Go back to event details
