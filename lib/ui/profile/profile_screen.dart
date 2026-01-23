@@ -258,40 +258,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildUserPostsGrid(String uid) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('posts').where('creatorId', isEqualTo: uid).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _buildEmptyState(Icons.camera_alt_outlined, "No posts yet");
-        return GridView.builder(
-          padding: const EdgeInsets.all(2),
-          itemCount: docs.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
-          itemBuilder: (context, index) {
-            final data = docs[index].data() as Map<String, dynamic>;
-            return Image.network(data['mediaUrl'] ?? '', fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Colors.grey[200]));
-          },
-        );
-      },
-    );
-  }
+  return StreamBuilder<QuerySnapshot>(
+    // Querying the "posts" collection filtered by the user ID
+    stream: FirebaseFirestore.instance
+        .collection('posts')
+        .where('creatorId', isEqualTo: uid)
+        .orderBy('createdAt', descending: true) // Added ordering
+        .snapshots(),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) return const Center(child: Text("Error loading posts"));
+      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+      
+      final docs = snapshot.data!.docs;
+      if (docs.isEmpty) return _buildEmptyState(Icons.camera_alt_outlined, "No posts yet");
+
+      return GridView.builder(
+        padding: const EdgeInsets.all(2),
+        itemCount: docs.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3, 
+          crossAxisSpacing: 2, 
+          mainAxisSpacing: 2
+        ),
+        itemBuilder: (context, index) {
+          final data = docs[index].data() as Map<String, dynamic>;
+          return GestureDetector(
+            onTap: () => context.push('/post/${docs[index].id}'), // Navigate to post detail
+            child: Image.network(
+              data['mediaUrl'] ?? '', 
+              fit: BoxFit.cover, 
+              errorBuilder: (c, e, s) => Container(color: Colors.grey[200], child: const Icon(Icons.broken_image)),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
 
   Widget _buildUserEventsList(String uid) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('events').where('creatorId', isEqualTo: uid).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
-        return ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: docs.length,
-          itemBuilder: (context, index) => _eventTile(docs[index]),
-        );
-      },
-    );
-  }
+  return StreamBuilder<QuerySnapshot>(
+    // Querying the "events" collection filtered by the user ID
+    stream: FirebaseFirestore.instance
+        .collection('events')
+        .where('creatorId', isEqualTo: uid)
+        .orderBy('eventDate', descending: false) // Order by upcoming date
+        .snapshots(),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) return const Center(child: Text("Error loading events"));
+      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+      
+      final docs = snapshot.data!.docs;
+      if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
+
+      return ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: docs.length,
+        itemBuilder: (context, index) => _eventTile(docs[index]),
+      );
+    },
+  );
+}
 
   Widget _buildSavedEventsList(String uid) {
     return StreamBuilder<QuerySnapshot>(

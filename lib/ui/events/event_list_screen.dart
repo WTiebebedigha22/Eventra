@@ -145,11 +145,11 @@ class _EventListScreenState extends State<EventListScreen> {
             selected: index == 0,
             selectedColor: primaryColor,
             labelStyle: TextStyle(
-              color: index == 0 ? Colors.white : Colors.white54,
+              color: index == 0 ? Colors.white : Colors.black45,
               fontSize: 12,
               fontWeight: FontWeight.bold,
             ),
-            backgroundColor: const Color(0xFF181818),
+            backgroundColor: Colors.transparent,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             onSelected: (_) {},
           ),
@@ -184,7 +184,7 @@ class _EventListScreenState extends State<EventListScreen> {
         children: [
           Icon(Icons.event_available_outlined, size: 64, color: Colors.black54),
           const SizedBox(height: 16),
-          const Text("No live events right now.", 
+          const Text("No live events from this right now.", 
             style: TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.w500)),
         ],
       ),

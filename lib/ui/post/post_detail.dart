@@ -1,197 +1,159 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
-import '../../models/posts/post.dart';
-import '../../providers/post_provider.dart';
-import '../../providers/auth_provider.dart';
 
 class PostDetailScreen extends StatelessWidget {
-  final Post post;
-  final VoidCallback onDelete;
+  final String postId;
 
-  const PostDetailScreen({super.key, required this.post, required this.onDelete});
+  const PostDetailScreen({super.key, required this.postId});
 
-  void _showOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1C1C1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            ListTile(
-              leading: const Icon(Icons.share_outlined, color: Colors.white),
-              title: const Text('Share Post', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('Delete Post', style: TextStyle(color: Colors.redAccent)),
-              onTap: () {
-                Navigator.pop(context);
-                _confirmDeletion(context);
+  // Helper to determine which collection to pull from
+  // If your app knows if it's an event or post before navigating, 
+  // you can pass a 'type' parameter. Otherwise, we check both.
+  Stream<DocumentSnapshot> _getCombinedStream() {
+    // We try the 'posts' collection first
+    return FirebaseFirestore.instance.collection('posts').doc(postId).snapshots();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black, // Dark theme as per your previous code
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        title: const Text("Details", style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: _getCombinedStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: Colors.white));
+          }
+
+          // If not found in 'posts', we try searching 'events'
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance.collection('events').doc(postId).get(),
+              builder: (context, eventSnapshot) {
+                if (eventSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!eventSnapshot.hasData || !eventSnapshot.data!.exists) {
+                  return _buildNotFoundState();
+                }
+                return _buildContent(eventSnapshot.data!.data() as Map<String, dynamic>);
               },
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
+            );
+          }
+
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+          return _buildContent(data);
+        },
       ),
     );
   }
 
-  void _confirmDeletion(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
-        title: const Text("Delete Post?", style: TextStyle(color: Colors.white)),
-        content: const Text("This action will remove the post from your profile.", style: TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel", style: TextStyle(color: Colors.white))),
-          TextButton(
-            onPressed: () {
-              onDelete();
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Return to profile
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.redAccent)),
+  Widget _buildContent(Map<String, dynamic> data) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. User Header
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.grey[900],
+              backgroundImage: data['userProfileUrl'] != null ? NetworkImage(data['userProfileUrl']) : null,
+              child: data['userProfileUrl'] == null ? const Icon(Icons.person, color: Colors.white24) : null,
+            ),
+            title: Text(data['username'] ?? 'Anonymous', 
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            subtitle: Text(data['location'] ?? '', 
+                style: const TextStyle(color: Colors.white60, fontSize: 12)),
+          ),
+
+          // 2. Main Media
+          if (data['mediaUrl'] != null || data['imageUrl'] != null)
+            Image.network(
+              data['mediaUrl'] ?? data['imageUrl'],
+              width: double.infinity,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => Container(
+                height: 200,
+                color: Colors.grey[900],
+                child: const Icon(Icons.broken_image, color: Colors.white24),
+              ),
+            ),
+
+          // 3. Info Section
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title (for Events) or Username (for Posts)
+                Text(
+                  data['title'] ?? data['username'] ?? '',
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                // Content / Description
+                Text(
+                  data['content'] ?? data['description'] ?? '',
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                ),
+                const SizedBox(height: 20),
+                
+                // Date logic
+                if (data['eventDate'] != null)
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today, color: Colors.blueAccent, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Date: ${data['eventDate']}",
+                        style: const TextStyle(color: Colors.blueAccent),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-    final isLiked = post.likes.contains(auth.userId);
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text("Post", style: TextStyle(color: Colors.white, fontSize: 16)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () => _showOptions(context),
-          )
+  Widget _buildNotFoundState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.search_off, size: 80, color: Colors.white24),
+          const SizedBox(height: 16),
+          const Text("Post Not Found", 
+              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          const Text("Database ID Searched:", style: TextStyle(color: Colors.white54)),
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white10,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              postId,
+              style: const TextStyle(color: Colors.amber, fontFamily: 'monospace', fontSize: 14),
+            ),
+          ),
+          const Text(
+            "Check if this ID exists in your Firestore 'posts' or 'events' collection.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          ),
         ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. User Header (New)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.grey[900],
-                    backgroundImage: post.userProfileUrl != null ? NetworkImage(post.userProfileUrl!) : null,
-                    child: post.userProfileUrl == null ? const Icon(Icons.person, size: 18, color: Colors.white24) : null,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(post.username ?? 'Anonymous', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14)),
-                        if (post.location != null)
-                          Text(post.location!, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // 2. Media Section
-            Hero(
-              tag: 'post_${post.id}',
-              child: post.mediaUrl != null
-                  ? Image.network(post.mediaUrl!, width: double.infinity, fit: BoxFit.contain)
-                  : Container(
-                      width: double.infinity,
-                      height: 250,
-                      color: const Color(0xFF181818),
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.all(24),
-                      child: Text(post.content, style: const TextStyle(color: Colors.black, fontSize: 18), textAlign: TextAlign.center),
-                    ),
-            ),
-
-            // 3. Interaction Bar (New)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, color: isLiked ? Colors.red : Colors.white),
-                    onPressed: () {
-                      context.read<PostProvider>().toggleLike(post.id, post.creatorId, auth.displayName);
-                    },
-                  ),
-                  Text('${post.likeCount}', style: const TextStyle(color: Colors.black)),
-                  const SizedBox(width: 16),
-                  const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 22),
-                  const SizedBox(width: 8),
-                  Text('${post.commentCount}', style: const TextStyle(color: Colors.black)),
-                ],
-              ),
-            ),
-
-            // 4. Content & Dates
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (post.mediaUrl != null) ...[
-                    RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(text: '${post.username} ', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                          TextSpan(text: post.content, style: const TextStyle(color: Colors.black)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  
-                  // Display Event Date if it exists
-                  if (post.eventDate != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.event, size: 14, color: Color(0xFF3E5992)),
-                          const SizedBox(width: 4),
-                          Text(
-                            "Event on ${DateFormat('MMM dd, yyyy').format(post.eventDate!)}",
-                            style: const TextStyle(color: Color(0xFF3E5992), fontSize: 13, fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  Text(
-                    DateFormat('MMMM dd, yyyy • hh:mm a').format(post.timestamp),
-                    style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
