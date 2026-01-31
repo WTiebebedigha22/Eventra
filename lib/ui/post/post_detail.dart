@@ -92,7 +92,6 @@ class PostDetailScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title (for Events) or Username (for Posts)
                 Text(
                   data['title'] ?? data['username'] ?? '',
                   style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),

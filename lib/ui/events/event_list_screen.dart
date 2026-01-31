@@ -5,7 +5,7 @@ import 'package:shimmer/shimmer.dart';
 
 // Internal Imports
 import '../../providers/post_provider.dart';
-import '../components/event_card.dart'; // Import the unified component
+import '../components/event_card.dart';
 
 // Theme Constants
 const Color primaryColor = Color(0xFF3E5992); 
