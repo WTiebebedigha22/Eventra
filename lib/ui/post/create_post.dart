@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Required for direct Event creation
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -20,12 +21,17 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
+  // --- Controllers & State ---
   final TextEditingController _contentController = TextEditingController();
+  final TextEditingController _titleController = TextEditingController(); // New: For Events
 
   File? _selectedMedia;
   String? _location;
   DateTime? _eventDate;
   bool _isPosting = false;
+  
+  // 0 = Post, 1 = Event
+  int _selectedType = 0; 
 
   // --- Theme Colors ---
   static const Color primaryColor = Color(0xFF3E5992);
@@ -33,14 +39,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   static const Color textColor = Color(0xFF1C1E21);
   static const Color subtleText = Colors.black54;
 
-  bool get _isPostButtonEnabled =>
-      (_contentController.text.trim().isNotEmpty || _selectedMedia != null) &&
-      !_isPosting;
+  // Validation Logic
+  bool get _isPostButtonEnabled {
+    if (_isPosting) return false;
+    
+    // Logic for Event: Needs Title + Date
+    if (_selectedType == 1) {
+      return _titleController.text.trim().isNotEmpty && 
+             _contentController.text.trim().isNotEmpty && 
+             _eventDate != null;
+    }
+
+    // Logic for Post: Needs Content OR Media
+    return _contentController.text.trim().isNotEmpty || _selectedMedia != null;
+  }
 
   @override
   void initState() {
     super.initState();
     _contentController.addListener(_onTextChanged);
+    _titleController.addListener(_onTextChanged);
   }
 
   void _onTextChanged() => setState(() {});
@@ -48,7 +66,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   @override
   void dispose() {
     _contentController.removeListener(_onTextChanged);
+    _titleController.removeListener(_onTextChanged);
     _contentController.dispose();
+    _titleController.dispose();
     super.dispose();
   }
 
@@ -91,7 +111,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (date != null) setState(() => _eventDate = date);
   }
 
-  Future<void> _submitPost() async {
+  // --- Submission Logic ---
+  Future<void> _submit() async {
     if (!_isPostButtonEnabled) return;
     final auth = context.read<AuthProvider>();
     if (auth.userId == null) return;
@@ -100,28 +121,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() => _isPosting = true);
 
     try {
-      final postProvider = context.read<PostProvider>();
       String? mediaUrl;
-
+      // 1. Upload Media if exists
       if (_selectedMedia != null) {
         mediaUrl = await ImgBBService.uploadImage(_selectedMedia!);
       }
 
-      final newPost = Post(
-        id: '', 
-        creatorId: auth.userId!,
-        username: auth.fullName.isEmpty ? 'User' : auth.fullName,
-        userProfileUrl: auth.photoURL,
-        content: _contentController.text.trim(),
-        mediaUrl: mediaUrl,
-        timestamp: DateTime.now(),
-        likes: [],
-        location: _location,
-        eventDate: _eventDate,
-      );
+      // 2. Branch Logic based on Type
+      if (_selectedType == 1) {
+        await _createEventInFirebase(auth, mediaUrl);
+      } else {
+        await _createPostInProvider(auth, mediaUrl);
+      }
 
-      await postProvider.uploadPost(newPost);
       if (mounted) context.go('/home'); 
+
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -133,9 +147,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
+  // Helper: Create Standard Post
+  Future<void> _createPostInProvider(AuthProvider auth, String? mediaUrl) async {
+    final postProvider = context.read<PostProvider>();
+    final newPost = Post(
+      id: '', 
+      creatorId: auth.userId!,
+      username: auth.fullName.isEmpty ? 'User' : auth.fullName,
+      userProfileUrl: auth.photoURL,
+      content: _contentController.text.trim(),
+      mediaUrl: mediaUrl,
+      timestamp: DateTime.now(),
+      likes: [],
+      location: _location,
+      // We don't save eventDate for regular posts usually, but optional
+    );
+    await postProvider.uploadPost(newPost);
+  }
+
+  // Helper: Create Event directly in Firestore
+  Future<void> _createEventInFirebase(AuthProvider auth, String? mediaUrl) async {
+    // Ensuring we write to the 'events' collection
+    await FirebaseFirestore.instance.collection('events').add({
+      'creatorId': auth.userId,
+      'username': auth.fullName.isEmpty ? 'User' : auth.fullName,
+      'userProfileUrl': auth.photoURL,
+      'title': _titleController.text.trim(), // Specific to Events
+      'description': _contentController.text.trim(),
+      'imageUrl': mediaUrl, // Events often use 'imageUrl' or 'mediaUrl'
+      'location': _location,
+      'eventDate': Timestamp.fromDate(_eventDate!), // Store as Timestamp
+      'createdAt': FieldValue.serverTimestamp(),
+      'likes': [],
+      'type': 'event', // Helper tag
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final isEvent = _selectedType == 1;
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -146,14 +197,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           icon: const Icon(Icons.close_rounded, color: textColor),
           onPressed: () => context.pop(),
         ),
-        title: const Text('Create', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
+        title: _buildTypeSelector(), // Custom Toggle in Title
+        centerTitle: true,
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: ElevatedButton(
-              onPressed: _isPostButtonEnabled ? _submitPost : null,
+              onPressed: _isPostButtonEnabled ? _submit : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
+                disabledBackgroundColor: primaryColor.withOpacity(0.5),
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -161,7 +214,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ),
               child: _isPosting 
                 ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Post', style: TextStyle(fontWeight: FontWeight.bold)),
+                : Text(isEvent ? 'Create' : 'Post', style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -173,13 +226,70 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 _buildUserHeader(auth),
-                const SizedBox(height: 16),
-                _buildComposer(),
+                const SizedBox(height: 20),
+                
+                // --- Event Specific Field: Title ---
+                if (isEvent) ...[
+                  TextField(
+                    controller: _titleController,
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
+                    decoration: const InputDecoration(
+                      hintText: "Event Name",
+                      hintStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                  const Divider(),
+                ],
+
+                // --- Main Content ---
+                _buildComposer(isEvent),
               ],
             ),
           ),
           _buildToolbar(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTypeSelector() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _typeButton("Post", 0),
+          _typeButton("Event", 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _typeButton(String text, int index) {
+    final isSelected = _selectedType == index;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedType = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)] : [],
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: isSelected ? primaryColor : subtleText,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
       ),
     );
   }
@@ -201,24 +311,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               auth.fullName.isEmpty ? 'User' : auth.fullName,
               style: const TextStyle(fontWeight: FontWeight.bold, color: textColor),
             ),
-            const Text("Posting to Public", style: TextStyle(fontSize: 12, color: subtleText)),
+            Text(
+              _selectedType == 1 ? "Creating an Event" : "Posting to Public", 
+              style: const TextStyle(fontSize: 12, color: subtleText)
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildComposer() {
+  Widget _buildComposer(bool isEvent) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextField(
           controller: _contentController,
           maxLines: null,
-          autofocus: true,
+          autofocus: !isEvent, // Autofocus title if event
           style: const TextStyle(fontSize: 18, color: textColor, height: 1.5),
           decoration: InputDecoration(
-            hintText: "What's happening?",
+            hintText: isEvent ? "Describe your event details..." : "What's happening?",
             hintStyle: TextStyle(color: subtleText.withOpacity(0.4)),
             border: InputBorder.none,
           ),
@@ -232,6 +345,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           children: [
             if (_location != null) _buildBadge(Icons.location_on_rounded, _location!, () => setState(() => _location = null)),
             if (_eventDate != null) _buildBadge(Icons.calendar_today_rounded, DateFormat('EEE, MMM d').format(_eventDate!), () => setState(() => _eventDate = null)),
+            
+            // Suggestion chip if event and no date selected
+            if (isEvent && _eventDate == null)
+               GestureDetector(
+                 onTap: _pickEventDate,
+                 child: Container(
+                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                   decoration: BoxDecoration(
+                     border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                     borderRadius: BorderRadius.circular(12),
+                     color: Colors.redAccent.withOpacity(0.05),
+                   ),
+                   child: const Text("Add Date (Required)", style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                 ),
+               ),
           ],
         ),
 
@@ -299,8 +427,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           _toolbarIcon(Icons.location_on_outlined, _pickLocation),
           const SizedBox(width: 12),
           _toolbarIcon(Icons.calendar_today_outlined, _pickEventDate),
-          const Spacer(),
-          const Text("Drafts", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
         ],
       ),
     );

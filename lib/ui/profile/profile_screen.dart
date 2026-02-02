@@ -16,8 +16,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
   bool isFollowing = false;
   bool isLoadingFollow = false;
-  bool isInitializing = false; // Track profile creation state
+
   static const Color primaryColor = Color(0xFF3E5992);
+  static const Color accentColor = Color(0xFFF1F4F9);
 
   @override
   void initState() {
@@ -27,31 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // Helper to create the document if it's missing
-  Future<void> _initializeProfile() async {
-    setState(() => isInitializing = true);
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'username': user.displayName ?? 'User_${user.uid.substring(0, 5)}',
-          'email': user.email,
-          'photoURL': user.photoURL ?? '',
-          'bio': 'Welcome to my profile!',
-          'postCount': 0,
-          'followerCount': 0,
-          'followingCount': 0,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
-    } finally {
-      if (mounted) setState(() => isInitializing = false);
-    }
-  }
+  // --- LOGIC ---
 
   void _checkFollowStatus() async {
     final doc = await FirebaseFirestore.instance
@@ -65,23 +42,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _toggleFollow() async {
     if (isLoadingFollow) return;
+    HapticFeedback.mediumImpact();
+
     setState(() {
       isFollowing = !isFollowing;
       isLoadingFollow = true;
     });
-    HapticFeedback.mediumImpact();
 
     final userRef = FirebaseFirestore.instance.collection('users').doc(widget.userId);
     final currentUserRef = FirebaseFirestore.instance.collection('users').doc(currentUid);
-    final followerRef = userRef.collection('followers').doc(currentUid);
 
     try {
       if (isFollowing) {
-        await followerRef.set({'followedAt': FieldValue.serverTimestamp()});
+        await userRef.collection('followers').doc(currentUid).set({'followedAt': FieldValue.serverTimestamp()});
         await userRef.update({'followerCount': FieldValue.increment(1)});
         await currentUserRef.update({'followingCount': FieldValue.increment(1)});
       } else {
-        await followerRef.delete();
+        await userRef.collection('followers').doc(currentUid).delete();
         await userRef.update({'followerCount': FieldValue.increment(-1)});
         await currentUserRef.update({'followingCount': FieldValue.increment(-1)});
       }
@@ -92,139 +69,130 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // --- UI BUILD ---
+
   @override
   Widget build(BuildContext context) {
     final bool isMe = widget.userId == currentUid;
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leading: !isMe
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.black),
-                  onPressed: () => context.pop(),
-                )
-              : null,
-          title: Text(isMe ? "My Profile" : "Profile",
-              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          actions: [
-            if (isMe)
-              IconButton(
-                icon: const Icon(Icons.settings_outlined, color: Colors.black54),
-                onPressed: () => context.push('/settings'),
-              )
-          ],
-        ),
-        body: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) return const Center(child: Text("Error loading profile"));
-            if (snapshot.connectionState == ConnectionState.waiting || isInitializing) {
-              return const Center(child: CircularProgressIndicator(color: primaryColor));
-            }
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) return const Center(child: Text("Error loading profile"));
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
 
-            // --- IMPROVED NOT FOUND STATE ---
-            if (!snapshot.hasData || !snapshot.data!.exists) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.person_outline, size: 80, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text("User not found", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                    const SizedBox(height: 8),
-                    if (isMe) ...[
-                      const Text("Your profile hasn't been set up yet."),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => context.push('/profile/edit'),
-                        style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
-                        child: const Text("Setup Profile Now", style: TextStyle(color: Colors.white)),
-                      )
-                    ] else
-                      const Text("This user doesn't seem to exist."),
-                  ],
-                ),
-              );
-            }
+          if (!snapshot.data!.exists) return _buildNotFound(isMe);
 
-            final userData = snapshot.data!.data() as Map<String, dynamic>;
+          final userData = snapshot.data!.data() as Map<String, dynamic>;
 
-            return Column(
-              children: [
-                _buildProfileHeader(userData),
-                _buildStatsRow(userData),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 10),
-                  child: isMe
-                      ? _buildActionButton("Edit Profile", Colors.grey[200]!, Colors.black, () => context.push('/profile/edit'))
-                      : _buildActionButton(
-                          isFollowing ? "Unfollow" : "Follow",
-                          isFollowing ? Colors.grey[200]! : primaryColor,
-                          isFollowing ? Colors.black : Colors.white,
-                          _toggleFollow),
-                ),
-                const TabBar(
-                  indicatorColor: primaryColor,
-                  labelColor: primaryColor,
-                  unselectedLabelColor: Colors.grey,
-                  tabs: [
-                    Tab(icon: Icon(Icons.grid_on_rounded)),
-                    Tab(icon: Icon(Icons.event_note_rounded)),
-                    Tab(icon: Icon(Icons.bookmark_outline_rounded)),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
+          return DefaultTabController(
+            length: 3,
+            child: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                _buildSliverAppBar(isMe, userData['username'] ?? "Profile"),
+                SliverToBoxAdapter(
+                  child: Column(
                     children: [
-                      _buildUserPostsGrid(widget.userId),
-                      _buildUserEventsList(widget.userId),
-                      _buildSavedEventsList(widget.userId),
+                      _buildProfileHeader(userData),
+                      _buildStatsRow(userData),
+                      _buildActionArea(isMe),
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
+                _buildStickyTabBar(),
               ],
-            );
-          },
-        ),
+              body: TabBarView(
+                children: [
+                  _buildUserPostsGrid(widget.userId),
+                  _buildUserEventsList(widget.userId),
+                  _buildSavedEventsList(widget.userId),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  // --- UI BUILDERS ---
-  Widget _buildProfileHeader(Map<String, dynamic> data) {
-    return Column(
-      children: [
-        const SizedBox(height: 10),
-        CircleAvatar(
-          radius: 45,
-          backgroundColor: Colors.grey[200],
-          backgroundImage: (data['photoURL'] != null && data['photoURL'].toString().isNotEmpty) ? NetworkImage(data['photoURL']) : null,
-          child: (data['photoURL'] == null || data['photoURL'].toString().isEmpty) ? const Icon(Icons.person, size: 40, color: Colors.grey) : null,
-        ),
-        const SizedBox(height: 12),
-        Text("${data['username'] ?? 'User'}", style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
-        if (data['bio'] != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
-            child: Text(data['bio'], textAlign: TextAlign.center, style: TextStyle(color: Colors.black.withOpacity(0.6))),
-          ),
+  Widget _buildSliverAppBar(bool isMe, String username) {
+    return SliverAppBar(
+      pinned: true,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      centerTitle: false,
+      leading: !isMe ? const BackButton(color: Colors.black) : null,
+      title: Text(
+        username,
+        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+      ),
+      actions: [
+        if (isMe)
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: Colors.black),
+            onPressed: () => context.push('/settings'),
+          )
       ],
     );
   }
 
-  Widget _buildStatsRow(Map<String, dynamic> data) {
+  Widget _buildProfileHeader(Map<String, dynamic> data) {
+    final photoUrl = data['photoURL'] as String?;
     return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 40,
+            backgroundColor: accentColor,
+            backgroundImage: (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+            child: (photoUrl == null || photoUrl.isEmpty)
+                ? const Icon(Icons.person, size: 40, color: Colors.grey)
+                : null,
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  data['username'] ?? 'User',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  data['bio'] ?? 'Welcome to my profile!',
+                  style: TextStyle(color: Colors.black.withOpacity(0.6), fontSize: 14),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsRow(Map<String, dynamic> data) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
       padding: const EdgeInsets.symmetric(vertical: 15),
+      decoration: BoxDecoration(
+        color: accentColor,
+        borderRadius: BorderRadius.circular(15),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _statItem("Posts", data['postCount'] ?? 0),
+          _divider(),
           _statItem("Followers", data['followerCount'] ?? 0),
+          _divider(),
           _statItem("Following", data['followingCount'] ?? 0),
         ],
       ),
@@ -234,91 +202,123 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _statItem(String label, int count) {
     return Column(
       children: [
-        Text("$count", style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        Text("$count", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w500)),
       ],
     );
   }
 
-  Widget _buildActionButton(String label, Color bgColor, Color textColor, VoidCallback action) {
+  Widget _divider() => Container(height: 20, width: 1, color: Colors.grey[300]);
+
+  Widget _buildActionArea(bool isMe) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: isMe
+          ? _buildButton("Edit Profile", accentColor, Colors.black, () => context.push('/profile/edit'))
+          : _buildButton(
+              isFollowing ? "Unfollow" : "Follow",
+              isFollowing ? accentColor : primaryColor,
+              isFollowing ? Colors.black : Colors.white,
+              _toggleFollow,
+              isLoading: isLoadingFollow,
+            ),
+    );
+  }
+
+  Widget _buildButton(String label, Color bg, Color text, VoidCallback action, {bool isLoading = false}) {
     return SizedBox(
       width: double.infinity,
-      height: 40,
-      child: ElevatedButton(
-        onPressed: action,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: bgColor,
-          foregroundColor: textColor,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      height: 44,
+      child: TextButton(
+        onPressed: isLoading ? null : action,
+        style: TextButton.styleFrom(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        child: isLoading
+            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: primaryColor))
+            : Text(label, style: TextStyle(color: text, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  Widget _buildUserPostsGrid(String uid) {
-  return StreamBuilder<QuerySnapshot>(
-    // Querying the "posts" collection filtered by the user ID
-    stream: FirebaseFirestore.instance
-        .collection('posts')
-        .where('creatorId', isEqualTo: uid)
-        .orderBy('createdAt', descending: true) // Added ordering
-        .snapshots(),
-    builder: (context, snapshot) {
-      if (snapshot.hasError) return const Center(child: Text("Error loading posts"));
-      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-      
-      final docs = snapshot.data!.docs;
-      if (docs.isEmpty) return _buildEmptyState(Icons.camera_alt_outlined, "No posts yet");
-
-      return GridView.builder(
-        padding: const EdgeInsets.all(2),
-        itemCount: docs.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3, 
-          crossAxisSpacing: 2, 
-          mainAxisSpacing: 2
+  Widget _buildStickyTabBar() {
+    return SliverPersistentHeader(
+      pinned: true,
+      delegate: _SliverAppBarDelegate(
+        const TabBar(
+          indicatorColor: primaryColor,
+          indicatorSize: TabBarIndicatorSize.label,
+          labelColor: primaryColor,
+          unselectedLabelColor: Colors.grey,
+          tabs: [
+            Tab(icon: Icon(Icons.grid_view_rounded)),
+            Tab(icon: Icon(Icons.event_available_rounded)),
+            Tab(icon: Icon(Icons.bookmark_outline_rounded)),
+          ],
         ),
-        itemBuilder: (context, index) {
-          final data = docs[index].data() as Map<String, dynamic>;
-          return GestureDetector(
-            onTap: () => context.push('/post/${docs[index].id}'), // Navigate to post detail
-            child: Image.network(
-              data['mediaUrl'] ?? '', 
-              fit: BoxFit.cover, 
-              errorBuilder: (c, e, s) => Container(color: Colors.grey[200], child: const Icon(Icons.broken_image)),
-            ),
-          );
-        },
-      );
-    },
-  );
-}
+      ),
+    );
+  }
+
+  // --- CONTENT GRIDS ---
+
+  Widget _buildUserPostsGrid(String uid) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .where('creatorId', isEqualTo: uid)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) return _buildEmptyState(Icons.grid_on_rounded, "No posts yet");
+
+        return GridView.builder(
+          padding: const EdgeInsets.all(1),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 1,
+            mainAxisSpacing: 1,
+          ),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final data = docs[index].data() as Map<String, dynamic>;
+            return GestureDetector(
+              onTap: () => context.push('/post/${docs[index].id}'),
+              child: Image.network(
+                data['mediaUrl'] ?? '',
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => Container(color: accentColor, child: const Icon(Icons.broken_image)),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   Widget _buildUserEventsList(String uid) {
-  return StreamBuilder<QuerySnapshot>(
-    // Querying the "events" collection filtered by the user ID
-    stream: FirebaseFirestore.instance
-        .collection('events')
-        .where('creatorId', isEqualTo: uid)
-        .orderBy('eventDate', descending: false) // Order by upcoming date
-        .snapshots(),
-    builder: (context, snapshot) {
-      if (snapshot.hasError) return const Center(child: Text("Error loading events"));
-      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-      
-      final docs = snapshot.data!.docs;
-      if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .where('creatorId', isEqualTo: uid)
+          .orderBy('eventDate', descending: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
 
-      return ListView.builder(
-        padding: const EdgeInsets.all(12),
-        itemCount: docs.length,
-        itemBuilder: (context, index) => _eventTile(docs[index]),
-      );
-    },
-  );
-}
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: docs.length,
+          itemBuilder: (context, index) => _eventTile(docs[index]),
+        );
+      },
+    );
+  }
 
   Widget _buildSavedEventsList(String uid) {
     return StreamBuilder<QuerySnapshot>(
@@ -339,33 +339,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _eventTile(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Card(
-      color: Colors.grey[50],
       elevation: 0,
-      shape: RoundedRectangleBorder(side: BorderSide(color: Colors.grey[200]!), borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: Colors.grey[200]!),
+        borderRadius: BorderRadius.circular(12),
+      ),
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: (data['imageUrl'] != null) ? Image.network(data['imageUrl'], width: 50, height: 50, fit: BoxFit.cover) : Container(width: 50, height: 50, color: Colors.grey[200], child: const Icon(Icons.event, color: Colors.grey)),
+          child: (data['imageUrl'] != null)
+              ? Image.network(data['imageUrl'], width: 50, height: 50, fit: BoxFit.cover)
+              : Container(width: 50, height: 50, color: accentColor, child: const Icon(Icons.event)),
         ),
-        title: Text(data['title'] ?? 'Event', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-        subtitle: Text(data['description'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey)),
-        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+        title: Text(data['title'] ?? 'Event', style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(data['description'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: const Icon(Icons.chevron_right, size: 20),
         onTap: () => context.push('/home/event/${doc.id}'),
       ),
     );
   }
 
-  Widget _buildEmptyState(IconData icon, String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: Colors.grey[300], size: 50),
-          const SizedBox(height: 10),
-          Text(message, style: const TextStyle(color: Colors.grey)),
-        ],
+  Widget _buildEmptyState(IconData icon, String msg) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 50, color: Colors.grey[200]),
+            const SizedBox(height: 12),
+            Text(msg, style: const TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+
+  Widget _buildNotFound(bool isMe) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.person_off_rounded, size: 80, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text("User not found", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            if (isMe)
+              TextButton(onPressed: () => context.push('/profile/edit'), child: const Text("Setup Profile")),
+          ],
+        ),
+      );
+}
+
+// --- TABBAR DELEGATE ---
+
+class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+  _SliverAppBarDelegate(this._tabBar);
+  final TabBar _tabBar;
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
       ),
+      child: _tabBar,
     );
   }
+
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
 }

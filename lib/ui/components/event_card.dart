@@ -12,11 +12,22 @@ class EventCard extends StatelessWidget {
 
   // --- Theme Colors ---
   static const Color primaryColor = Color(0xFF3E5992);
-  static const Color accentColor = Colors.white;
+
+  // --- Logic Helpers ---
+  bool get _isEvent => event['itemType'] == 'event';
+  String get _collectionName => _isEvent ? 'events' : 'posts';
+
+  /// Fetches the creator's profile data from the 'users' collection
+  Future<Map<String, dynamic>?> _getCreatorData() async {
+    final String? creatorId = event['uid'] ?? event['authorId'];
+    if (creatorId == null) return null;
+    
+    final doc = await FirebaseFirestore.instance.collection('users').doc(creatorId).get();
+    return doc.data();
+  }
 
   void _openComments(BuildContext context) {
     HapticFeedback.mediumImpact(); 
-    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -28,7 +39,7 @@ class EventCard extends StatelessWidget {
         expand: false, 
         builder: (_, controller) => Container(
           decoration: const BoxDecoration(
-            color: Colors.white, // Updated to Light Theme
+            color: Colors.white, 
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
@@ -53,29 +64,30 @@ class EventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final String imageUrl = event['imageUrl'] ?? '';
+    final String imageUrl = event['imageUrl'] ?? event['mediaUrl'] ?? '';
 
     return GestureDetector(
       onTap: () => context.push('/home/event/${event['id']}'),
       child: Container(
-        height: 320, // Slightly taller for better aspect ratio
+        height: 320, 
+        margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          color: Colors.grey[200], 
+          color: Colors.grey[900], 
           image: imageUrl.isNotEmpty 
             ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover)
             : null,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
             ),
           ],
         ),
         child: Stack(
           children: [
-            // --- High-Contrast Gradient ---
+            // --- High-Contrast Gradient Overlay ---
             Positioned.fill(
               child: Container(
                 decoration: BoxDecoration(
@@ -85,33 +97,34 @@ class EventCard extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.2),
-                      Colors.black.withOpacity(0.85),
+                      Colors.black.withOpacity(0.1),
+                      Colors.black.withOpacity(0.9),
                     ],
-                    stops: const [0.4, 0.6, 1.0],
+                    stops: const [0.3, 0.5, 1.0],
                   ),
                 ),
               ),
             ),
             
-            // --- Price Tag ---
-            Positioned(
-              top: 16,
-              left: 16, // Moved to left for better visual balance
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  color: primaryColor,
-                  child: Text(
-                    (event['price'] == 0 || event['price'] == null) ? "FREE" : "\$${event['price']}", 
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13),
+            // --- Price Tag (Events Only) ---
+            if (_isEvent)
+              Positioned(
+                top: 16,
+                left: 16, 
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    color: primaryColor,
+                    child: Text(
+                      (event['price'] == 0 || event['price'] == null) ? "FREE" : "\$${event['price']}", 
+                      style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13),
+                    ),
                   ),
                 ),
               ),
-            ),
 
-            // --- Bottom Content ---
+            // --- Bottom Content Layer ---
             Positioned(
               bottom: 20,
               left: 20,
@@ -119,56 +132,22 @@ class EventCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  // Text Info
+                  // Information Side
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          event['title'] ?? 'Untitled Event', 
-                          style: const TextStyle(
-                            fontSize: 24, 
-                            fontWeight: FontWeight.bold, 
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(Icons.calendar_today_rounded, size: 14, color: Colors.white70),
-                            const SizedBox(width: 6),
-                            Text(
-                              event['date'] ?? 'Soon', 
-                              style: const TextStyle(color: Colors.white70, fontSize: 13),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on_outlined, size: 14, color: Colors.white70),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                event['location'] ?? 'Location', 
-                                style: const TextStyle(color: Colors.white70, fontSize: 13),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
+                        _buildUserHeader(), // Fetches Username and Profile Pic
+                        const SizedBox(height: 10),
+                        _isEvent ? _buildEventDetails() : _buildPostCaption(),
                       ],
                     ),
                   ),
 
-                  // Actions Column
+                  // Actions Side
                   Padding(
-                    padding: const EdgeInsets.only(left: 10),
+                    padding: const EdgeInsets.only(left: 12),
                     child: Column(
                       children: [
                         _buildActionButton(
@@ -185,6 +164,7 @@ class EventCard extends StatelessWidget {
                         LikeButton(
                           postId: event['id'], 
                           likes: List<String>.from(event['likes'] ?? []),
+                          collection: _collectionName, 
                         ),
                       ],
                     ),
@@ -198,6 +178,95 @@ class EventCard extends StatelessWidget {
     );
   }
 
+  // --- Dynamic User Header ---
+  Widget _buildUserHeader() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _getCreatorData(),
+      builder: (context, snapshot) {
+        final userData = snapshot.data;
+        final String username = userData?['username'] ?? 'User';
+        final String? profilePic = userData?['profilePic'] ?? userData?['photoURL'];
+
+        return Row(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white24, width: 1),
+              ),
+              child: CircleAvatar(
+                radius: 15,
+                backgroundColor: Colors.grey[800],
+                backgroundImage: profilePic != null ? NetworkImage(profilePic) : null,
+                child: profilePic == null 
+                  ? const Icon(Icons.person, size: 18, color: Colors.white) 
+                  : null,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              username,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildEventDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          event['title'] ?? 'Untitled Event', 
+          style: const TextStyle(
+            fontSize: 22, 
+            fontWeight: FontWeight.bold, 
+            color: Colors.white,
+            height: 1.1,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            const Icon(Icons.location_on_rounded, size: 14, color: Colors.white70),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                event['location'] ?? 'Location TBA',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPostCaption() {
+    final String content = event['content'] ?? event['description'] ?? '';
+    return Text(
+      content,
+      style: const TextStyle(
+        fontSize: 16, 
+        color: Colors.white,
+        height: 1.3,
+      ),
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
   Widget _buildActionButton({required IconData icon, String? label, required VoidCallback onTap}) {
     return Column(
       children: [
@@ -206,8 +275,9 @@ class EventCard extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withOpacity(0.15),
               shape: BoxShape.circle,
+              border: Border.all(color: Colors.white10),
             ),
             child: Icon(icon, color: Colors.white, size: 22),
           ),
@@ -235,9 +305,7 @@ class EventCard extends StatelessWidget {
     if (doc.exists) {
       await bookmarkRef.delete();
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Removed from saved events")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Removed from saved")));
       }
     } else {
       await bookmarkRef.set({
@@ -245,9 +313,7 @@ class EventCard extends StatelessWidget {
         'savedAt': FieldValue.serverTimestamp(),
       });
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Event saved!")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved!")));
       }
     }
   }
