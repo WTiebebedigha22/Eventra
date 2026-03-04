@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart'; // Ensure this is in your pubspec.yaml
+import 'package:share_plus/share_plus.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -16,59 +15,71 @@ class PostDetailScreen extends StatefulWidget {
 class _PostDetailScreenState extends State<PostDetailScreen> {
   late Future<Map<String, dynamic>?> _postFuture;
   final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  String _activeCollection = 'posts';
+  bool _isHeartAnimating = false;
 
   @override
   void initState() {
     super.initState();
-    _postFuture = _fetchPostOrEvent();
+    _postFuture = _loadData();
   }
 
-  Future<Map<String, dynamic>?> _fetchPostOrEvent() async {
+  // --- THE WATERFALL FETCH LOGIC ---
+  Future<Map<String, dynamic>?> _loadData() async {
+    final String id = widget.postId.trim();
+    debugPrint("🛠️ Fetching Content ID: $id");
+
     try {
-      final String cleanId = widget.postId.trim();
-      // Try posts
-      var doc = await FirebaseFirestore.instance.collection('posts').doc(cleanId).get();
-      if (doc.exists) return doc.data();
-      
-      // Try events
-      doc = await FirebaseFirestore.instance.collection('events').doc(cleanId).get();
-      if (doc.exists) return doc.data();
+      // Step 1: Check the 'posts' collection
+      DocumentSnapshot postDoc = await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(id)
+          .get();
+
+      if (postDoc.exists && postDoc.data() != null) {
+        debugPrint("✅ Found in 'posts'");
+        setState(() => _activeCollection = 'posts');
+        return postDoc.data() as Map<String, dynamic>;
+      }
+
+      // Step 2: Check the 'events' collection if posts failed
+      DocumentSnapshot eventDoc = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(id)
+          .get();
+
+      if (eventDoc.exists && eventDoc.data() != null) {
+        debugPrint("✅ Found in 'events'");
+        setState(() => _activeCollection = 'events');
+        return eventDoc.data() as Map<String, dynamic>;
+      }
+
+      debugPrint("❌ ID not found in either collection.");
     } catch (e) {
-      debugPrint("Firestore Error: $e");
+      debugPrint("⚠️ Firestore Error: $e");
     }
     return null;
   }
 
-  // --- SOCIAL ACTIONS ---
-
-  void _handleLike(Map<String, dynamic> data) async {
+  void _toggleLike(Map<String, dynamic> data) async {
     if (currentUserId == null) return;
-
-    final String cleanId = widget.postId.trim();
-    // Determine if it's a post or event to update the right collection
-    final String collection = (data['type'] == 'event' || data.containsKey('eventDate')) ? 'events' : 'posts';
     
-    DocumentReference docRef = FirebaseFirestore.instance.collection(collection).doc(cleanId);
+    final docRef = FirebaseFirestore.instance
+        .collection(_activeCollection)
+        .doc(widget.postId.trim());
+    
     List likes = data['likes'] ?? [];
 
     if (likes.contains(currentUserId)) {
       await docRef.update({'likes': FieldValue.arrayRemove([currentUserId])});
     } else {
       await docRef.update({'likes': FieldValue.arrayUnion([currentUserId])});
-      // Logic for creating notification could go here as per your rules
+      setState(() => _isHeartAnimating = true);
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (mounted) setState(() => _isHeartAnimating = false);
+      });
     }
-    _refresh(); // Refresh UI to show updated like count
-  }
-
-  void _handleShare(Map<String, dynamic> data) {
-    final String text = "Check out this ${data['title'] ?? 'post'} on our app!\n\n${data['content'] ?? ''}";
-    Share.share(text);
-  }
-
-  void _refresh() {
-    setState(() {
-      _postFuture = _fetchPostOrEvent();
-    });
+    setState(() { _postFuture = _loadData(); });
   }
 
   @override
@@ -78,88 +89,122 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         elevation: 0,
-        title: const Text("Post", style: TextStyle(color: Colors.white)),
+        title: Text(_activeCollection.toUpperCase(), 
+          style: const TextStyle(color: Colors.white, fontSize: 14, letterSpacing: 2)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async => _refresh(),
-        child: FutureBuilder<Map<String, dynamic>?>(
-          future: _postFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator(color: Colors.white));
-            }
-            if (!snapshot.hasData || snapshot.data == null) return _buildNotFoundState();
+      body: FutureBuilder<Map<String, dynamic>?>(
+        future: _postFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: Color(0xFF3E5992)));
+          }
+          
+          if (!snapshot.hasData || snapshot.data == null) {
+            return _buildNotFoundUI();
+          }
 
-            return _buildContent(snapshot.data!);
-          },
-        ),
+          return _buildContentBody(snapshot.data!);
+        },
       ),
     );
   }
 
-  Widget _buildContent(Map<String, dynamic> data) {
+  Widget _buildContentBody(Map<String, dynamic> data) {
+    // Handle dynamic keys (Ventra often uses mediaUrl or imageUrl)
+    final String media = data['imageUrl'] ?? data['mediaUrl'] ?? '';
+    final String userImg = data['userProfileUrl'] ?? '';
+    final String username = data['username'] ?? 'User';
     final List likes = data['likes'] ?? [];
     final bool isLiked = likes.contains(currentUserId);
 
     return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
+      physics: const BouncingScrollPhysics(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // User Header
+          // Header
           ListTile(
             leading: CircleAvatar(
-              backgroundImage: data['userProfileUrl'] != null ? NetworkImage(data['userProfileUrl']) : null,
-              child: data['userProfileUrl'] == null ? const Icon(Icons.person) : null,
+              backgroundColor: Colors.white10,
+              backgroundImage: userImg.isNotEmpty ? NetworkImage(userImg) : null,
+              child: userImg.isEmpty ? const Icon(Icons.person, color: Colors.white) : null,
             ),
-            title: Text(data['username'] ?? 'User', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            subtitle: Text(data['location'] ?? '', style: const TextStyle(color: Colors.white60)),
+            title: Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            subtitle: Text(data['location'] ?? 'Ventra', style: const TextStyle(color: Colors.white54, fontSize: 12)),
           ),
 
-          // Media
-          if (data['mediaUrl'] != null || data['imageUrl'] != null)
-            Image.network(data['mediaUrl'] ?? data['imageUrl'], width: double.infinity, fit: BoxFit.contain),
-
-          // --- INTERACTION BAR ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: Row(
+          // Main Media with Animation
+          GestureDetector(
+            onDoubleTap: () => _toggleLike(data),
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                IconButton(
-                  icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, 
-                       color: isLiked ? Colors.red : Colors.white),
-                  onPressed: () => _handleLike(data),
+                AspectRatio(
+                  aspectRatio: 1, // Instagram Style
+                  child: Image.network(
+                    media,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => Container(
+                      color: Colors.white10,
+                      child: const Icon(Icons.broken_image, color: Colors.white24, size: 50),
+                    ),
+                  ),
                 ),
-                Text("${likes.length}", style: const TextStyle(color: Colors.white)),
-                const SizedBox(width: 15),
-                IconButton(
-                  icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
-                  onPressed: () {
-                    // Navigate to your comment screen or show a modal
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Comments coming soon!")));
-                  },
-                ),
-                const SizedBox(width: 15),
-                IconButton(
-                  icon: const Icon(Icons.share_outlined, color: Colors.white),
-                  onPressed: () => _handleShare(data),
-                ),
+                if (_isHeartAnimating)
+                  TweenAnimationBuilder(
+                    duration: const Duration(milliseconds: 400),
+                    tween: Tween<double>(begin: 0, end: 1.2),
+                    builder: (context, double value, child) {
+                      return Transform.scale(
+                        scale: value,
+                        child: const Icon(Icons.favorite, color: Colors.white, size: 100),
+                      );
+                    },
+                  ),
               ],
             ),
           ),
 
-          // Details Section
+          // Action Buttons
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, 
+                color: isLiked ? Colors.red : Colors.white),
+                onPressed: () => _toggleLike(data),
+              ),
+              IconButton(icon: const Icon(Icons.mode_comment_outlined, color: Colors.white), onPressed: () {}),
+              IconButton(
+                icon: const Icon(Icons.send_outlined, color: Colors.white),
+                onPressed: () => Share.share("Check out this post on Ventra: $media"),
+              ),
+            ],
+          ),
+
+          // Description Area
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (data['title'] != null)
-                  Text(data['title'], style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text("${likes.length} likes", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                Text(data['content'] ?? data['description'] ?? '', 
-                     style: const TextStyle(color: Colors.white70, fontSize: 16, height: 1.4)),
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                    children: [
+                      TextSpan(text: "$username ", style: const TextStyle(fontWeight: FontWeight.bold)),
+                      TextSpan(text: data['description'] ?? data['content'] ?? ''),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+                const Text("RECOMMENDED FOR YOU", 
+                  style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                const SizedBox(height: 16),
+                _buildDiscoveryGrid(),
+                const SizedBox(height: 60),
               ],
             ),
           ),
@@ -168,14 +213,53 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildNotFoundState() {
+  Widget _buildDiscoveryGrid() {
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance.collection(_activeCollection).limit(4).get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox(height: 200);
+        final docs = snapshot.data!.docs.where((d) => d.id != widget.postId).toList();
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.8),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final item = docs[index].data() as Map<String, dynamic>;
+            return GestureDetector(
+              onTap: () => Navigator.pushReplacement(
+                context, 
+                MaterialPageRoute(builder: (context) => PostDetailScreen(postId: docs[index].id))
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(item['imageUrl'] ?? item['mediaUrl'] ?? '', fit: BoxFit.cover),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildNotFoundUI() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.search_off, size: 80, color: Colors.white10),
-          const Text("Post Not Found", style: TextStyle(color: Colors.white, fontSize: 18)),
-          TextButton(onPressed: _refresh, child: const Text("Retry"))
+          const Icon(Icons.search_off_rounded, color: Colors.white24, size: 80),
+          const SizedBox(height: 20),
+          const Text("Content Missing", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text("ID: ${widget.postId}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          const SizedBox(height: 30),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3E5992)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Go Back"),
+          )
         ],
       ),
     );

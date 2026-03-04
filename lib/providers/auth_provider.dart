@@ -13,8 +13,8 @@ class AuthProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
-  // FIX: Explicitly typed list for scopes to satisfy the analyzer
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
+  // FIX: Updated to use the .standard() factory constructor required by recent versions
+  final GoogleSignIn _googleSignIn = GoogleSignIn.standard(
     scopes: <String>['email'],
   );
 
@@ -212,13 +212,13 @@ class AuthProvider extends ChangeNotifier {
       // 2. Fetch authentication details
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-      // 3. Create a Firebase Credential
+      // FIX: Accessing tokens correctly from the auth object
       final AuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      // 4. Sign in to Firebase
+      // 3. Sign in to Firebase
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
       final User? user = userCredential.user;
 
@@ -226,7 +226,6 @@ class AuthProvider extends ChangeNotifier {
         final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
         if (!userDoc.exists) {
-          // Setup new user profile from Google data
           List<String> nameParts = (user.displayName ?? "Ventra User").split(' ');
           String fName = nameParts.first;
           String lName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
@@ -280,8 +279,6 @@ class AuthProvider extends ChangeNotifier {
   // PROFILE & SOCIAL METHODS
   // -----------------------------
 
-  /// NEW: Fetch any user's profile data by UID 
-  /// This is used by ProfileScreen to show other users
   Future<Map<String, dynamic>?> fetchUserProfile(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
@@ -294,8 +291,6 @@ class AuthProvider extends ChangeNotifier {
     return null;
   }
 
-  /// NEW: Follow/Unfollow Logic with Transaction
-  /// This ensures counts are updated atomically
   Future<void> toggleFollow(String targetUid, bool isFollowing) async {
     final myUid = userId;
     if (myUid.isEmpty || myUid == targetUid) return;
@@ -306,18 +301,14 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       if (!isFollowing) {
-        // FOLLOW
         await followerDocRef.set({'followedAt': FieldValue.serverTimestamp()});
         await targetUserRef.update({'followerCount': FieldValue.increment(1)});
         await currentUserRef.update({'followingCount': FieldValue.increment(1)});
       } else {
-        // UNFOLLOW
         await followerDocRef.delete();
         await targetUserRef.update({'followerCount': FieldValue.increment(-1)});
         await currentUserRef.update({'followingCount': FieldValue.increment(-1)});
       }
-      
-      // Update local state if we are looking at our own profile
       await _loadUserProfile(myUid); 
     } catch (e) {
       debugPrint('Follow Toggle Error: $e');
@@ -325,12 +316,10 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Keep your existing _loadUserProfile for the logged-in user
   Future<void> _loadUserProfile(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
       if (!doc.exists) {
-        // CRITICAL: Create the document if it's missing (Fixes your blank screen)
         await _ensureUserDocumentExists(uid);
         return;
       }
@@ -351,7 +340,6 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// NEW: Helper to prevent "User Not Found" if Firestore is empty
   Future<void> _ensureUserDocumentExists(String uid) async {
     final user = _auth.currentUser;
     if (user == null) return;

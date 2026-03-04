@@ -1,225 +1,130 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:rxdart/rxdart.dart'; 
-import 'package:ventra/ui/components/event_card.dart';
+import 'package:rxdart/rxdart.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:go_router/go_router.dart';
 
-class ExploreScreen extends StatefulWidget {
-  const ExploreScreen({super.key});
+class MasonryExploreScreen extends StatefulWidget {
+  const MasonryExploreScreen({super.key});
 
   @override
-  State<ExploreScreen> createState() => _ExploreScreenState();
+  State<MasonryExploreScreen> createState() => _MasonryExploreScreenState();
 }
 
-class _ExploreScreenState extends State<ExploreScreen> {
-  // --- State Variables ---
-  String _selectedFilter = 'All'; 
+class _MasonryExploreScreenState extends State<MasonryExploreScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
 
-  // --- Theme Colors ---
-  static const Color primaryColor = Color(0xFF3E5992);
-  static const Color backgroundColor = Colors.white;
-  static const Color textColor = Color(0xFF1C1E21);
-  static const Color subtleText = Colors.black54;
+  Stream<List<Map<String, dynamic>>> _getMasonryFeed() {
+    final posts = FirebaseFirestore.instance.collection('posts').snapshots();
+    final events = FirebaseFirestore.instance.collection('events').snapshots();
 
-  /// Combines 'posts' and 'events' collections into a single sorted list
-  Stream<List<Map<String, dynamic>>> _getCombinedFeed() {
-    final postsStream = FirebaseFirestore.instance.collection('posts').snapshots();
-    final eventsStream = FirebaseFirestore.instance.collection('events').snapshots();
+    return CombineLatestStream.combine2(posts, events, (pSnap, eSnap) {
+      final pList = pSnap.docs.map((d) => {...d.data(), 'id': d.id, 'type': 'post'}).toList();
+      final eList = eSnap.docs.map((d) => {...d.data(), 'id': d.id, 'type': 'event'}).toList();
 
-    return CombineLatestStream.combine2(
-      postsStream,
-      eventsStream,
-      (QuerySnapshot postsSnap, QuerySnapshot eventsSnap) {
-        final posts = postsSnap.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return {...data, 'id': doc.id, 'itemType': 'post'};
-        }).toList();
-
-        final events = eventsSnap.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return {...data, 'id': doc.id, 'itemType': 'event'};
-        }).toList();
-
-        List<Map<String, dynamic>> combined = [...posts, ...events];
-
-        combined.sort((a, b) {
-          // Flexible date parsing to prevent crashes if keys differ
-          final dateA = (a['date'] ?? a['createdAt']) as Timestamp? ?? Timestamp.now();
-          final dateB = (b['date'] ?? b['createdAt']) as Timestamp? ?? Timestamp.now();
-          return dateB.compareTo(dateA);
-        });
-
-        return combined;
-      },
-    );
+      return [...pList, ...eList]..sort((a, b) {
+        final tA = (a['createdAt'] ?? a['date']) as Timestamp? ?? Timestamp.now();
+        final tB = (b['createdAt'] ?? b['date']) as Timestamp? ?? Timestamp.now();
+        return tB.compareTo(tA);
+      });
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
-      body: RefreshIndicator(
-        color: primaryColor,
-        onRefresh: () async => setState(() {}),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            // --- Custom Header ---
-            SliverAppBar(
-              backgroundColor: backgroundColor,
-              elevation: 0,
-              floating: true,
-              centerTitle: false,
-              title: const Text(
-                "Ventra",
-                style: TextStyle(
-                  color: primaryColor,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 28,
-                  letterSpacing: -1.2,
-                ),
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.notifications_none_rounded, color: textColor),
-                  onPressed: () {},
-                ),
-                const SizedBox(width: 8),
-              ],
-            ),
-
-            // --- Filter Selection Row ---
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 50,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: ['All', 'Events', 'Posts'].map((filter) {
-                    final bool isSelected = _selectedFilter == filter;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(filter),
-                        selected: isSelected,
-                        onSelected: (selected) {
-                          if (selected) setState(() => _selectedFilter = filter);
-                        },
-                        selectedColor: primaryColor,
-                        backgroundColor: Colors.grey[100],
-                        checkmarkColor: Colors.white,
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : textColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-
-            // --- Main Feed Stream ---
-            StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _getCombinedFeed(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return SliverFillRemaining(
-                    child: _buildStateMessage(Icons.error_outline, "Error loading feed", "${snapshot.error}"),
-                  );
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SliverFillRemaining(child: _SkeletonLoader());
-                }
-
-                final allItems = snapshot.data ?? [];
-
-                // Logic: Filter items based on selection
-                final filteredItems = allItems.where((item) {
-                  if (_selectedFilter == 'All') return true;
-                  // matches 'event' or 'post' based on the filter string minus the 's'
-                  String typeMatch = _selectedFilter.toLowerCase().replaceAll('s', '');
-                  return item['itemType'] == typeMatch;
-                }).toList();
-
-                if (filteredItems.isEmpty) {
-                  return SliverFillRemaining(
-                    child: _buildStateMessage(
-                      Icons.search_off_rounded, 
-                      "No $_selectedFilter found", 
-                      "Try changing your filter or check back later."
-                    ),
-                  );
-                }
-
-                return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) => EventCard(event: filteredItems[index]),
-                      childCount: filteredItems.length,
-                    ),
-                  ),
-                );
-              },
-            ),
+      backgroundColor: Colors.white,
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          _buildHeader(),
+        ],
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildMasonryGrid('all'),
+            _buildMasonryGrid('event'),
+            _buildMasonryGrid('post'),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStateMessage(IconData icon, String title, String subtitle) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 64, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: subtleText)),
-          ),
-        ],
+  Widget _buildHeader() {
+    return SliverAppBar(
+      pinned: true,
+      floating: true,
+      backgroundColor: Colors.white,
+      centerTitle: false,
+      elevation: 0,
+      title: const Text("Explore", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 26)),
+      bottom: TabBar(
+        controller: _tabController,
+        indicatorColor: const Color(0xFF3E5992),
+        labelColor: const Color(0xFF3E5992),
+        unselectedLabelColor: Colors.grey,
+        tabs: const [Tab(text: "All"), Tab(text: "Events"), Tab(text: "Posts")],
       ),
     );
   }
-}
 
-// --- Visual Skeleton Loading Widget ---
-class _SkeletonLoader extends StatelessWidget {
-  const _SkeletonLoader();
+  Widget _buildMasonryGrid(String filter) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _getMasonryFeed(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: 3,
-      itemBuilder: (context, index) => Container(
-        height: 320,
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.grey[100],
-          borderRadius: BorderRadius.circular(28),
-        ),
-        child: Align(
-          alignment: Alignment.bottomLeft,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(width: 100, height: 12, decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4))),
-                const SizedBox(height: 12),
-                Container(width: 200, height: 24, decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4))),
-              ],
+        final items = filter == 'all' 
+            ? snapshot.data! 
+            : snapshot.data!.where((i) => i['type'] == filter).toList();
+
+        return MasonryGridView.count(
+          crossAxisCount: 2,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          padding: const EdgeInsets.all(8),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return _buildMasonryTile(item);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMasonryTile(Map<String, dynamic> item) {
+    final String imageUrl = item['imageUrl'] ?? item['mediaUrl'] ?? '';
+    
+    return GestureDetector(
+      onTap: () => context.push('/post-detail/${item['id']}'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stack) => Container(height: 100, color: Colors.grey[200]),
             ),
           ),
-        ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+            child: Text(
+              item['title'] ?? item['description'] ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }

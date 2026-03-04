@@ -64,7 +64,7 @@ class HomeScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, currentIndex, context),
-                const NotificationBadgeItem(index: 1), // Optimized Stream component
+                const NotificationBadgeItem(index: 1), 
                 _buildCreateButton(context),
                 _buildNavItem(3, Icons.search_rounded, Icons.search_outlined, currentIndex, context),
                 _buildNavItem(4, Icons.person_rounded, Icons.person_outline_rounded, currentIndex, context),

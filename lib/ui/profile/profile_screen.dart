@@ -17,8 +17,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool isFollowing = false;
   bool isLoadingFollow = false;
 
-  static const Color primaryColor = Color(0xFF3E5992);
-  static const Color accentColor = Color(0xFFF1F4F9);
+  static const Color tiktokRed = Color(0xFFFE2C55);
 
   @override
   void initState() {
@@ -27,8 +26,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _checkFollowStatus();
     }
   }
-
-  // --- LOGIC ---
 
   void _checkFollowStatus() async {
     final doc = await FirebaseFirestore.instance
@@ -39,6 +36,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .get();
     if (mounted) setState(() => isFollowing = doc.exists);
   }
+
+  // --- ACTIONS ---
 
   Future<void> _toggleFollow() async {
     if (isLoadingFollow) return;
@@ -69,46 +68,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // --- UI BUILD ---
-
   @override
   Widget build(BuildContext context) {
     final bool isMe = widget.userId == currentUid;
 
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        title: Text(isMe ? "My Profile" : "Profile", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        leading: !isMe ? const BackButton(color: Colors.black) : null,
+      ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) return const Center(child: Text("Error loading profile"));
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
-
-          if (!snapshot.data!.exists) return _buildNotFound(isMe);
-
-          final userData = snapshot.data!.data() as Map<String, dynamic>;
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final userData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
 
           return DefaultTabController(
             length: 3,
             child: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                _buildSliverAppBar(isMe, userData['username'] ?? "Profile"),
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      _buildProfileHeader(userData),
-                      _buildStatsRow(userData),
-                      _buildActionArea(isMe),
+                      _buildHeaderAvatar(userData, isMe),
+                      const SizedBox(height: 12),
+                      Text("@${userData['username'] ?? 'user'}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
                       const SizedBox(height: 16),
+                      _buildStatsRow(userData),
+                      const SizedBox(height: 20),
+                      _buildActionButtons(isMe),
+                      const SizedBox(height: 16),
+                      if (userData['bio'] != null)
+                        Text(userData['bio'], style: const TextStyle(fontSize: 14)),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
-                _buildStickyTabBar(),
+                _buildTikTokTabBar(),
               ],
               body: TabBarView(
                 children: [
-                  _buildUserPostsGrid(widget.userId),
-                  _buildUserEventsList(widget.userId),
-                  _buildSavedEventsList(widget.userId),
+                  _buildPostsGrid(), // Tab 1: User's Posts
+                  _buildLikedGrid(), // Tab 2: Posts User Liked
+                  _buildSavedGrid(), // Tab 3: User's Bookmarks
                 ],
               ),
             ),
@@ -118,295 +124,156 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildSliverAppBar(bool isMe, String username) {
-    return SliverAppBar(
-      pinned: true,
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.white,
-      elevation: 0,
-      centerTitle: false,
-      leading: !isMe ? const BackButton(color: Colors.black) : null,
-      title: Text(
-        username,
-        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
-      ),
-      actions: [
+  // --- UI COMPONENTS ---
+
+  Widget _buildHeaderAvatar(Map<String, dynamic> data, bool isMe) {
+    return Stack(
+      children: [
+        CircleAvatar(
+          radius: 45,
+          backgroundImage: data['photoURL'] != null ? NetworkImage(data['photoURL']) : null,
+          child: data['photoURL'] == null ? const Icon(Icons.person, size: 40) : null,
+        ),
         if (isMe)
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.black),
-            onPressed: () => context.push('/settings'),
+          Positioned(
+            bottom: 0, right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+              child: const Icon(Icons.add, size: 14, color: Colors.white),
+            ),
           )
       ],
     );
   }
 
-  Widget _buildProfileHeader(Map<String, dynamic> data) {
-    final photoUrl = data['photoURL'] as String?;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 40,
-            backgroundColor: accentColor,
-            backgroundImage: (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
-            child: (photoUrl == null || photoUrl.isEmpty)
-                ? const Icon(Icons.person, size: 40, color: Colors.grey)
-                : null,
-          ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  data['username'] ?? 'User',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  data['bio'] ?? 'Welcome to my profile!',
-                  style: TextStyle(color: Colors.black.withOpacity(0.6), fontSize: 14),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildStatsRow(Map<String, dynamic> data) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-      padding: const EdgeInsets.symmetric(vertical: 15),
-      decoration: BoxDecoration(
-        color: accentColor,
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _statItem("Posts", data['postCount'] ?? 0),
-          _divider(),
-          _statItem("Followers", data['followerCount'] ?? 0),
-          _divider(),
-          _statItem("Following", data['followingCount'] ?? 0),
-        ],
-      ),
-    );
-  }
-
-  Widget _statItem(String label, int count) {
-    return Column(
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text("$count", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w500)),
+        _statItem("${data['followingCount'] ?? 0}", "Following"),
+        _divider(),
+        _statItem("${data['followerCount'] ?? 0}", "Followers"),
+        _divider(),
+        _statItem("${data['totalLikes'] ?? 0}", "Likes"),
       ],
     );
   }
 
-  Widget _divider() => Container(height: 20, width: 1, color: Colors.grey[300]);
+  Widget _statItem(String count, String label) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 15),
+    child: Column(children: [
+      Text(count, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+    ]),
+  );
 
-  Widget _buildActionArea(bool isMe) {
+  Widget _divider() => Container(height: 15, width: 1, color: Colors.black12);
+
+  Widget _buildActionButtons(bool isMe) {
+    if (isMe) {
+      return _wideButton("Edit Profile", Colors.white, Colors.black, () => context.push('/edit-profile'));
+    }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: isMe
-          ? _buildButton("Edit Profile", accentColor, Colors.black, () => context.push('/profile/edit'))
-          : _buildButton(
-              isFollowing ? "Unfollow" : "Follow",
-              isFollowing ? accentColor : primaryColor,
-              isFollowing ? Colors.black : Colors.white,
-              _toggleFollow,
-              isLoading: isLoadingFollow,
-            ),
-    );
-  }
-
-  Widget _buildButton(String label, Color bg, Color text, VoidCallback action, {bool isLoading = false}) {
-    return SizedBox(
-      width: double.infinity,
-      height: 44,
-      child: TextButton(
-        onPressed: isLoading ? null : action,
-        style: TextButton.styleFrom(
-          backgroundColor: bg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        child: isLoading
-            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: primaryColor))
-            : Text(label, style: TextStyle(color: text, fontWeight: FontWeight.bold)),
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Row(
+        children: [
+          Expanded(child: _wideButton(isFollowing ? "Unfollow" : "Follow", isFollowing ? Colors.white : tiktokRed, isFollowing ? Colors.black : Colors.white, _toggleFollow)),
+          const SizedBox(width: 8),
+          _squareButton(Icons.send_outlined, () {}),
+        ],
       ),
     );
   }
 
-  Widget _buildStickyTabBar() {
-    return SliverPersistentHeader(
-      pinned: true,
-      delegate: _SliverAppBarDelegate(
-        const TabBar(
-          indicatorColor: primaryColor,
-          indicatorSize: TabBarIndicatorSize.label,
-          labelColor: primaryColor,
-          unselectedLabelColor: Colors.grey,
-          tabs: [
-            Tab(icon: Icon(Icons.grid_view_rounded)),
-            Tab(icon: Icon(Icons.event_available_rounded)),
-            Tab(icon: Icon(Icons.bookmark_outline_rounded)),
-          ],
-        ),
+  Widget _wideButton(String text, Color bg, Color txtColor, VoidCallback onTap) => Container(
+    height: 45,
+    child: ElevatedButton(
+      onPressed: onTap,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: bg, elevation: 0,
+        side: const BorderSide(color: Colors.black12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
+      child: Text(text, style: TextStyle(color: txtColor, fontWeight: FontWeight.bold)),
+    ),
+  );
+
+  Widget _squareButton(IconData icon, VoidCallback onTap) => Container(
+    height: 45, width: 45,
+    decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(4)),
+    child: IconButton(icon: Icon(icon, size: 20, color: Colors.black), onPressed: onTap),
+  );
+
+  Widget _buildTikTokTabBar() => SliverPersistentHeader(
+    pinned: true,
+    delegate: _SliverAppBarDelegate(
+      const TabBar(
+        indicatorColor: Colors.black,
+        labelColor: Colors.black,
+        unselectedLabelColor: Colors.grey,
+        tabs: [
+          Tab(icon: Icon(Icons.grid_on_outlined)),
+          Tab(icon: Icon(Icons.favorite_border_rounded)),
+          Tab(icon: Icon(Icons.bookmark_outline_rounded)),
+        ],
+      ),
+    ),
+  );
+
+  // --- DATA GRIDS ---
+
+  Widget _buildPostsGrid() {
+    return _buildBaseGrid(
+      FirebaseFirestore.instance.collection('posts').where('creatorId', isEqualTo: widget.userId).snapshots(),
+      "No posts yet",
     );
   }
 
-  // --- CONTENT GRIDS ---
+  Widget _buildLikedGrid() {
+    // Queries posts where the current profile owner's UID is in the likedBy array
+    return _buildBaseGrid(
+      FirebaseFirestore.instance.collection('posts').where('likedBy', arrayContains: widget.userId).snapshots(),
+      "No liked posts",
+    );
+  }
 
-  Widget _buildUserPostsGrid(String uid) {
+  Widget _buildSavedGrid() {
+    // Queries the specific user's bookmarks collection
+    return _buildBaseGrid(
+      FirebaseFirestore.instance.collection('users').doc(widget.userId).collection('bookmarks').snapshots(),
+      "No saved items",
+    );
+  }
+
+  Widget _buildBaseGrid(Stream<QuerySnapshot> stream, String emptyMsg) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('posts')
-          .where('creatorId', isEqualTo: uid)
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+      stream: stream,
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _buildEmptyState(Icons.grid_on_rounded, "No posts yet");
+        if (docs.isEmpty) return Center(child: Text(emptyMsg, style: const TextStyle(color: Colors.grey)));
 
         return GridView.builder(
-          padding: const EdgeInsets.all(1),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 1,
-            mainAxisSpacing: 1,
+            crossAxisCount: 3, childAspectRatio: 3/4, crossAxisSpacing: 1, mainAxisSpacing: 1,
           ),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            return GestureDetector(
-              onTap: () => context.push('/post/${docs[index].id}'),
-              child: Image.network(
-                data['mediaUrl'] ?? '',
-                fit: BoxFit.cover,
-                errorBuilder: (c, e, s) => Container(color: accentColor, child: const Icon(Icons.broken_image)),
-              ),
-            );
+            return Image.network(data['mediaUrl'] ?? '', fit: BoxFit.cover);
           },
         );
       },
     );
   }
-
-  Widget _buildUserEventsList(String uid) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('events')
-          .where('creatorId', isEqualTo: uid)
-          .orderBy('eventDate', descending: false)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _buildEmptyState(Icons.event_note_rounded, "No events organized");
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: docs.length,
-          itemBuilder: (context, index) => _eventTile(docs[index]),
-        );
-      },
-    );
-  }
-
-  Widget _buildSavedEventsList(String uid) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('users').doc(uid).collection('bookmarks').snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return _buildEmptyState(Icons.bookmark_border_rounded, "No saved events");
-        return ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: docs.length,
-          itemBuilder: (context, index) => _eventTile(docs[index]),
-        );
-      },
-    );
-  }
-
-  Widget _eventTile(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(color: Colors.grey[200]!),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: (data['imageUrl'] != null)
-              ? Image.network(data['imageUrl'], width: 50, height: 50, fit: BoxFit.cover)
-              : Container(width: 50, height: 50, color: accentColor, child: const Icon(Icons.event)),
-        ),
-        title: Text(data['title'] ?? 'Event', style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(data['description'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: const Icon(Icons.chevron_right, size: 20),
-        onTap: () => context.push('/home/event/${doc.id}'),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(IconData icon, String msg) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 50, color: Colors.grey[200]),
-            const SizedBox(height: 12),
-            Text(msg, style: const TextStyle(color: Colors.grey)),
-          ],
-        ),
-      );
-
-  Widget _buildNotFound(bool isMe) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.person_off_rounded, size: 80, color: Colors.grey),
-            const SizedBox(height: 16),
-            const Text("User not found", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            if (isMe)
-              TextButton(onPressed: () => context.push('/profile/edit'), child: const Text("Setup Profile")),
-          ],
-        ),
-      );
 }
-
-// --- TABBAR DELEGATE ---
 
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar);
   final TabBar _tabBar;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
-      ),
-      child: _tabBar,
-    );
-  }
-
-  @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
+  @override double get minExtent => _tabBar.preferredSize.height;
+  @override double get maxExtent => _tabBar.preferredSize.height;
+  @override Widget build(context, offset, overlaps) => Container(color: Colors.white, child: _tabBar);
+  @override bool shouldRebuild(_SliverAppBarDelegate old) => false;
 }

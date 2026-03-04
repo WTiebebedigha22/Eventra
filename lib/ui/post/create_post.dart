@@ -1,12 +1,11 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Required for direct Event creation
+import 'package:cloud_firestore/cloud_firestore.dart'; 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-
 import '../../providers/post_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/posts/post.dart';
@@ -152,7 +151,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final postProvider = context.read<PostProvider>();
     final newPost = Post(
       id: '', 
-      creatorId: auth.userId!,
+      creatorId: auth.userId,
       username: auth.fullName.isEmpty ? 'User' : auth.fullName,
       userProfileUrl: auth.photoURL,
       content: _contentController.text.trim(),

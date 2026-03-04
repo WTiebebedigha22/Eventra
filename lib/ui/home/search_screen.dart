@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
-import '../components/event_card.dart';
+import '../components/event_card.dart'; // Ensure this exists
+//import '../post/post_detail.dart'; // Import the detail screen
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -27,17 +28,17 @@ class _SearchScreenState extends State<SearchScreen> {
           title: Container(
             height: 45,
             decoration: BoxDecoration(
-              color: Colors.transparent,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF262626)),
+              border: Border.all(color: const Color(0xFFE0E0E0)),
             ),
             child: TextField(
               controller: _searchController,
               onChanged: (value) => setState(() => _searchQuery = value.trim()),
               style: const TextStyle(color: Colors.black),
               decoration: InputDecoration(
-                hintText: "Search events or people...",
-                hintStyle: TextStyle(color: Colors.black38, fontSize: 14),
+                hintText: "Search events, tags, or people...",
+                hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
                 prefixIcon: const Icon(Icons.search_rounded, color: primaryColor, size: 20),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -56,7 +57,7 @@ class _SearchScreenState extends State<SearchScreen> {
           bottom: const TabBar(
             indicatorColor: primaryColor,
             indicatorWeight: 3,
-            labelColor: Colors.blue,
+            labelColor: primaryColor,
             unselectedLabelColor: Colors.grey,
             tabs: [
               Tab(text: "Events"),
@@ -81,39 +82,58 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.manage_search_rounded, size: 80, color: Colors.black54),
+          const Icon(Icons.manage_search_rounded, size: 80, color: Colors.black12),
           const SizedBox(height: 16),
-          Text("Find your next experience or friend", 
+          const Text("Find your next experience or friend", 
             style: TextStyle(color: Colors.black54, fontSize: 16)),
         ],
       ),
     );
   }
 
-  // --- TAB 1: EVENT SEARCH ---
+  // --- TAB 1: EVENT SEARCH (Title + Tags) ---
   Widget _buildEventResults() {
     return StreamBuilder<QuerySnapshot>(
+      // First check if search query matches any tags
       stream: FirebaseFirestore.instance
-          .collection('events') // pulling from events
-          .where('title', isGreaterThanOrEqualTo: _searchQuery)
-          .where('title', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
-          .limit(10)
+          .collection('events')
+          .where('tags', arrayContains: _searchQuery.toLowerCase())
+          .limit(15)
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
-        final results = snapshot.data!.docs;
+        
+        var results = snapshot.data!.docs;
 
-        if (results.isEmpty) return _buildNoResultsText("No events found.");
+        // Fallback: If no tags found, search by Title prefix
+        if (results.isEmpty) {
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('events')
+                .where('title', isGreaterThanOrEqualTo: _searchQuery)
+                .where('title', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
+                .limit(15)
+                .snapshots(),
+            builder: (context, titleSnapshot) {
+              if (!titleSnapshot.hasData) return const SizedBox();
+              if (titleSnapshot.data!.docs.isEmpty) return _buildNoResultsText("No events or tags found.");
+              return _buildEventList(titleSnapshot.data!.docs);
+            },
+          );
+        }
+        return _buildEventList(results);
+      },
+    );
+  }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(15),
-          itemCount: results.length,
-          itemBuilder: (context, index) {
-            final data = results[index].data() as Map<String, dynamic>;
-            data['id'] = results[index].id;
-            return EventCard(event: data);
-          },
-        );
+  Widget _buildEventList(List<QueryDocumentSnapshot> docs) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(15),
+      itemCount: docs.length,
+      itemBuilder: (context, index) {
+        final data = docs[index].data() as Map<String, dynamic>;
+        data['id'] = docs[index].id;
+        return EventCard(event: data); // Navigation to PostDetail happens inside EventCard
       },
     );
   }
@@ -122,7 +142,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildUserResults() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('users') // pulling from users
+          .collection('users')
           .where('username', isGreaterThanOrEqualTo: _searchQuery.toLowerCase())
           .where('username', isLessThanOrEqualTo: '${_searchQuery.toLowerCase()}\uf8ff')
           .limit(15)
@@ -140,13 +160,13 @@ class _SearchScreenState extends State<SearchScreen> {
             final user = results[index].data() as Map<String, dynamic>;
             return ListTile(
               leading: CircleAvatar(
-                backgroundColor: Colors.black54,
+                backgroundColor: Colors.grey[200],
                 backgroundImage: user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
-                child: user['photoURL'] == null ? const Icon(Icons.person, color: Colors.white54) : null,
+                child: user['photoURL'] == null ? const Icon(Icons.person, color: Colors.grey) : null,
               ),
-              title: Text(user['displayName'] ?? 'User', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-              subtitle: Text("@${user['username']}", style: const TextStyle(color: Colors.grey)),
-              onTap: () => context.push('/profile/${user['uid']}'), // Navigates to the ProfileScreen you just fixed!
+              title: Text(user['displayName'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text("@${user['username']}"),
+              onTap: () => context.push('/profile/${user['uid']}'),
             );
           },
         );

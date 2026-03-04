@@ -135,6 +135,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                 _locationTile("Victoria Island", "Lagos, Nigeria"),
                 _locationTile("Benin-City", "Edo State, Nigeria"),
                 _locationTile("Port Harcourt", "Rivers State, Nigeria"),
+                _locationTile("Kano", "Kano State, Nigeria"),
               ],
             ),
           )
