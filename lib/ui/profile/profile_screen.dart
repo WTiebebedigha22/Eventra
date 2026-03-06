@@ -17,7 +17,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool isFollowing = false;
   bool isLoadingFollow = false;
 
-  static const Color tiktokRed = Color(0xFFFE2C55);
+  // Aesthetic colors: Ventra Blue & Jiji Green
+  static const Color brandColor = Color(0xFF3E5992);
+  static const Color jijiGreen = Color(0xFF3BA73A);
+  static const Color surfaceColor = Colors.white;
 
   @override
   void initState() {
@@ -53,7 +56,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       if (isFollowing) {
-        await userRef.collection('followers').doc(currentUid).set({'followedAt': FieldValue.serverTimestamp()});
+        await userRef.collection('followers').doc(currentUid).set({
+          'followedAt': FieldValue.serverTimestamp(),
+        });
         await userRef.update({'followerCount': FieldValue.increment(1)});
         await currentUserRef.update({'followingCount': FieldValue.increment(1)});
       } else {
@@ -68,18 +73,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _showMoreOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text("Share Profile"),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.report_problem_outlined, color: Colors.red),
+              title: const Text("Report User", style: TextStyle(color: Colors.red)),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isMe = widget.userId == currentUid;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: surfaceColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: surfaceColor,
         elevation: 0,
         centerTitle: true,
-        title: Text(isMe ? "My Profile" : "Profile", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
+          builder: (context, snapshot) {
+            final name = (snapshot.data?.data() as Map?)?['username'] ?? "Profile";
+            return Text(
+              isMe ? "My Profile" : "@$name",
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
+            );
+          },
+        ),
         leading: !isMe ? const BackButton(color: Colors.black) : null,
+        actions: [
+          IconButton(
+            icon: Icon(isMe ? Icons.settings_outlined : Icons.more_horiz, color: Colors.black),
+            onPressed: isMe ? () => context.push('/settings') : _showMoreOptions,
+          ),
+        ],
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
@@ -94,27 +140,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      _buildHeaderAvatar(userData, isMe),
+                      const SizedBox(height: 10),
+                      _buildHeaderAvatar(userData, isMe, widget.userId),
                       const SizedBox(height: 12),
-                      Text("@${userData['username'] ?? 'user'}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                      Text(
+                        userData['displayName'] ?? 'User',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      ),
+                      if (userData['bio'] != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+                          child: Text(
+                            userData['bio'],
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 14, color: Colors.black87),
+                          ),
+                        ),
                       const SizedBox(height: 16),
                       _buildStatsRow(userData),
                       const SizedBox(height: 20),
                       _buildActionButtons(isMe),
-                      const SizedBox(height: 16),
-                      if (userData['bio'] != null)
-                        Text(userData['bio'], style: const TextStyle(fontSize: 14)),
                       const SizedBox(height: 20),
                     ],
                   ),
                 ),
-                _buildTikTokTabBar(),
+                _buildSliverTabBar(),
               ],
               body: TabBarView(
                 children: [
-                  _buildPostsGrid(), // Tab 1: User's Posts
-                  _buildLikedGrid(), // Tab 2: Posts User Liked
-                  _buildSavedGrid(), // Tab 3: User's Bookmarks
+                  _buildPostsGrid(),
+                  _buildLikedGrid(),
+                  _buildSavedGrid(),
                 ],
               ),
             ),
@@ -126,24 +182,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // --- UI COMPONENTS ---
 
-  Widget _buildHeaderAvatar(Map<String, dynamic> data, bool isMe) {
-    return Stack(
-      children: [
-        CircleAvatar(
-          radius: 45,
-          backgroundImage: data['photoURL'] != null ? NetworkImage(data['photoURL']) : null,
-          child: data['photoURL'] == null ? const Icon(Icons.person, size: 40) : null,
-        ),
-        if (isMe)
-          Positioned(
-            bottom: 0, right: 0,
-            child: Container(
+  Widget _buildHeaderAvatar(Map<String, dynamic> initialData, bool isMe, String userId) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(userId).snapshots(),
+      builder: (context, snapshot) {
+        final userData = snapshot.hasData && snapshot.data!.exists
+            ? snapshot.data!.data() as Map<String, dynamic>
+            : initialData;
+        final String? photoURL = userData['photoURL'];
+
+        return Stack(
+          children: [
+            Container(
               padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
-              child: const Icon(Icons.add, size: 14, color: Colors.white),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey.shade100, width: 2),
+              ),
+              child: CircleAvatar(
+                radius: 48,
+                backgroundColor: Colors.grey[100],
+                backgroundImage: (photoURL != null && photoURL.isNotEmpty) ? NetworkImage(photoURL) : null,
+                child: (photoURL == null || photoURL.isEmpty) ? const Icon(Icons.person, size: 50, color: Colors.grey) : null,
+              ),
             ),
-          )
-      ],
+            if (isMe)
+              Positioned(
+                bottom: 5,
+                right: 5,
+                child: GestureDetector(
+                  onTap: () => HapticFeedback.lightImpact(),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(color: brandColor, shape: BoxShape.circle),
+                    child: const Icon(Icons.add, size: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -152,116 +230,144 @@ class _ProfileScreenState extends State<ProfileScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _statItem("${data['followingCount'] ?? 0}", "Following"),
-        _divider(),
+        _statDivider(),
         _statItem("${data['followerCount'] ?? 0}", "Followers"),
-        _divider(),
+        _statDivider(),
         _statItem("${data['totalLikes'] ?? 0}", "Likes"),
       ],
     );
   }
 
-  Widget _statItem(String count, String label) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 15),
-    child: Column(children: [
-      Text(count, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-    ]),
-  );
+  Widget _statDivider() => Container(height: 15, width: 1, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 15));
 
-  Widget _divider() => Container(height: 15, width: 1, color: Colors.black12);
+  Widget _statItem(String count, String label) => Column(
+        children: [
+          Text(count, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        ],
+      );
 
   Widget _buildActionButtons(bool isMe) {
-    if (isMe) {
-      return _wideButton("Edit Profile", Colors.white, Colors.black, () => context.push('/edit-profile'));
-    }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: [
-          Expanded(child: _wideButton(isFollowing ? "Unfollow" : "Follow", isFollowing ? Colors.white : tiktokRed, isFollowing ? Colors.black : Colors.white, _toggleFollow)),
+          Expanded(
+            child: _actionButton(
+              isMe ? "Edit Profile" : (isFollowing ? "Unfollow" : "Follow"),
+              isMe || isFollowing ? Colors.white : jijiGreen,
+              isMe || isFollowing ? Colors.black : Colors.white,
+              isMe ? () => context.push('./edit') : _toggleFollow,
+            ),
+          ),
           const SizedBox(width: 8),
-          _squareButton(Icons.send_outlined, () {}),
+          _squareIconButton(isMe ? Icons.share_outlined : Icons.mail_outline_rounded, () {}),
         ],
       ),
     );
   }
 
-  Widget _wideButton(String text, Color bg, Color txtColor, VoidCallback onTap) => Container(
-    height: 45,
-    child: ElevatedButton(
-      onPressed: onTap,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: bg, elevation: 0,
-        side: const BorderSide(color: Colors.black12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-      ),
-      child: Text(text, style: TextStyle(color: txtColor, fontWeight: FontWeight.bold)),
-    ),
-  );
+  Widget _actionButton(String text, Color bg, Color txtColor, VoidCallback onTap) => SizedBox(
+        height: 44,
+        child: ElevatedButton(
+          onPressed: onTap,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: bg,
+            foregroundColor: txtColor,
+            elevation: 0,
+            side: BorderSide(color: bg == Colors.white ? Colors.grey.shade300 : Colors.transparent),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        ),
+      );
 
-  Widget _squareButton(IconData icon, VoidCallback onTap) => Container(
-    height: 45, width: 45,
-    decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(4)),
-    child: IconButton(icon: Icon(icon, size: 20, color: Colors.black), onPressed: onTap),
-  );
+  Widget _squareIconButton(IconData icon, VoidCallback onTap) => Container(
+        height: 44,
+        width: 44,
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: IconButton(icon: Icon(icon, size: 20, color: Colors.black), onPressed: onTap),
+      );
 
-  Widget _buildTikTokTabBar() => SliverPersistentHeader(
-    pinned: true,
-    delegate: _SliverAppBarDelegate(
-      const TabBar(
-        indicatorColor: Colors.black,
-        labelColor: Colors.black,
-        unselectedLabelColor: Colors.grey,
-        tabs: [
-          Tab(icon: Icon(Icons.grid_on_outlined)),
-          Tab(icon: Icon(Icons.favorite_border_rounded)),
-          Tab(icon: Icon(Icons.bookmark_outline_rounded)),
-        ],
-      ),
-    ),
-  );
+  Widget _buildSliverTabBar() => SliverPersistentHeader(
+        pinned: true,
+        delegate: _SliverAppBarDelegate(
+          TabBar(
+            indicatorColor: Colors.black,
+            indicatorWeight: 1.5,
+            indicatorSize: TabBarIndicatorSize.label,
+            labelColor: Colors.black,
+            unselectedLabelColor: Colors.grey.shade400,
+            tabs: const [
+              Tab(icon: Icon(Icons.grid_on_rounded)),
+              Tab(icon: Icon(Icons.favorite_border_rounded)),
+              Tab(icon: Icon(Icons.bookmark_outline_rounded)),
+            ],
+          ),
+        ),
+      );
 
-  // --- DATA GRIDS ---
+  // --- GRIDS ---
 
-  Widget _buildPostsGrid() {
-    return _buildBaseGrid(
-      FirebaseFirestore.instance.collection('posts').where('creatorId', isEqualTo: widget.userId).snapshots(),
-      "No posts yet",
-    );
-  }
+  Widget _buildPostsGrid() => _buildBaseGrid(
+      FirebaseFirestore.instance.collection('posts').where('creatorId', isEqualTo: widget.userId).snapshots(), "No posts yet");
 
-  Widget _buildLikedGrid() {
-    // Queries posts where the current profile owner's UID is in the likedBy array
-    return _buildBaseGrid(
-      FirebaseFirestore.instance.collection('posts').where('likedBy', arrayContains: widget.userId).snapshots(),
-      "No liked posts",
-    );
-  }
+  Widget _buildLikedGrid() => _buildBaseGrid(
+      FirebaseFirestore.instance.collection('posts').where('likedBy', arrayContains: widget.userId).snapshots(), "No liked posts");
 
-  Widget _buildSavedGrid() {
-    // Queries the specific user's bookmarks collection
-    return _buildBaseGrid(
-      FirebaseFirestore.instance.collection('users').doc(widget.userId).collection('bookmarks').snapshots(),
-      "No saved items",
-    );
-  }
+  Widget _buildSavedGrid() => _buildBaseGrid(
+      FirebaseFirestore.instance.collection('users').doc(widget.userId).collection('bookmarks').snapshots(), "No saved items");
 
   Widget _buildBaseGrid(Stream<QuerySnapshot> stream, String emptyMsg) {
     return StreamBuilder<QuerySnapshot>(
       stream: stream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final docs = snapshot.data!.docs;
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) return Center(child: Text(emptyMsg, style: const TextStyle(color: Colors.grey)));
 
         return GridView.builder(
+          padding: const EdgeInsets.all(1),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3, childAspectRatio: 3/4, crossAxisSpacing: 1, mainAxisSpacing: 1,
+            crossAxisCount: 3,
+            childAspectRatio: 0.75, // TikTok Style Vertical Ratio
+            crossAxisSpacing: 2,
+            mainAxisSpacing: 2,
           ),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            return Image.network(data['mediaUrl'] ?? '', fit: BoxFit.cover);
+            final String media = data['imageUrl'] ?? data['mediaUrl'] ?? '';
+            final String price = data['price'] ?? '';
+
+            return GestureDetector(
+              onTap: () => context.push('/post/${docs[index].id}', extra: data),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(media, fit: BoxFit.cover),
+                  if (price.isNotEmpty)
+                    Positioned(
+                      bottom: 4,
+                      left: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                        child: Text(price, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  const Positioned(
+                    top: 4,
+                    right: 4,
+                    child: Icon(Icons.play_arrow_outlined, color: Colors.white70, size: 16),
+                  ),
+                ],
+              ),
+            );
           },
         );
       },
@@ -272,8 +378,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar);
   final TabBar _tabBar;
-  @override double get minExtent => _tabBar.preferredSize.height;
-  @override double get maxExtent => _tabBar.preferredSize.height;
-  @override Widget build(context, offset, overlaps) => Container(color: Colors.white, child: _tabBar);
-  @override bool shouldRebuild(_SliverAppBarDelegate old) => false;
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+  @override
+  Widget build(context, offset, overlaps) => Container(
+        decoration: BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+        child: _tabBar,
+      );
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate old) => false;
 }

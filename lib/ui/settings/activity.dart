@@ -2,43 +2,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
+import 'package:go_router/go_router.dart';
 
 class ActivityScreen extends StatelessWidget {
   const ActivityScreen({super.key});
 
-  // --- Theme Colors ---
   static const Color primaryColor = Color(0xFF3E5992);
-  static const Color backgroundColor = Colors.white;
+  static const Color accentColor = Color(0xFF3BA73A); // Jiji Green
   static const Color textColor = Color(0xFF1C1E21);
   static const Color subtleText = Colors.black54;
 
-  Future<void> _clearAllNotifications(String uid) async {
-    final collection = FirebaseFirestore.instance
-        .collection('notifications')
-        .where('userId', isEqualTo: uid);
-
-    final snapshots = await collection.get();
-    final batch = FirebaseFirestore.instance.batch();
-
-    for (var doc in snapshots.docs) {
-      batch.delete(doc.reference);
-    }
-
-    await batch.commit();
-    HapticFeedback.lightImpact();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final User? currentUser = FirebaseAuth.instance.currentUser;
-    final String uid = currentUser?.uid ?? '';
+    final String uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: backgroundColor,
+        backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
         title: const Text(
@@ -51,7 +32,7 @@ class ActivityScreen extends StatelessWidget {
               onPressed: () => _showClearDialog(context, uid),
               child: const Text(
                 'Clear all',
-                style: TextStyle(color: primaryColor, fontWeight: FontWeight.w600),
+                style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
               ),
             ),
         ],
@@ -72,12 +53,13 @@ class ActivityScreen extends StatelessWidget {
                   return _buildEmptyState();
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.only(top: 8),
+                return ListView.separated(
                   itemCount: snapshot.data!.docs.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1, indent: 80, color: Color(0xFFF0F2F5)),
                   itemBuilder: (context, index) {
-                    var data = snapshot.data!.docs[index].data() as Map<String, dynamic>;
-                    return _buildActivityTile(data);
+                    var doc = snapshot.data!.docs[index];
+                    var data = doc.data() as Map<String, dynamic>;
+                    return _buildActivityTile(context, doc.id, data);
                   },
                 );
               },
@@ -85,35 +67,14 @@ class ActivityScreen extends StatelessWidget {
     );
   }
 
-  void _showClearDialog(BuildContext context, String uid) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Clear Activity?'),
-        content: const Text('This will remove all your recent notifications permanently.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: subtleText)),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _clearAllNotifications(uid);
-            },
-            child: const Text('Clear All', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivityTile(Map<String, dynamic> data) {
+  // --- UI: Activity Tile ---
+  Widget _buildActivityTile(BuildContext context, String docId, Map<String, dynamic> data) {
     IconData icon;
     Color iconColor;
+    final String type = data['type'] ?? 'general';
+    final bool isRead = data['isRead'] ?? false;
 
-    switch (data['type']) {
+    switch (type) {
       case 'like':
         icon = Icons.favorite_rounded;
         iconColor = Colors.redAccent;
@@ -122,71 +83,145 @@ class ActivityScreen extends StatelessWidget {
         icon = Icons.chat_bubble_rounded;
         iconColor = primaryColor;
         break;
-      case 'booking':
-        icon = Icons.confirmation_number_rounded;
-        iconColor = Colors.orange;
+      case 'follow':
+        icon = Icons.person_add_alt_1_rounded;
+        iconColor = Colors.blue;
+        break;
+      case 'message':
+        icon = Icons.mail_rounded;
+        iconColor = accentColor;
+        break;
+      case 'tag':
+        icon = Icons.alternate_email_rounded;
+        iconColor = Colors.purple;
         break;
       default:
         icon = Icons.notifications_rounded;
         iconColor = Colors.grey;
     }
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: (data['isRead'] ?? true) ? Colors.transparent : primaryColor.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: Stack(
-          alignment: Alignment.bottomRight,
+    return InkWell(
+      onTap: () => _handleNotificationTap(context, docId, data),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: isRead ? Colors.transparent : primaryColor.withOpacity(0.04),
+        child: Row(
           children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: Colors.grey[100],
-              backgroundImage: (data['senderProfile'] != null && data['senderProfile'] != '')
-                  ? NetworkImage(data['senderProfile'])
-                  : null,
-              child: (data['senderProfile'] == null || data['senderProfile'] == '')
-                  ? const Icon(Icons.person, color: Colors.grey)
-                  : null,
+            Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                CircleAvatar(
+                  radius: 26,
+                  backgroundColor: Colors.grey[200],
+                  backgroundImage: (data['senderProfile'] != null && data['senderProfile'] != '')
+                      ? NetworkImage(data['senderProfile'])
+                      : null,
+                  child: (data['senderProfile'] == null || data['senderProfile'] == '')
+                      ? const Icon(Icons.person, color: Colors.grey)
+                      : null,
+                ),
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  child: Icon(icon, color: iconColor, size: 12),
+                ),
+              ],
             ),
-            Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-              child: Icon(icon, color: iconColor, size: 12),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      style: const TextStyle(color: textColor, fontSize: 14, height: 1.3),
+                      children: [
+                        TextSpan(
+                          text: data['senderName'] ?? 'Someone', 
+                          style: const TextStyle(fontWeight: FontWeight.bold)
+                        ),
+                        TextSpan(text: ' ${data['message'] ?? 'interacted with you.'}'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatTimeAgo(data['timestamp']),
+                    style: const TextStyle(color: subtleText, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
+            if (data['postImage'] != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(data['postImage'], width: 44, height: 44, fit: BoxFit.cover),
+              )
+            else if (type == 'follow')
+              _buildFollowButton(),
           ],
         ),
-        title: RichText(
-          text: TextSpan(
-            style: const TextStyle(color: textColor, fontSize: 14),
-            children: [
-              TextSpan(text: data['senderName'] ?? 'Someone', style: const TextStyle(fontWeight: FontWeight.bold)),
-              TextSpan(text: ' ${data['message'] ?? 'interacted with your post.'}'),
-            ],
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            data['timestamp'] != null
-                ? _formatTimeAgo((data['timestamp'] as Timestamp).toDate())
-                : 'Just now',
-            style: const TextStyle(color: subtleText, fontSize: 12),
-          ),
-        ),
-        trailing: data['postImage'] != null
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Image.network(data['postImage'], width: 40, height: 40, fit: BoxFit.cover),
-              )
-            : null,
       ),
     );
   }
 
+  Widget _buildFollowButton() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(8)),
+      child: const Text(
+        'Follow', 
+        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)
+      ),
+    );
+  }
+
+  // --- Logic: Handle Navigation ---
+  void _handleNotificationTap(BuildContext context, String docId, Map<String, dynamic> data) {
+    FirebaseFirestore.instance.collection('notifications').doc(docId).update({'isRead': true});
+    
+    final type = data['type'];
+    if (type == 'like' || type == 'comment' || type == 'tag') {
+      context.push('/post/${data['postId']}');
+    } else if (type == 'follow') {
+      context.push('/profile/${data['senderId']}');
+    } else if (type == 'message') {
+      context.push('/chat/${data['senderId']}');
+    }
+  }
+
+  // --- Helper: Clear Dialog ---
+  void _showClearDialog(BuildContext context, String uid) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Clear Activity?'),
+        content: const Text('This will permanently remove all notifications.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final collection = FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('userId', isEqualTo: uid);
+              final snapshots = await collection.get();
+              final batch = FirebaseFirestore.instance.batch();
+              for (var doc in snapshots.docs) {
+                batch.delete(doc.reference);
+              }
+              await batch.commit();
+              HapticFeedback.lightImpact();
+            },
+            child: const Text('Clear All', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Helper: Logged Out State ---
   Widget _buildLoggedOutState() {
     return Center(
       child: Column(
@@ -200,32 +235,30 @@ class ActivityScreen extends StatelessWidget {
     );
   }
 
+  // --- Helper: Empty State ---
   Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(color: Colors.grey[50], shape: BoxShape.circle),
-            child: Icon(Icons.notifications_none_rounded, size: 40, color: Colors.grey[300]),
-          ),
+          Icon(Icons.notifications_none_rounded, size: 60, color: Colors.grey[300]),
           const SizedBox(height: 16),
-          const Text("No notifications yet", style: TextStyle(color: subtleText, fontSize: 15)),
-          const SizedBox(height: 8),
-          Text("Interactions with your posts will appear here", 
-               style: TextStyle(color: subtleText.withOpacity(0.5), fontSize: 13)),
+          const Text("No activity yet", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor)),
+          const SizedBox(height: 4),
+          const Text("Interactions will appear here.", style: TextStyle(color: subtleText)),
         ],
       ),
     );
   }
 
-  String _formatTimeAgo(DateTime dt) {
+  // --- Helper: Time Formatting ---
+  String _formatTimeAgo(dynamic timestamp) {
+    if (timestamp == null) return "Just now";
+    DateTime dt = (timestamp as Timestamp).toDate();
     final diff = DateTime.now().difference(dt);
     if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${dt.day}/${dt.month}/${dt.year}';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    return '${diff.inDays}d';
   }
 }
