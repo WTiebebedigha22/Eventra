@@ -1,4 +1,4 @@
-Eventra: Effortless Event Planning & Booking 🚀
+Eventra: Effortless Event Planning & Booking
 
 Eventra is a modern mobile application built with Flutter, designed to seamlessly connect event planners (vendors) with customers looking to organize or book services for their events. We take the complexity out of event management and service procurement, making planning smooth, fast, and transparent.
 
@@ -58,11 +58,9 @@ Clone the repository:
 
 git clone [https://github.com/wtiebebedigha22/eventra.git](https://github.com/wtiebebedigha22/eventra.git)
 
-
 Navigate to the project directory:
 
 cd eventra
-
 
 Add Firebase Configuration:
 
@@ -74,11 +72,9 @@ Install dependencies:
 
 flutter pub get
 
-
 Run the app:
 
 flutter run
-
 
 Note: Ensure you have an active emulator or a physical device connected.
 

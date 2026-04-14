@@ -2,15 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:ventra/models/posts/post.dart';
 
 // Internal Imports
 import '../../providers/post_provider.dart';
 import '../components/event_card.dart';
-
-// Theme Constants
-const Color primaryColor = Color(0xFF3E5992); 
-const Color backgroundColor = Colors.white; // Matches your HomeShell
-const Color textColor = Colors.black54;
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -21,15 +17,15 @@ class EventListScreen extends StatefulWidget {
 
 class _EventListScreenState extends State<EventListScreen> {
   final ScrollController _scrollController = ScrollController();
+  // Jiji-style: Track the active filter
+  String _activeFilter = 'All'; 
 
   @override
   void initState() {
     super.initState();
-    // Fetch live posts immediately
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PostProvider>().fetchPosts(isRefresh: true);
     });
-
     _scrollController.addListener(_onScroll);
   }
 
@@ -49,73 +45,85 @@ class _EventListScreenState extends State<EventListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: const Color(0xFFF4F4F7), // Jiji-style light grey background
       body: Consumer<PostProvider>(
         builder: (context, provider, child) {
+          // Logic to filter the posts based on selected category
+          final filteredPosts = _activeFilter == 'All' 
+              ? provider.posts 
+              : provider.posts.where((p) => p.category == _activeFilter).toList();
+
           return RefreshIndicator(
-            backgroundColor: const Color(0xFF181818),
-            color: primaryColor,
+            color: Colors.white,
+            backgroundColor: Colors.deepPurple,
             onRefresh: () => provider.fetchPosts(isRefresh: true),
             child: CustomScrollView(
               controller: _scrollController,
               physics: const BouncingScrollPhysics(),
               slivers: [
-                // 1. Dynamic AppBar
+                // 1. Jiji Header Style
                 SliverAppBar(
-                  backgroundColor: backgroundColor,
+                  backgroundColor: Colors.deepPurple,
                   floating: true,
-                  pinned: false,
+                  pinned: true,
                   elevation: 0,
+                  centerTitle: false,
                   title: const Text(
                     'EVENTRA',
                     style: TextStyle(
-                      color: primaryColor, 
-                      fontWeight: FontWeight.w900, 
-                      fontSize: 22,
-                      letterSpacing: -1,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                      letterSpacing: 0.5,
                     ),
                   ),
                   actions: [
                     IconButton(
-                      icon: const Icon(Icons.search, color: textColor),
+                      icon: const Icon(Icons.search, color: Colors.white),
                       onPressed: () => context.push('/search'),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.notifications_none, color: textColor),
-                      onPressed: () => context.push('/settings/activity'),
                     ),
                     const SizedBox(width: 8),
                   ],
                 ),
 
-                // 2. Category Filters
-                SliverToBoxAdapter(child: _buildCategoryFilters()),
+                // 2. Sticky Category Filters
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _CategoryHeaderDelegate(
+                    onCategorySelected: (cat) {
+                      setState(() => _activeFilter = cat);
+                    },
+                    activeFilter: _activeFilter,
+                  ),
+                ),
 
-                // 3. Conditional Content
+                // 3. Content
                 if (provider.isLoading && provider.posts.isEmpty)
                   SliverFillRemaining(child: _buildSkeletonLoader())
-                else if (provider.posts.isEmpty)
+                else if (filteredPosts.isEmpty)
                   SliverFillRemaining(child: _buildEmptyState())
                 else
                   SliverPadding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
-                          if (index < provider.posts.length) {
-                            final post = provider.posts[index];
-                            
-                            // Transform Post model to Map for the EventCard 
-                            // ensuring the 'id' is explicitly passed.
-                            return EventCard(event: post.toMap()..['id'] = post.id);
+                          if (index < filteredPosts.length) {
+                            final post = filteredPosts[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: EventCard(event: post.toMap()..['id'] = post.id),
+                            );
                           } else {
-                            return const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 32),
-                              child: Center(child: CircularProgressIndicator(color: primaryColor)),
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(20),
+                                child: CircularProgressIndicator(color: Colors.deepPurple),
+                              ),
                             );
                           }
                         },
-                        childCount: provider.posts.length + (provider.hasMore ? 1 : 0),
+                        childCount: filteredPosts.length + (provider.hasMore ? 1 : 0),
                       ),
                     ),
                   ),
@@ -129,48 +137,19 @@ class _EventListScreenState extends State<EventListScreen> {
 
   // --- UI COMPONENTS ---
 
-  Widget _buildCategoryFilters() {
-    final categories = ['All', 'Parties', 'Seminars', 'Tech', 'Art', 'Rentals'];
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: categories.length,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemBuilder: (context, index) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: ChoiceChip(
-            label: Text(categories[index]),
-            selected: index == 0,
-            selectedColor: primaryColor,
-            labelStyle: TextStyle(
-              color: index == 0 ? Colors.white : Colors.black45,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-            backgroundColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            onSelected: (_) {},
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildSkeletonLoader() {
     return ListView.builder(
-      itemCount: 2,
+      itemCount: 3,
       padding: const EdgeInsets.all(16),
       itemBuilder: (context, index) => Shimmer.fromColors(
-        baseColor: Colors.grey[900]!,
-        highlightColor: Colors.grey[800]!,
+        baseColor: Colors.grey[300]!,
+        highlightColor: Colors.grey[100]!,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 20),
-          height: 280,
+          margin: const EdgeInsets.only(bottom: 16),
+          height: 200,
           decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(24),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
@@ -182,12 +161,71 @@ class _EventListScreenState extends State<EventListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.event_available_outlined, size: 64, color: Colors.black54),
+          Icon(Icons.search_off_rounded, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
-          const Text("No live events from this right now.", 
-            style: TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.w500)),
+          Text(
+            "No $_activeFilter found",
+            style: const TextStyle(color: Colors.grey, fontSize: 16, fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
   }
+}
+
+extension on Post {
+  get category => null;
+}
+
+// Delegate for the Sticky Filter Bar
+class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Function(String) onCategorySelected;
+  final String activeFilter;
+
+  _CategoryHeaderDelegate({required this.onCategorySelected, required this.activeFilter});
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final categories = ['All', 'Parties', 'Seminars', 'Tech', 'Art', 'Rentals', 'Workshops', 'Music', 'Sports', 'Food'];
+    
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: categories.length,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemBuilder: (context, index) {
+          final isSelected = activeFilter == categories[index];
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: ChoiceChip(
+              label: Text(categories[index]),
+              selected: isSelected,
+              onSelected: (val) => onCategorySelected(categories[index]),
+              selectedColor: Colors.deepPurple,
+              backgroundColor: Colors.white,
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : Colors.black87,
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: isSelected ? Colors.deepPurple : Colors.grey[300]!),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  double get maxExtent => 64.0;
+  @override
+  double get minExtent => 64.0;
+  @override
+  bool shouldRebuild(covariant _CategoryHeaderDelegate oldDelegate) => 
+      oldDelegate.activeFilter != activeFilter;
 }

@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Post {
   final String id;
-  final String creatorId; 
+  final String creatorId;
   final String? username;
   final String? userProfileUrl;
   final String content;
@@ -12,6 +12,8 @@ class Post {
   final int commentCount;
   final DateTime? eventDate;
   final String? location;
+  // New: Field to support category filtering
+  final String category;
 
   Post({
     required this.id,
@@ -19,30 +21,35 @@ class Post {
     this.username,
     this.userProfileUrl,
     required this.content,
-    required this.mediaUrl,
+    this.mediaUrl,
     required this.timestamp,
     this.likes = const [],
     this.commentCount = 0,
     this.eventDate,
     this.location,
+    this.category = 'General', // Default value
   });
 
   int get likeCount => likes.length;
 
-  /// Converts the Post object into a Map for the EventCard component
+  /// Converts the Post object into a Map for the UI components
+  /// Keys here match what EventCard and MasonryTile expect
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'creatorId': creatorId,
-      'userName': username ?? 'Anonymous',
-      'userProfile': userProfileUrl ?? '',
-      'description': content,
-      'imageUrl': mediaUrl,
+      'username': username ?? 'Anonymous',
+      'userProfileUrl': userProfileUrl ?? '',
+      'content': content,
+      'description': content, // Aliased for components using 'description'
+      'mediaUrl': mediaUrl,
+      'imageUrl': mediaUrl,    // Aliased for components using 'imageUrl'
       'timestamp': timestamp,
       'likes': likes,
       'commentCount': commentCount,
       'eventDate': eventDate,
       'location': location ?? 'Unknown Location',
+      'category': category,
     };
   }
 
@@ -56,13 +63,14 @@ class Post {
       creatorId: data['creatorId'] ?? '',
       username: data['username'] ?? 'Anonymous',
       userProfileUrl: data['userProfileUrl'],
-      content: data['content'] ?? '',
-      mediaUrl: data['mediaUrl'],
+      content: data['content'] ?? data['description'] ?? '', // Handles both keys
+      mediaUrl: data['mediaUrl'] ?? data['imageUrl'],        // Handles both keys
       timestamp: postTimestamp?.toDate() ?? DateTime.now(),
       likes: List<String>.from(data['likes'] ?? []),
       commentCount: data['commentCount'] ?? 0,
       eventDate: eventTimestamp?.toDate(),
       location: data['location'],
+      category: data['category'] ?? 'General',
     );
   }
 
@@ -78,6 +86,7 @@ class Post {
       'commentCount': commentCount,
       'eventDate': eventDate != null ? Timestamp.fromDate(eventDate!) : null,
       'location': location,
+      'category': category,
     };
   }
 }

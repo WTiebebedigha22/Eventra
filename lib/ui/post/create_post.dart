@@ -1,11 +1,13 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+
+// Internal Imports
 import '../../providers/post_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/posts/post.dart';
@@ -22,7 +24,7 @@ class CreatePostScreen extends StatefulWidget {
 class _CreatePostScreenState extends State<CreatePostScreen> {
   // --- Controllers & State ---
   final TextEditingController _contentController = TextEditingController();
-  final TextEditingController _titleController = TextEditingController(); // New: For Events
+  final TextEditingController _titleController = TextEditingController();
 
   File? _selectedMedia;
   String? _location;
@@ -32,26 +34,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   // 0 = Post, 1 = Event
   int _selectedType = 0; 
 
+  // --- Category Logic ---
+  String _selectedCategory = 'General'; 
+  final List<String> _categories = [
+    'General', 'Parties', 'Seminars', 'Tech', 'Art', 
+    'Rentals', 'Workshops', 'Music', 'Sports', 'Food'
+  ];
+
   // --- Theme Colors ---
-  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color primaryColor = Colors.deepPurple;
   static const Color backgroundColor = Colors.white;
   static const Color textColor = Color(0xFF1C1E21);
   static const Color subtleText = Colors.black54;
-
-  // Validation Logic
-  bool get _isPostButtonEnabled {
-    if (_isPosting) return false;
-    
-    // Logic for Event: Needs Title + Date
-    if (_selectedType == 1) {
-      return _titleController.text.trim().isNotEmpty && 
-             _contentController.text.trim().isNotEmpty && 
-             _eventDate != null;
-    }
-
-    // Logic for Post: Needs Content OR Media
-    return _contentController.text.trim().isNotEmpty || _selectedMedia != null;
-  }
 
   @override
   void initState() {
@@ -64,11 +58,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   void dispose() {
-    _contentController.removeListener(_onTextChanged);
-    _titleController.removeListener(_onTextChanged);
     _contentController.dispose();
     _titleController.dispose();
     super.dispose();
+  }
+
+  // --- Validation ---
+  bool get _isPostButtonEnabled {
+    if (_isPosting) return false;
+    if (_selectedType == 1) {
+      return _titleController.text.trim().isNotEmpty && 
+             _contentController.text.trim().isNotEmpty && 
+             _eventDate != null;
+    }
+    return _contentController.text.trim().isNotEmpty || _selectedMedia != null;
   }
 
   // --- Media & Interaction Logic ---
@@ -77,6 +80,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked != null) {
       HapticFeedback.lightImpact();
+      setState(() => _selectedMedia = File(picked.path));
+    }
+  }
+
+  Future<void> _takePhoto() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+    if (picked != null) {
+      HapticFeedback.mediumImpact();
       setState(() => _selectedMedia = File(picked.path));
     }
   }
@@ -100,6 +112,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
               primary: primaryColor,
+              onPrimary: Colors.white,
               onSurface: textColor,
             ),
           ),
@@ -121,12 +134,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     try {
       String? mediaUrl;
-      // 1. Upload Media if exists
       if (_selectedMedia != null) {
         mediaUrl = await ImgBBService.uploadImage(_selectedMedia!);
       }
 
-      // 2. Branch Logic based on Type
       if (_selectedType == 1) {
         await _createEventInFirebase(auth, mediaUrl);
       } else {
@@ -146,7 +157,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
-  // Helper: Create Standard Post
   Future<void> _createPostInProvider(AuthProvider auth, String? mediaUrl) async {
     final postProvider = context.read<PostProvider>();
     final newPost = Post(
@@ -159,26 +169,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       timestamp: DateTime.now(),
       likes: [],
       location: _location,
-      // We don't save eventDate for regular posts usually, but optional
+      category: 'General',
     );
     await postProvider.uploadPost(newPost);
   }
 
-  // Helper: Create Event directly in Firestore
   Future<void> _createEventInFirebase(AuthProvider auth, String? mediaUrl) async {
-    // Ensuring we write to the 'events' collection
     await FirebaseFirestore.instance.collection('events').add({
       'creatorId': auth.userId,
       'username': auth.fullName.isEmpty ? 'User' : auth.fullName,
       'userProfileUrl': auth.photoURL,
-      'title': _titleController.text.trim(), // Specific to Events
+      'title': _titleController.text.trim(),
       'description': _contentController.text.trim(),
-      'imageUrl': mediaUrl, // Events often use 'imageUrl' or 'mediaUrl'
+      'imageUrl': mediaUrl,
       'location': _location,
-      'eventDate': Timestamp.fromDate(_eventDate!), // Store as Timestamp
+      'eventDate': Timestamp.fromDate(_eventDate!),
       'createdAt': FieldValue.serverTimestamp(),
+      'category': _selectedCategory,
       'likes': [],
-      'type': 'event', // Helper tag
+      'type': 'event',
     });
   }
 
@@ -196,7 +205,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           icon: const Icon(Icons.close_rounded, color: textColor),
           onPressed: () => context.pop(),
         ),
-        title: _buildTypeSelector(), // Custom Toggle in Title
+        title: _buildTypeSelector(),
         centerTitle: true,
         actions: [
           Padding(
@@ -225,10 +234,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 _buildUserHeader(auth),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 
-                // --- Event Specific Field: Title ---
                 if (isEvent) ...[
+                  const Text("Category", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: subtleText)),
+                  const SizedBox(height: 12),
+                  _buildCategoryPicker(),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: _titleController,
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
@@ -238,10 +250,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       border: InputBorder.none,
                     ),
                   ),
-                  const Divider(),
+                  const Divider(height: 32),
                 ],
 
-                // --- Main Content ---
                 _buildComposer(isEvent),
               ],
             ),
@@ -255,8 +266,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildTypeSelector() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(25),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -274,21 +285,54 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return GestureDetector(
       onTap: () => setState(() => _selectedType = index),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)] : [],
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))] : [],
         ),
         child: Text(
           text,
           style: TextStyle(
             color: isSelected ? primaryColor : subtleText,
             fontWeight: FontWeight.bold,
-            fontSize: 14,
+            fontSize: 13,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryPicker() {
+    return SizedBox(
+      height: 38,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _categories.length,
+        itemBuilder: (context, index) {
+          final cat = _categories[index];
+          final isSelected = _selectedCategory == cat;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(cat),
+              selected: isSelected,
+              onSelected: (val) => setState(() => _selectedCategory = cat),
+              selectedColor: primaryColor,
+              backgroundColor: Colors.grey[50],
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : Colors.black87,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: isSelected ? primaryColor : Colors.grey[300]!),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -297,10 +341,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return Row(
       children: [
         CircleAvatar(
-          radius: 20,
-          backgroundColor: Colors.grey[200],
+          radius: 22,
+          backgroundColor: Colors.deepPurple[50],
           backgroundImage: auth.photoURL != null ? NetworkImage(auth.photoURL!) : null,
-          child: auth.photoURL == null ? const Icon(Icons.person, color: Colors.grey) : null,
+          child: auth.photoURL == null ? const Icon(Icons.person, color: primaryColor) : null,
         ),
         const SizedBox(width: 12),
         Column(
@@ -308,11 +352,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           children: [
             Text(
               auth.fullName.isEmpty ? 'User' : auth.fullName,
-              style: const TextStyle(fontWeight: FontWeight.bold, color: textColor),
+              style: const TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
             ),
             Text(
-              _selectedType == 1 ? "Creating an Event" : "Posting to Public", 
-              style: const TextStyle(fontSize: 12, color: subtleText)
+              _selectedType == 1 ? "Creating an Event" : "Sharing a Post", 
+              style: const TextStyle(fontSize: 12, color: primaryColor, fontWeight: FontWeight.w500)
             ),
           ],
         ),
@@ -327,57 +371,42 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         TextField(
           controller: _contentController,
           maxLines: null,
-          autofocus: !isEvent, // Autofocus title if event
           style: const TextStyle(fontSize: 18, color: textColor, height: 1.5),
           decoration: InputDecoration(
-            hintText: isEvent ? "Describe your event details..." : "What's happening?",
-            hintStyle: TextStyle(color: subtleText.withOpacity(0.4)),
+            hintText: isEvent ? "Tell us more about the event..." : "What's on your mind?",
+            hintStyle: TextStyle(color: Colors.grey[400]),
             border: InputBorder.none,
           ),
         ),
         const SizedBox(height: 16),
-        
-        // --- Selection Badges ---
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
             if (_location != null) _buildBadge(Icons.location_on_rounded, _location!, () => setState(() => _location = null)),
             if (_eventDate != null) _buildBadge(Icons.calendar_today_rounded, DateFormat('EEE, MMM d').format(_eventDate!), () => setState(() => _eventDate = null)),
-            
-            // Suggestion chip if event and no date selected
             if (isEvent && _eventDate == null)
-               GestureDetector(
-                 onTap: _pickEventDate,
-                 child: Container(
-                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                   decoration: BoxDecoration(
-                     border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
-                     borderRadius: BorderRadius.circular(12),
-                     color: Colors.redAccent.withOpacity(0.05),
-                   ),
-                   child: const Text("Add Date (Required)", style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                 ),
-               ),
+               _buildActionPrompt("Add Date", Icons.event, _pickEventDate),
+            if (_location == null)
+               _buildActionPrompt("Add Location", Icons.place, _pickLocation),
           ],
         ),
-
         if (_selectedMedia != null)
           Padding(
             padding: const EdgeInsets.only(top: 20),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(16),
               child: Stack(
                 children: [
                   Image.file(_selectedMedia!, width: double.infinity, fit: BoxFit.fitWidth),
                   Positioned(
-                    top: 12, right: 12,
+                    top: 8, right: 8,
                     child: GestureDetector(
                       onTap: () => setState(() => _selectedMedia = null),
                       child: Container(
-                        padding: const EdgeInsets.all(6),
+                        padding: const EdgeInsets.all(4),
                         decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                        child: const Icon(Icons.close_rounded, size: 18, color: Colors.white),
+                        child: const Icon(Icons.close, size: 20, color: Colors.white),
                       ),
                     ),
                   ),
@@ -393,50 +422,128 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: primaryColor.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
+        color: primaryColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: primaryColor),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(color: primaryColor, fontSize: 13, fontWeight: FontWeight.bold)),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onRemove,
-            child: const Icon(Icons.close_rounded, size: 14, color: primaryColor),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(color: primaryColor, fontSize: 12, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 6),
+          GestureDetector(onTap: onRemove, child: const Icon(Icons.cancel, size: 16, color: primaryColor)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionPrompt(String label, IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey[300]!),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: subtleText),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(color: subtleText, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolbar() {
+    final double bottomPadding = MediaQuery.of(context).viewInsets.bottom > 0 
+        ? 8.0 
+        : MediaQuery.of(context).padding.bottom + 12.0;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPadding),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.2), width: 0.5)),
+        boxShadow: [
+          if (MediaQuery.of(context).viewInsets.bottom == 0)
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 20,
+              offset: const Offset(0, -5),
+            )
+        ],
+      ),
+      child: Row(
+        children: [
+          _modernToolbarIcon(
+            icon: Icons.image_rounded, 
+            onTap: _pickMedia,
+            label: "Media",
+          ),
+          const SizedBox(width: 12),
+          _modernToolbarIcon(
+            icon: Icons.location_on_rounded, 
+            onTap: _pickLocation,
+            label: "Location",
+          ),
+          const SizedBox(width: 12),
+          _modernToolbarIcon(
+            icon: Icons.calendar_today_rounded, 
+            onTap: _pickEventDate,
+            label: "Date",
+          ),
+          
+          const Spacer(),
+
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              onPressed: _takePhoto,
+              icon: const Icon(Icons.camera_alt_rounded, color: primaryColor, size: 24),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildToolbar() {
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border(top: BorderSide(color: Colors.grey[200]!)),
+  Widget _modernToolbarIcon({
+    required IconData icon, 
+    required VoidCallback onTap, 
+    required String label
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: primaryColor.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: primaryColor, size: 22),
+            const SizedBox(width: 6),
+            Text(
+              label, 
+              style: const TextStyle(
+                color: primaryColor, 
+                fontWeight: FontWeight.w600, 
+                fontSize: 12
+              )
+            ),
+          ],
+        ),
       ),
-      child: Row(
-        children: [
-          _toolbarIcon(Icons.image_outlined, _pickMedia),
-          const SizedBox(width: 12),
-          _toolbarIcon(Icons.location_on_outlined, _pickLocation),
-          const SizedBox(width: 12),
-          _toolbarIcon(Icons.calendar_today_outlined, _pickEventDate),
-        ],
-      ),
-    );
-  }
-
-  Widget _toolbarIcon(IconData icon, VoidCallback onTap) {
-    return IconButton(
-      onPressed: onTap,
-      icon: Icon(icon, color: primaryColor, size: 26),
-      constraints: const BoxConstraints(),
-      padding: const EdgeInsets.all(8),
     );
   }
 }

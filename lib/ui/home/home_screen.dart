@@ -15,7 +15,7 @@ class HomeScreen extends StatelessWidget {
   });
 
   // --- Theme Colors ---
-  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color primaryColor = Colors.deepPurple;
   static const Color backgroundColor = Colors.white;
   static const Color inactiveColor = Color(0xFFBDC3C7);
   static const Color borderStroke = Color(0xFFF1F3F5);

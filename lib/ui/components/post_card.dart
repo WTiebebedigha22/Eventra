@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:ventra/services/social_service.dart';
-import 'package:ventra/ui/components/comment_sheet.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ventra/ui/components/comment_sheet.dart';
 
 class PostCard extends StatelessWidget {
   final String postId;
@@ -218,7 +218,7 @@ class PostCard extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => CommentsSheet(postId: postId),
+      builder: (context) => CommentsScreen(postId: postId),
     );
   }
 }

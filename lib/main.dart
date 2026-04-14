@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider; 
 import 'package:provider/provider.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:ventra/providers/chat_provider.dart';
 
 import 'app/app.dart';
 import 'config/firebase_options.dart';
@@ -47,9 +48,15 @@ void main() async {
         ChangeNotifierProvider<AuthProvider>.value(
           value: authProvider,
         ),
-        ChangeNotifierProvider(create: (_) => ChatService()),
-        ChangeNotifierProvider(create: (_) => PostProvider()),
-        ChangeNotifierProvider(create: (_) => BookingService()), 
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: ChatProvider(ChatService()),
+        ),
+        ChangeNotifierProvider<PostProvider>.value(
+          value: PostProvider(),
+        ),
+        ChangeNotifierProvider<BookingService>.value(
+          value: BookingService(),
+        ),
       ],
       child: const EventraApp(),
     ),

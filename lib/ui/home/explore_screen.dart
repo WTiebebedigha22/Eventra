@@ -17,6 +17,7 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen> with Single
   @override
   void initState() {
     super.initState();
+    // length 3 matches: All, Events, Posts
     _tabController = TabController(length: 3, vsync: this);
   }
 
@@ -63,13 +64,27 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen> with Single
       backgroundColor: Colors.white,
       centerTitle: false,
       elevation: 0,
-      title: const Text("Explore", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 26)),
+      title: const Text(
+        "Explore", 
+        style: TextStyle(
+          color: Colors.black, 
+          fontWeight: FontWeight.w900, 
+          fontSize: 26
+        )
+      ),
       bottom: TabBar(
         controller: _tabController,
-        indicatorColor: const Color(0xFF3E5992),
-        labelColor: const Color(0xFF3E5992),
+        // Updated to Deep Purple theme
+        indicatorColor: Colors.deepPurple,
+        labelColor: Colors.deepPurple,
+        indicatorWeight: 3,
         unselectedLabelColor: Colors.grey,
-        tabs: const [Tab(text: "All"), Tab(text: "Events"), Tab(text: "Posts")],
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+        tabs: const [
+          Tab(text: "All"), 
+          Tab(text: "Events"), 
+          Tab(text: "Posts")
+        ],
       ),
     );
   }
@@ -78,7 +93,13 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen> with Single
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _getMasonryFeed(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Colors.deepPurple));
+        }
+        
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Center(child: Text("No items found."));
+        }
 
         final items = filter == 'all' 
             ? snapshot.data! 
@@ -86,9 +107,9 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen> with Single
 
         return MasonryGridView.count(
           crossAxisCount: 2,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          padding: const EdgeInsets.all(8),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          padding: const EdgeInsets.all(12),
           itemCount: items.length,
           itemBuilder: (context, index) {
             final item = items[index];
@@ -101,27 +122,57 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen> with Single
 
   Widget _buildMasonryTile(Map<String, dynamic> item) {
     final String imageUrl = item['imageUrl'] ?? item['mediaUrl'] ?? '';
+    final bool isEvent = item['type'] == 'event';
     
     return GestureDetector(
       onTap: () => context.push('/post-detail/${item['id']}'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.network(
-              imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stack) => Container(height: 100, color: Colors.grey[200]),
-            ),
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stack) => Container(
+                    height: 100, 
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple[50],
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.broken_image, color: Colors.deepPurple),
+                  ),
+                ),
+              ),
+              // Subtle indicator for event vs post
+              if (isEvent)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.deepPurple,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.event, size: 12, color: Colors.white),
+                  ),
+                ),
+            ],
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+            padding: const EdgeInsets.only(top: 8, bottom: 4, left: 4),
             child: Text(
               item['title'] ?? item['description'] ?? '',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 14, 
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1A1A),
+              ),
             ),
           ),
         ],

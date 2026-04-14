@@ -1,10 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/chat_provider.dart'; // Assume this file exists
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../providers/chat_provider.dart';
+import '../../models/chat/chat_message.dart';
 
 class ChatRoomScreen extends StatefulWidget {
   final String chatId;
-  const ChatRoomScreen({super.key, required this.chatId});
+  final String otherUserId;
+  final String otherUserName;
+  final String? otherUserProfilePic;
+
+  const ChatRoomScreen({
+    super.key,
+    required this.chatId,
+    required this.otherUserId,
+    this.otherUserName = "User",
+    this.otherUserProfilePic,
+  });
+
   @override
   State<ChatRoomScreen> createState() => _ChatRoomScreenState();
 }
@@ -12,20 +25,12 @@ class ChatRoomScreen extends StatefulWidget {
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final _ctrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  // Define your color scheme (consistent with other screens)
+  // Brand Colors
   static const Color primaryColor = Color(0xFF3E5992);
-  static const Color backgroundColor = Colors.white;
-  static const Color white12 = Color(0xFF181818); // Darker shade for contrast
-  static const Color textColor = Colors.black54;
-
-  // Mock messages for demonstration
-  final List<Map<String, String>> mockMessages = [
-    {'text': 'Hello, is this event still on?', 'sender': 'me'},
-    {'text': 'Yes, the tickets are available. How many are you looking for?', 'sender': 'other'},
-    {'text': 'Two tickets please. Where can we meet to pay?', 'sender': 'me'},
-    {'text': 'I can send you the payment details now, or we can use the app\'s secure payment link.', 'sender': 'other'},
-  ];
+  static const Color bgSecondary = Color(0xFFF7F8FA);
+  static const Color accentColor = Color(0xFF6C83B4);
 
   @override
   void dispose() {
@@ -34,157 +39,187 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     super.dispose();
   }
 
-  // --- Widget for a single chat bubble ---
-  Widget _buildMessageBubble(String text, String sender) {
-    final isMe = sender == 'me';
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-        decoration: BoxDecoration(
-          color: isMe ? primaryColor : white12, 
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: isMe ? const Radius.circular(16) : const Radius.circular(4),
-            bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(16),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              spreadRadius: 1,
-              blurRadius: 3,
+  void _navigateToProfile() {
+    // Replace with your actual Profile Screen route
+    debugPrint("Navigating to profile of ${widget.otherUserId}");
+    // Navigator.pushNamed(context, '/profile', arguments: widget.otherUserId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: _buildAppBar(),
+      body: Container(
+        decoration: const BoxDecoration(color: bgSecondary),
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<List<ChatMessage>>(
+                stream: chatProvider.loadChat(widget.chatId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator.adaptive());
+                  }
+                  
+                  final messages = snapshot.data ?? [];
+                  
+                  return ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                    reverse: true, // Standard chat behavior
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = messages[index];
+                      // Check if the previous message was from the same sender for UI grouping
+                      final bool isSameAsPrevious = index < messages.length - 1 && 
+                                                    messages[index + 1].senderId == msg.senderId;
+                      
+                      return _buildMessageBubble(msg, isSameAsPrevious);
+                    },
+                  );
+                },
+              ),
+            ),
+            _buildInputBar(chatProvider),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0.5,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black, size: 20),
+        onPressed: () => Navigator.pop(context),
+      ),
+      titleSpacing: 0,
+      title: InkWell(
+        onTap: _navigateToProfile,
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: primaryColor.withOpacity(0.1),
+              backgroundImage: widget.otherUserProfilePic != null 
+                  ? NetworkImage(widget.otherUserProfilePic!) 
+                  : null,
+              child: widget.otherUserProfilePic == null 
+                  ? Text(widget.otherUserName[0], style: const TextStyle(fontSize: 14, color: primaryColor)) 
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.otherUserName,
+                  style: const TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const Text(
+                  "Online", // You can sync this with Firestore status later
+                  style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w400),
+                ),
+              ],
             ),
           ],
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isMe ? Colors.white : textColor, // Black text on pink bubble
-            fontSize: 15,
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(ChatMessage msg, bool isGrouped) {
+    final isMe = msg.senderId == currentUserId;
+    
+    return Padding(
+      padding: EdgeInsets.only(top: isGrouped ? 2 : 12),
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+          decoration: BoxDecoration(
+            color: isMe ? primaryColor : Colors.white,
+            boxShadow: [
+              if (!isMe) BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5, offset: const Offset(0, 2))
+            ],
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(20),
+              topRight: const Radius.circular(20),
+              bottomLeft: Radius.circular(isMe ? 20 : (isGrouped ? 20 : 4)),
+              bottomRight: Radius.circular(isMe ? (isGrouped ? 20 : 4) : 20),
+            ),
+          ),
+          child: Text(
+            msg.message,
+            style: TextStyle(
+              color: isMe ? Colors.white : Colors.black87,
+              fontSize: 15,
+              height: 1.3,
+            ),
           ),
         ),
       ),
     );
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 💡 Note: If you want real-time updates, the Consumer/Provider.of must listen to the stream.
-    // final chat = Provider.of<ChatProvider>(context, listen: true); 
-
-    // Using listen: false for the action call only
-    final _ = Provider.of<ChatProvider>(context, listen: false); 
-    
-    _scrollToBottom(); 
-
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: white12,
-        elevation: 1,
-        title: Text(
-          'Chat with ${widget.chatId}',
-          style: const TextStyle(color: textColor, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline, color: primaryColor),
-            onPressed: () {
-              // Action: View profile
+  Widget _buildInputBar(ChatProvider provider) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 16, right: 16, top: 12, 
+        bottom: MediaQuery.of(context).padding.bottom + 12
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: bgSecondary,
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: TextField(
+                controller: _ctrl,
+                maxLines: 4,
+                minLines: 1,
+                decoration: const InputDecoration(
+                  hintText: 'Message...',
+                  hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () async {
+              final text = _ctrl.text.trim();
+              if (text.isEmpty) return;
+              _ctrl.clear();
+              await provider.send(
+                chatId: widget.chatId,
+                messageText: text,
+                otherUserId: widget.otherUserId,
+              );
             },
+            child: const CircleAvatar(
+              radius: 22,
+              backgroundColor: primaryColor,
+              child: Icon(Icons.send_rounded, color: Colors.white, size: 20),
+            ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.only(top: 8, bottom: 8),
-              itemCount: mockMessages.length,
-              itemBuilder: (context, index) {
-                final message = mockMessages[index];
-                return _buildMessageBubble(message['text']!, message['sender']!);
-              },
-            ),
-          ),
-          
-          // --- Input Bar ---
-          Container(
-            padding: const EdgeInsets.all(8.0),
-            color: white12, 
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.camera_alt_outlined, color: primaryColor),
-                  onPressed: () {
-                    // Action: Send photo or related media
-                  },
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _ctrl,
-                    minLines: 1,
-                    maxLines: 5,
-                    keyboardType: TextInputType.multiline,
-                    style: const TextStyle(color: textColor),
-                    decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      hintStyle: TextStyle(color: textColor.withOpacity(0.6)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      filled: true,
-                      fillColor: backgroundColor, 
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
-                
-                // Send Button
-                Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: FloatingActionButton(
-                    heroTag: 'sendBtn', 
-                    mini: true,
-                    backgroundColor: primaryColor,
-                    onPressed: () async {
-                      if (_ctrl.text.trim().isEmpty) return;
-                      
-                      // In a real app, call the provider:
-                      // await chat.send(widget.chatId, _ctrl.text.trim(), 'me');
-                      
-                      // For mock data:
-                      setState(() {
-                        mockMessages.add({'text': _ctrl.text.trim(), 'sender': 'me'});
-                      });
-
-                      _ctrl.clear();
-                      _scrollToBottom();
-                    },
-                    child: const Icon(Icons.send, color: Colors.black),
-                  ),
-                ),
-              ],
-            ),
-          )
-        ]),
     );
   }
 }

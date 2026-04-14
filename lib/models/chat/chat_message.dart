@@ -7,7 +7,7 @@ class ChatMessage {
   final String message;
   final String type; // 'text', 'image', 'location'
   final DateTime createdAt;
-  final bool isRead; // Added for standard inbox tracking
+  final bool isRead;
 
   ChatMessage({
     required this.id,
@@ -26,12 +26,17 @@ class ChatMessage {
       senderId: data['senderId'] ?? '',
       message: data['message'] ?? '',
       type: data['type'] ?? 'text',
-      // Standard: Handle potential null or missing timestamps gracefully
       createdAt: data['createdAt'] != null 
           ? (data['createdAt'] as Timestamp).toDate() 
           : DateTime.now(),
       isRead: data['isRead'] ?? false,
     );
+  }
+
+  // BRIDGE: This handles the DocumentSnapshot and maps it to the model
+  static ChatMessage fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    return ChatMessage.fromMap(data, doc.id);
   }
 
   Map<String, dynamic> toMap() {
@@ -40,7 +45,6 @@ class ChatMessage {
       'senderId': senderId,
       'message': message,
       'type': type,
-      // Standard: Use serverTimestamp for the actual DB write to avoid phone clock issues
       'createdAt': FieldValue.serverTimestamp(), 
       'isRead': isRead,
     };
