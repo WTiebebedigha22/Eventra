@@ -71,7 +71,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: textColor,
-                  letterSpacing: 6.0, // Wider spacing for "Premium" look
+                  letterSpacing: 6.0, // Uses a wider spacing for "Premium" look
                 ),
               ),
             ),
