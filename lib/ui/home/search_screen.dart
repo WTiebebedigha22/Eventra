@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
-import '../components/event_card.dart'; // Ensure this exists
-//import '../post/post_detail.dart'; // Import the detail screen
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import '../components/event_card.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -23,28 +23,27 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
+          backgroundColor: Colors.white,
+          elevation: 0.5, // Subtle shadow for a premium feel
           title: Container(
-            height: 45,
+            height: 40,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE0E0E0)),
+              color: const Color(0xFFF2F3F5),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: TextField(
               controller: _searchController,
               onChanged: (value) => setState(() => _searchQuery = value.trim()),
-              style: const TextStyle(color: Colors.black),
+              style: const TextStyle(color: Colors.black, fontSize: 14),
               decoration: InputDecoration(
                 hintText: "Search events, tags, or people...",
-                hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
-                prefixIcon: const Icon(Icons.search_rounded, color: primaryColor, size: 20),
+                hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
+                prefixIcon: const Icon(Icons.search_rounded, color: primaryColor, size: 18),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
                 suffixIcon: _searchQuery.isNotEmpty 
                   ? IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 18),
+                      icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 16),
                       onPressed: () {
                         _searchController.clear();
                         setState(() => _searchQuery = "");
@@ -56,36 +55,88 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           bottom: const TabBar(
             indicatorColor: primaryColor,
-            indicatorWeight: 3,
+            indicatorWeight: 2,
             labelColor: primaryColor,
+            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             unselectedLabelColor: Colors.grey,
             tabs: [
-              Tab(text: "Events"),
+              Tab(text: "Explore"),
               Tab(text: "People"),
             ],
           ),
         ),
-        body: _searchQuery.isEmpty 
-          ? _buildEmptyState() 
-          : TabBarView(
-              children: [
-                _buildEventResults(),
-                _buildUserResults(),
-              ],
-            ),
+        // If query is empty, show the Discovery/Recommendation Feed
+        body: TabBarView(
+          children: [
+            _searchQuery.isEmpty ? _buildDiscoveryFeed() : _buildEventResults(),
+            _buildUserResults(), // User search handles its own empty/not-empty logic
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
+  // --- NEW: RECOMMENDED/DISCOVERY FEED ---
+  Widget _buildDiscoveryFeed() {
+    return StreamBuilder<QuerySnapshot>(
+      // Recommendation Logic: Get 20 latest events
+      // In a more advanced app, you'd filter by user interests
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .orderBy('createdAt', descending: true)
+          .limit(20)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
+        
+        final docs = snapshot.data!.docs;
+
+        if (docs.isEmpty) {
+          return const Center(child: Text("No trending events yet. Check back soon!"));
+        }
+
+        // Using MasonryGridView for that "Instagram Explore" staggered look
+        return MasonryGridView.count(
+          padding: const EdgeInsets.all(12),
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final data = docs[index].data() as Map<String, dynamic>;
+            data['id'] = docs[index].id;
+            
+            // You can create a smaller "GridEventCard" component for this view
+            return _buildDiscoveryCard(data);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDiscoveryCard(Map<String, dynamic> event) {
+    return InkWell(
+      onTap: () => context.push('/home/event/${event['id']}'),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.manage_search_rounded, size: 80, color: Colors.black12),
-          const SizedBox(height: 16),
-          const Text("Find your next experience or friend", 
-            style: TextStyle(color: Colors.black54, fontSize: 16)),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(15),
+            child: Image.network(
+              event['imageURL'] ?? 'https://via.placeholder.com/300',
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              event['title'] ?? 'Unnamed Event',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          ),
         ],
       ),
     );
@@ -93,8 +144,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // --- TAB 1: EVENT SEARCH (Title + Tags) ---
   Widget _buildEventResults() {
+    // [Keep your existing _buildEventResults logic here]
+    // ...
     return StreamBuilder<QuerySnapshot>(
-      // First check if search query matches any tags
       stream: FirebaseFirestore.instance
           .collection('events')
           .where('tags', arrayContains: _searchQuery.toLowerCase())
@@ -102,10 +154,7 @@ class _SearchScreenState extends State<SearchScreen> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
-        
         var results = snapshot.data!.docs;
-
-        // Fallback: If no tags found, search by Title prefix
         if (results.isEmpty) {
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -133,13 +182,16 @@ class _SearchScreenState extends State<SearchScreen> {
       itemBuilder: (context, index) {
         final data = docs[index].data() as Map<String, dynamic>;
         data['id'] = docs[index].id;
-        return EventCard(event: data); // Navigation to PostDetail happens inside EventCard
+        return EventCard(event: data);
       },
     );
   }
 
   // --- TAB 2: USER SEARCH ---
   Widget _buildUserResults() {
+    // Return early if no search is happening to keep the 'People' tab clean
+    if (_searchQuery.isEmpty) return _buildEmptyPeopleState();
+
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('users')
@@ -150,7 +202,6 @@ class _SearchScreenState extends State<SearchScreen> {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
         final results = snapshot.data!.docs;
-
         if (results.isEmpty) return _buildNoResultsText("No users found.");
 
         return ListView.builder(
@@ -166,11 +217,18 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               title: Text(user['displayName'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text("@${user['username']}"),
-              onTap: () => context.push('/profile/${user['uid']}'),
+              onTap: () => context.push('/user/${user['uid']}'),
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildEmptyPeopleState() {
+    return const Center(
+      child: Text("Search for your friends by username", 
+        style: TextStyle(color: Colors.black38, fontSize: 14)),
     );
   }
 
