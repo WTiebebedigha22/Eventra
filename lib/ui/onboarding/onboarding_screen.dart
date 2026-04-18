@@ -53,18 +53,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<Map<String, String>> onboardingData = [
     {
       'title': 'Discover Your Interests',
-      'description': 'Browse millions of ideas, from recipes to travel.',
+      'description': 'Indulge multiple events, from regular seminars to travel blogs and wild parties.',
       'image': 'assets/onboarding/onboarding1.jpg',
     },
     {
       'title': 'Collect and Organize',
-      'description': 'Save your favorite Pins to boards for later access.',
+      'description': 'Save your favorite events for later access.',
       'image': 'assets/onboarding/onboarding2.jpg',
     },
     {
       'title': 'Join the Community',
       'description': 'Follow creators and explore personalized feeds.',
       'image': 'assets/onboarding/onboarding3.jpg',
+    },
+    {
+      'title': 'No more mismanagements',
+      'description': 'Use personalized tickets and a qr code to verify members.',
+      'image': 'assets/onboarding/onboarding1.jpg',
     },
   ];
 
