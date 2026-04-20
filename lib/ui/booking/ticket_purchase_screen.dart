@@ -236,7 +236,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3E5992), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                 onPressed: () {
-                  Navigator.pop(context); // Close sheet
+                  Navigator.pop(context); // Close the ticket purchase sheet
                   Navigator.pop(context); // Go back to event details
                 },
                 child: const Text("Done", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
