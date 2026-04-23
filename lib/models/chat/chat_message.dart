@@ -4,8 +4,11 @@ class ChatMessage {
   final String id;
   final String chatId;
   final String senderId;
+
   final String message;
-  final String type; // 'text', 'image', 'location'
+  final String imageUrl; // ✅ MUST EXIST
+
+  final String type;
   final DateTime createdAt;
   final bool isRead;
 
@@ -14,6 +17,7 @@ class ChatMessage {
     required this.chatId,
     required this.senderId,
     required this.message,
+    required this.imageUrl,
     required this.type,
     required this.createdAt,
     this.isRead = false,
@@ -25,15 +29,15 @@ class ChatMessage {
       chatId: data['chatId'] ?? '',
       senderId: data['senderId'] ?? '',
       message: data['message'] ?? '',
+      imageUrl: data['imageUrl'] ?? '', // ✅ FIX
       type: data['type'] ?? 'text',
-      createdAt: data['createdAt'] != null 
-          ? (data['createdAt'] as Timestamp).toDate() 
+      createdAt: data['createdAt'] != null
+          ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
       isRead: data['isRead'] ?? false,
     );
   }
 
-  // BRIDGE: This handles the DocumentSnapshot and maps it to the model
   static ChatMessage fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     return ChatMessage.fromMap(data, doc.id);
@@ -44,8 +48,9 @@ class ChatMessage {
       'chatId': chatId,
       'senderId': senderId,
       'message': message,
+      'imageUrl': imageUrl,
       'type': type,
-      'createdAt': FieldValue.serverTimestamp(), 
+      'createdAt': FieldValue.serverTimestamp(),
       'isRead': isRead,
     };
   }

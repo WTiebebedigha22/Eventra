@@ -1,52 +1,64 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 
-class ThemeScreen extends StatelessWidget {
+class ThemeScreen extends StatefulWidget {
   const ThemeScreen({super.key});
 
-  static const Color primaryColor = Color(0xFF3E5992);
-  static const Color backgroundColor = Colors.white;
-  static const Color appBarColor = Colors.white;
-  static const Color textColor = Colors.black;
+  @override
+  State<ThemeScreen> createState() => _ThemeScreenState();
+}
+
+class _ThemeScreenState extends State<ThemeScreen> {
+  late String selectedTheme;
+
+  @override
+  void initState() {
+    super.initState();
+    final themeProvider = context.read<ThemeProvider>();
+    selectedTheme = themeProvider.currentTheme;
+  }
+
+  void _changeTheme(String value) {
+    setState(() {
+      selectedTheme = value;
+    });
+
+    context.read<ThemeProvider>().setTheme(value);
+  }
 
   @override
   Widget build(BuildContext context) {
-    String selectedTheme = 'Light'; // Mock value
-    
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: appBarColor,
-        title: const Text('App Theme', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
-        iconTheme: const IconThemeData(color: textColor),
-        elevation: 1,
-      ),
+      appBar: AppBar(title: const Text('App Theme')),
       body: Column(
         children: [
           RadioListTile<String>(
-            title: const Text('Dark', style: TextStyle(color: textColor)),
+            title: const Text('Dark'),
             value: 'Dark',
             groupValue: selectedTheme,
-            onChanged: (val) {},
-            activeColor: primaryColor,
-            tileColor: appBarColor,
+            onChanged: (val) => _changeTheme(val!),
+            activeColor: colorScheme.primary,
           ),
-          const Divider(color: backgroundColor, height: 1, thickness: 1),
+          const Divider(),
+
           RadioListTile<String>(
-            title: const Text('Light', style: TextStyle(color: textColor)),
+            title: const Text('Light'),
             value: 'Light',
             groupValue: selectedTheme,
-            onChanged: (val) {},
-            activeColor: primaryColor,
-            tileColor: appBarColor,
+            onChanged: (val) => _changeTheme(val!),
+            activeColor: colorScheme.primary,
           ),
-          const Divider(color: backgroundColor, height: 1, thickness: 1),
+          const Divider(),
+
           RadioListTile<String>(
-            title: const Text('System Default', style: TextStyle(color: textColor)),
-            value: 'System Default',
+            title: const Text('System Default'),
+            value: 'System',
             groupValue: selectedTheme,
-            onChanged: (val) {},
-            activeColor: primaryColor,
-            tileColor: appBarColor,
+            onChanged: (val) => _changeTheme(val!),
+            activeColor: colorScheme.primary,
           ),
         ],
       ),

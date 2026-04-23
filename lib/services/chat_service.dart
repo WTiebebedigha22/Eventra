@@ -1,16 +1,21 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+
 import '../../models/chat/chat_message.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // --- 1. Get List of Conversations (Inbox) ---
+  // ─────────────────────────────
+  // 1. GET CONVERSATIONS
+  // ─────────────────────────────
   Stream<QuerySnapshot> getConversationsStream() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return const Stream.empty();
+
     return _firestore
         .collection('conversations')
         .where('participants', arrayContains: uid)
@@ -18,7 +23,9 @@ class ChatService {
         .snapshots();
   }
 
-  // --- 2. Get Messages for a Specific Chat (Bubbles) ---
+  // ─────────────────────────────
+  // 2. GET MESSAGES
+  // ─────────────────────────────
   Stream<List<ChatMessage>> getMessagesStream(String chatId) {
     return _firestore
         .collection('conversations')
@@ -26,90 +33,128 @@ class ChatService {
         .collection('messages')
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map<ChatMessage>((doc) {
-        return ChatMessage.fromFirestore(doc);
-      }).toList();
-    });
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => ChatMessage.fromFirestore(doc)).toList());
   }
 
-  // --- 3. Send Message & Update Metadata ---
-  Future<void> sendMessage(String chatId, String text, String otherUserId) async {
+  // ─────────────────────────────
+  // 3. SEND MESSAGE (TEXT + IMAGE)
+  // ─────────────────────────────
+  Future<void> sendMessage({
+    required String chatId,
+    required String messageText,
+    required String otherUserId,
+    File? imageFile,
+  }) async {
     final uid = _auth.currentUser?.uid;
-    if (uid == null || text.trim().isEmpty) return;
+    if (uid == null) return;
 
-    WriteBatch batch = _firestore.batch();
-    DocumentReference msgRef = _firestore
+    String imageUrl = '';
+
+    // ── Upload image ──
+    if (imageFile != null) {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('chat_media')
+          .child('$chatId/${DateTime.now().millisecondsSinceEpoch}.jpg');
+
+      await ref.putFile(imageFile);
+      imageUrl = await ref.getDownloadURL();
+    }
+
+    final msgRef = _firestore
         .collection('conversations')
         .doc(chatId)
         .collection('messages')
         .doc();
-    DocumentReference chatRef = _firestore.collection('conversations').doc(chatId);
 
-    batch.set(msgRef, {
-      'chatId': chatId,
-      'senderId': uid,
-      'message': text.trim(),
-      'type': 'text',
-      'createdAt': FieldValue.serverTimestamp(),
-      'isRead': false,
+    final chatRef =
+        _firestore.collection('conversations').doc(chatId);
+
+    await _firestore.runTransaction((txn) async {
+      // ── message ──
+      txn.set(msgRef, {
+        'chatId': chatId,
+        'senderId': uid,
+        'receiverId': otherUserId,
+        'message': messageText.trim(),
+        'imageUrl': imageUrl,
+        'type': imageFile != null ? 'image' : 'text',
+        'createdAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+      });
+
+      // ── conversation update ──
+      txn.set(chatRef, {
+        'participants': [uid, otherUserId],
+        'lastMessage': imageFile != null ? '📷 Image' : messageText.trim(),
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'unreadCounts': {
+          otherUserId: FieldValue.increment(1),
+        },
+      }, SetOptions(merge: true));
     });
-
-    batch.update(chatRef, {
-      'lastMessage': text.trim(),
-      'lastMessageTime': FieldValue.serverTimestamp(),
-      'unreadCounts.$otherUserId': FieldValue.increment(1),
-    });
-
-    await batch.commit();
   }
 
-  // --- 4. Get or Create Conversation ID ---
+  // ─────────────────────────────
+  // 4. GET OR CREATE CHAT
+  // ─────────────────────────────
   Future<String> getOrCreateConversation(String otherUserId) async {
     final currentUserId = _auth.currentUser?.uid;
-    if (currentUserId == null) throw Exception("User not logged in");
+    if (currentUserId == null) throw Exception("Not logged in");
 
-    // Create unique ID by sorting UIDs
-    List<String> ids = [currentUserId, otherUserId];
-    ids.sort();
-    String chatId = ids.join('_');
+    final ids = [currentUserId, otherUserId]..sort();
+    final chatId = ids.join('_');
 
-    final chatDoc = await _firestore.collection('conversations').doc(chatId).get();
+    final doc =
+        await _firestore.collection('conversations').doc(chatId).get();
 
-    if (!chatDoc.exists) {
+    if (!doc.exists) {
       await _firestore.collection('conversations').doc(chatId).set({
         'participants': ids,
         'lastMessage': '',
         'lastMessageTime': FieldValue.serverTimestamp(),
-        'unreadCounts': {currentUserId: 0, otherUserId: 0},
+        'unreadCounts': {
+          currentUserId: 0,
+          otherUserId: 0,
+        },
       });
     }
 
     return chatId;
   }
 
-  // --- 5. Mark Messages as Read ---
+  // ─────────────────────────────
+  // 5. MARK AS READ
+  // ─────────────────────────────
   Future<void> markAsRead(String chatId) async {
     final uid = _auth.currentUser?.uid;
-    if (uid != null) {
-      await _firestore.collection('conversations').doc(chatId).update({
-        'unreadCounts.$uid': 0,
-      });
-    }
+    if (uid == null) return;
+
+    await _firestore
+        .collection('conversations')
+        .doc(chatId)
+        .update({'unreadCounts.$uid': 0});
   }
 
-  // --- 6. Helper: Fetch User Profiles ---
-  Future<Map<String, dynamic>?> getUserProfile(String userId) async {
-    final doc = await _firestore.collection('users').doc(userId).get();
-    return doc.data();
-  }
-
-  // --- 7. Helper: Format Dates ---
+  // ─────────────────────────────
+  // 6. FORMAT TIME
+  // ─────────────────────────────
   String formatTimestamp(DateTime dateTime) {
     final now = DateTime.now();
     final diff = now.difference(dateTime);
+
     if (diff.inDays >= 1) return '${diff.inDays}d';
     if (diff.inHours >= 1) return '${diff.inHours}h';
-    return '${diff.inMinutes}m';
+    if (diff.inMinutes >= 1) return '${diff.inMinutes}m';
+    return 'now';
+  }
+
+  // ─────────────────────────────
+  // 7. GET USER PROFILE
+  // ─────────────────────────────
+  Future<Map<String, dynamic>?> getUserProfile(String userId) async {
+    final doc = await _firestore.collection('users').doc(userId).get();
+    return doc.data();
   }
 }

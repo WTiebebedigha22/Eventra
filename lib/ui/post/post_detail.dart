@@ -1,3 +1,4 @@
+import 'dart:ui'; // Required for ImageFilter
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -21,29 +22,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
   
   String _activeCollection = 'posts';
   VideoPlayerController? _videoController;
-  late AnimationController _heartAnimationController;
 
   @override
   void initState() {
     super.initState();
     _postFuture = _loadData();
-    _heartAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
   }
 
   @override
   void dispose() {
     _videoController?.dispose();
-    _heartAnimationController.dispose();
     super.dispose();
   }
 
   Future<Map<String, dynamic>?> _loadData() async {
     final String id = widget.postId.trim();
     try {
-      // Check posts first, then events
       DocumentSnapshot doc = await FirebaseFirestore.instance.collection('posts').doc(id).get();
       if (!doc.exists) {
         doc = await FirebaseFirestore.instance.collection('events').doc(id).get();
@@ -83,15 +77,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 22),
-          onPressed: () => context.pop(),
-        ),
-      ),
       body: FutureBuilder<Map<String, dynamic>?>(
         future: _postFuture,
         builder: (context, snapshot) {
@@ -100,13 +85,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
           }
           if (!snapshot.hasData) return const Center(child: Text("Content no longer available", style: TextStyle(color: Colors.white)));
           
-          return _buildTikTokJijiBody(snapshot.data!);
+          return _buildImmersiveBody(snapshot.data!);
         },
       ),
     );
   }
 
-  Widget _buildTikTokJijiBody(Map<String, dynamic> data) {
+  Widget _buildImmersiveBody(Map<String, dynamic> data) {
     final String media = data['imageUrl'] ?? data['mediaUrl'] ?? '';
     final String creatorId = data['userId'] ?? data['creatorId'] ?? '';
     final List likes = List.from(data['likes'] ?? []);
@@ -115,214 +100,217 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
 
     return Stack(
       children: [
-        // 1. FULLSCREEN MEDIA
-        GestureDetector(
-          onDoubleTap: () => _toggleLike(data),
-          onTap: () {
-            if (_videoController != null) {
-              _videoController!.value.isPlaying ? _videoController!.pause() : _videoController!.play();
-              setState(() {});
-            }
-          },
-          child: SizedBox.expand(
-            child: _videoController != null && _videoController!.value.isInitialized
-                ? FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _videoController!.value.size.width,
-                      height: _videoController!.value.size.height,
-                      child: VideoPlayer(_videoController!),
-                    ),
-                  )
-                : Image.network(
-                    media, 
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.broken_image, color: Colors.white30, size: 50)),
+        // 1. BACKGROUND MEDIA
+        Positioned.fill(
+          child: _videoController != null && _videoController!.value.isInitialized
+              ? Center(
+                  child: AspectRatio(
+                    aspectRatio: _videoController!.value.aspectRatio,
+                    child: VideoPlayer(_videoController!),
                   ),
-          ),
+                )
+              : Image.network(media, fit: BoxFit.cover),
         ),
 
-        // 2. SOFT GRADIENT OVERLAYS
-        const Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.black54, Colors.transparent, Colors.transparent, Colors.black],
-                stops: [0, 0.15, 0.5, 0.95],
+        // 2. BACK BUTTON (Floating)
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 10,
+          left: 16,
+          child: ClipOval(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                color: Colors.white.withOpacity(0.1),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                  onPressed: () => context.pop(),
+                ),
               ),
             ),
           ),
         ),
 
-        // 3. RIGHT SIDEBAR
+        // 3. RIGHT SIDE FLOATING ACTIONS
         Positioned(
-          right: 12,
-          bottom: 120,
+          right: 16,
+          top: MediaQuery.of(context).size.height * 0.3,
           child: Column(
             children: [
-              _buildSideAction(
+              _buildModernSideAction(
                 icon: isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                 color: isLiked ? Colors.redAccent : Colors.white,
                 label: "${likes.length}",
                 onTap: () => _toggleLike(data),
               ),
-              const SizedBox(height: 20),
-              _buildSideAction(
+              const SizedBox(height: 24),
+              _buildModernSideAction(
                 icon: Icons.chat_bubble_outline_rounded,
-                label: "Comment",
+                label: "Ask",
                 onTap: () {},
               ),
-              const SizedBox(height: 20),
-              _buildSideAction(
+              const SizedBox(height: 24),
+              _buildModernSideAction(
                 icon: Icons.share_outlined,
-                label: "Share",
+                label: "Send",
                 onTap: () => Share.share("Check this out on Ventra!"),
+              ),
+              const SizedBox(height: 24),
+              _buildModernSideAction(
+                icon: Icons.bookmark_border_rounded,
+                label: "Save",
+                onTap: () {},
               ),
             ],
           ),
         ),
 
-        // 4. BOTTOM INFO & JIJI CTA
+        // 4. BOTTOM INFO PANEL (Frosted Glass Style)
         Positioned(
-          left: 16,
-          bottom: 30,
-          right: 16,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // User info - Clickable
-              GestureDetector(
-                onTap: () => context.push('/user/$creatorId'),
-                child: StreamBuilder<DocumentSnapshot>(
-                  stream: FirebaseFirestore.instance.collection('users').doc(creatorId).snapshots(),
-                  builder: (context, userSnap) {
-                    final u = userSnap.hasData ? (userSnap.data!.data() as Map<String, dynamic>?) : null;
-                    return Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: Colors.white24,
-                          backgroundImage: u?['photoURL'] != null ? NetworkImage(u!['photoURL']) : null,
-                        ),
-                        const SizedBox(width: 10),
-                        Text("@${u?['username'] ?? 'user'}", 
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                      ],
-                    );
-                  },
-                ),
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black.withOpacity(0.8), Colors.black],
               ),
-              const SizedBox(height: 12),
-              
-              // Content Row: Price + Description
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          data['title'] ?? '',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(data['description'] ?? data['content'] ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Price Badge (The "Jiji" Look)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3BA73A), // Jiji Green
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(price, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 20),
-              
-              // Modernized Jiji Action Button
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF3BA73A),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Username & Badge
+                _buildUserHeader(creatorId),
+                const SizedBox(height: 12),
+                
+                // Title and Price Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        data['title'] ?? 'Product Details',
+                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                       ),
-                      onPressed: () {},
-                      child: const Text("SHOW CONTACT", style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
                     ),
+                    Text(
+                      price,
+                      style: const TextStyle(color: Color(0xFF4CAF50), fontSize: 22, fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                
+                // Description
+                Text(
+                  data['description'] ?? data['content'] ?? '',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14, height: 1.5),
+                ),
+                
+                const SizedBox(height: 25),
+                
+                // Primary Action Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3BA73A),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                    child: const Text("CONTACT SELLER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
                   ),
-                  const SizedBox(width: 10),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.bookmark_border_rounded, color: Colors.white),
-                      onPressed: () {},
-                    ),
-                  )
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSideAction({required IconData icon, required String label, required VoidCallback onTap, Color color = Colors.white}) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.black.withOpacity(0.1),
-            ),
-            child: Icon(icon, color: color, size: 32),
+  Widget _buildUserHeader(String creatorId) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(creatorId).snapshots(),
+      builder: (context, userSnap) {
+        final u = userSnap.hasData ? (userSnap.data!.data() as Map<String, dynamic>?) : null;
+        return GestureDetector(
+          onTap: () => context.push('/user/$creatorId'),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundImage: u?['photoURL'] != null ? NetworkImage(u!['photoURL']) : null,
+                  backgroundColor: Colors.grey[800],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text("@${u?['username'] ?? 'user'}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
+                child: const Text("Follow", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+              )
+            ],
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
-      ],
+        );
+      },
+    );
+  }
+
+  Widget _buildModernSideAction({required IconData icon, required String label, required VoidCallback onTap, Color color = Colors.white}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(50),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+              child: Container(
+                height: 50,
+                width: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+                ),
+                child: Icon(icon, color: color, size: 26),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w400)),
+        ],
+      ),
     );
   }
 
   void _toggleLike(Map<String, dynamic> data) async {
     if (currentUserId == null) return;
-    
     final docRef = FirebaseFirestore.instance.collection(_activeCollection).doc(widget.postId.trim());
     List likes = List.from(data['likes'] ?? []);
     bool wasLiked = likes.contains(currentUserId);
 
-    // OPTIMISTIC UPDATE: Update UI immediately
     setState(() {
       if (wasLiked) {
         likes.remove(currentUserId);
       } else {
         likes.add(currentUserId);
-        HapticFeedback.mediumImpact();
+        HapticFeedback.lightImpact();
       }
-      data['likes'] = likes; // Locally update the data map
+      data['likes'] = likes;
     });
 
     try {
@@ -332,8 +320,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
         await docRef.update({'likes': FieldValue.arrayUnion([currentUserId])});
       }
     } catch (e) {
-      // Revert on error
-      setState(() { _postFuture = _loadData(); });
+      _loadData();
     }
   }
 }

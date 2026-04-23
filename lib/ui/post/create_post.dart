@@ -25,8 +25,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   // --- Controllers & State ---
   final TextEditingController _contentController = TextEditingController();
   final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController(); // New: Price Controller
 
-  // Functional Update: Handle a list of media
   final List<File> _selectedMediaList = [];
   String? _location;
   DateTime? _eventDate;
@@ -53,6 +53,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     super.initState();
     _contentController.addListener(_onTextChanged);
     _titleController.addListener(_onTextChanged);
+    _priceController.addListener(_onTextChanged);
   }
 
   void _onTextChanged() => setState(() {});
@@ -61,6 +62,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void dispose() {
     _contentController.dispose();
     _titleController.dispose();
+    _priceController.dispose();
     super.dispose();
   }
 
@@ -70,6 +72,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (_selectedType == 1) {
       return _titleController.text.trim().isNotEmpty && 
              _contentController.text.trim().isNotEmpty && 
+             _priceController.text.trim().isNotEmpty && // Ensure price is set
              _eventDate != null;
     }
     return _contentController.text.trim().isNotEmpty || _selectedMediaList.isNotEmpty;
@@ -140,7 +143,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       List<String> mediaUrls = [];
       for (var file in _selectedMediaList) {
-        // Simple check: ImgBB doesn't take videos. 
         if (!file.path.toLowerCase().endsWith('.mp4')) {
           String? url = await ImgBBService.uploadImage(file);
           if (url != null) mediaUrls.add(url);
@@ -190,6 +192,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       'userProfileUrl': auth.photoURL,
       'title': _titleController.text.trim(),
       'description': _contentController.text.trim(),
+      'price': _priceController.text.trim(), // Save Price
       'imageUrl': mediaUrl,
       'location': _location,
       'eventDate': Timestamp.fromDate(_eventDate!),
@@ -259,6 +262,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       border: InputBorder.none,
                     ),
                   ),
+                  
+                  // NEW: Price Field for Events
+                  Row(
+                    children: [
+                      const Icon(Icons.confirmation_num_outlined, color: primaryColor, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _priceController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.green),
+                          decoration: const InputDecoration(
+                            hintText: "Ticket Price (₦)",
+                            hintStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.normal),
+                            border: InputBorder.none,
+                            prefixText: "₦ ",
+                            prefixStyle: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 18),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   const Divider(height: 32),
                 ],
 
@@ -272,7 +298,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
   }
 
-  // --- Original UI Components Restored ---
+  // --- UI Components ---
 
   Widget _buildTypeSelector() {
     return Container(
@@ -373,7 +399,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ),
         ),
         
-        // Media Preview: Dynamic horizontal list
         if (_selectedMediaList.isNotEmpty)
           Container(
             height: 120,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../components/event_card.dart';
@@ -24,7 +25,7 @@ class _SearchScreenState extends State<SearchScreen> {
         backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.white,
-          elevation: 0.5, // Subtle shadow for a premium feel
+          elevation: 0.5,
           title: Container(
             height: 40,
             decoration: BoxDecoration(
@@ -41,15 +42,15 @@ class _SearchScreenState extends State<SearchScreen> {
                 prefixIcon: const Icon(Icons.search_rounded, color: primaryColor, size: 18),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                suffixIcon: _searchQuery.isNotEmpty 
-                  ? IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 16),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = "");
-                      },
-                    ) 
-                  : null,
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 16),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = "");
+                        },
+                      )
+                    : null,
               ),
             ),
           ),
@@ -65,37 +66,34 @@ class _SearchScreenState extends State<SearchScreen> {
             ],
           ),
         ),
-        // If query is empty, show the Discovery/Recommendation Feed
         body: TabBarView(
           children: [
             _searchQuery.isEmpty ? _buildDiscoveryFeed() : _buildEventResults(),
-            _buildUserResults(), // User search handles its own empty/not-empty logic
+            _searchQuery.isEmpty ? _buildSuggestedPeople() : _buildUserResults(),
           ],
         ),
       ),
     );
   }
 
-  // --- NEW: RECOMMENDED/DISCOVERY FEED ---
+  // ─── DISCOVERY FEED ───────────────────────────────────────────────────────
+
   Widget _buildDiscoveryFeed() {
     return StreamBuilder<QuerySnapshot>(
-      // Recommendation Logic: Get 20 latest events
-      // In a more advanced app, you'd filter by user interests
       stream: FirebaseFirestore.instance
           .collection('events')
           .orderBy('createdAt', descending: true)
           .limit(20)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
-        
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: primaryColor));
+        }
         final docs = snapshot.data!.docs;
-
         if (docs.isEmpty) {
           return const Center(child: Text("No trending events yet. Check back soon!"));
         }
 
-        // Using MasonryGridView for that "Instagram Explore" staggered look
         return MasonryGridView.count(
           padding: const EdgeInsets.all(12),
           crossAxisCount: 2,
@@ -105,8 +103,6 @@ class _SearchScreenState extends State<SearchScreen> {
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
             data['id'] = docs[index].id;
-            
-            // You can create a smaller "GridEventCard" component for this view
             return _buildDiscoveryCard(data);
           },
         );
@@ -115,6 +111,9 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildDiscoveryCard(Map<String, dynamic> event) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = (screenWidth - 12 * 3) / 2; // 2 columns with 12px gaps
+
     return InkWell(
       onTap: () => context.push('/home/event/${event['id']}'),
       child: Column(
@@ -122,9 +121,9 @@ class _SearchScreenState extends State<SearchScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(15),
-            child: Image.network(
-              event['imageURL'] ?? 'https://via.placeholder.com/300',
-              fit: BoxFit.cover,
+            child: _buildNetworkImage(
+              url: event['imageURL'],
+              width: cardWidth,
             ),
           ),
           const SizedBox(height: 6),
@@ -142,10 +141,48 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  // --- TAB 1: EVENT SEARCH (Title + Tags) ---
+  // ─── SHARED IMAGE HELPER ──────────────────────────────────────────────────
+
+  Widget _buildNetworkImage({required String? url, required double width}) {
+    // Vary height slightly per card for the staggered masonry effect
+    final height = width * (0.75 + (url?.hashCode ?? 0).abs() % 30 / 100);
+
+    if (url == null || url.isEmpty) {
+      return _buildImagePlaceholder(width: width, height: height);
+    }
+
+    return Image.network(
+      url,
+      width: width,
+      height: height,
+      fit: BoxFit.cover,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return _buildImagePlaceholder(width: width, height: height);
+      },
+      errorBuilder: (context, error, stackTrace) {
+        return _buildImagePlaceholder(width: width, height: height);
+      },
+    );
+  }
+
+  Widget _buildImagePlaceholder({required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F3F5),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: const Center(
+        child: Icon(Icons.image_outlined, color: Colors.black26, size: 32),
+      ),
+    );
+  }
+
+  // ─── EVENT SEARCH ─────────────────────────────────────────────────────────
+
   Widget _buildEventResults() {
-    // [Keep your existing _buildEventResults logic here]
-    // ...
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('events')
@@ -153,7 +190,9 @@ class _SearchScreenState extends State<SearchScreen> {
           .limit(15)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: primaryColor));
+        }
         var results = snapshot.data!.docs;
         if (results.isEmpty) {
           return StreamBuilder<QuerySnapshot>(
@@ -165,7 +204,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 .snapshots(),
             builder: (context, titleSnapshot) {
               if (!titleSnapshot.hasData) return const SizedBox();
-              if (titleSnapshot.data!.docs.isEmpty) return _buildNoResultsText("No events or tags found.");
+              if (titleSnapshot.data!.docs.isEmpty) {
+                return _buildNoResultsText("No events or tags found.");
+              }
               return _buildEventList(titleSnapshot.data!.docs);
             },
           );
@@ -187,11 +228,109 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  // --- TAB 2: USER SEARCH ---
-  Widget _buildUserResults() {
-    // Return early if no search is happening to keep the 'People' tab clean
-    if (_searchQuery.isEmpty) return _buildEmptyPeopleState();
+  // ─── SUGGESTED PEOPLE (shown when query is empty) ─────────────────────────
 
+  Widget _buildSuggestedPeople() {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .orderBy('followerCount', descending: true)
+          .limit(20)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: primaryColor));
+        }
+
+        final docs = snapshot.data!.docs
+            .where((d) => d.id != currentUid)
+            .toList();
+
+        if (docs.isEmpty) {
+          return const Center(
+            child: Text(
+              "No suggested people yet.",
+              style: TextStyle(color: Colors.black38, fontSize: 14),
+            ),
+          );
+        }
+
+        return CustomScrollView(
+          slivers: [
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                child: Text(
+                  "Suggested People",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final user = docs[index].data() as Map<String, dynamic>;
+                  return _buildSuggestedUserTile(user);
+                },
+                childCount: docs.length,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSuggestedUserTile(Map<String, dynamic> user) {
+    final followerCount = user['followerCount'] as int? ?? 0;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: Colors.grey[200],
+        backgroundImage: user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
+        child: user['photoURL'] == null
+            ? const Icon(Icons.person, color: Colors.grey)
+            : null,
+      ),
+      title: Text(
+        user['displayName'] ?? 'User',
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      ),
+      subtitle: Text(
+        "@${user['username'] ?? ''}",
+        style: const TextStyle(color: Colors.black54, fontSize: 12),
+      ),
+      trailing: followerCount > 0
+          ? Text(
+              _formatCount(followerCount),
+              style: const TextStyle(
+                color: Colors.black38,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+          : null,
+      onTap: () => context.push('/user/${user['uid']}'),
+    );
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M followers';
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K followers';
+    return '$count followers';
+  }
+
+  // ─── USER SEARCH (shown when query is non-empty) ──────────────────────────
+
+  Widget _buildUserResults() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('users')
@@ -200,7 +339,9 @@ class _SearchScreenState extends State<SearchScreen> {
           .limit(15)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: primaryColor));
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: primaryColor));
+        }
         final results = snapshot.data!.docs;
         if (results.isEmpty) return _buildNoResultsText("No users found.");
 
@@ -212,10 +353,16 @@ class _SearchScreenState extends State<SearchScreen> {
             return ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.grey[200],
-                backgroundImage: user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
-                child: user['photoURL'] == null ? const Icon(Icons.person, color: Colors.grey) : null,
+                backgroundImage:
+                    user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
+                child: user['photoURL'] == null
+                    ? const Icon(Icons.person, color: Colors.grey)
+                    : null,
               ),
-              title: Text(user['displayName'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(
+                user['displayName'] ?? 'User',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
               subtitle: Text("@${user['username']}"),
               onTap: () => context.push('/user/${user['uid']}'),
             );
@@ -225,12 +372,7 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildEmptyPeopleState() {
-    return const Center(
-      child: Text("Search for your friends by username", 
-        style: TextStyle(color: Colors.black38, fontSize: 14)),
-    );
-  }
+  // ─── HELPERS ──────────────────────────────────────────────────────────────
 
   Widget _buildNoResultsText(String text) {
     return Center(

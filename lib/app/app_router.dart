@@ -11,6 +11,7 @@ import '../ui/onboarding/onboarding_screen.dart';
 import '../ui/auth/login_screen.dart';
 import '../ui/auth/register_screen.dart';
 import '../ui/auth/forgot_password.dart';
+import '../ui/bookings/ticket_purchase_screen.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/home/search_screen.dart';
 import '../ui/events/event_list_screen.dart';
@@ -80,7 +81,7 @@ class AppRouter {
       },
 
       routes: [
-        /// --- FULL SCREEN AUTH ROUTES ---
+        /// --- AUTH ROUTES ---
         GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
         GoRoute(
           path: '/onboarding',
@@ -93,7 +94,7 @@ class AppRouter {
           builder: (_, _) => const ForgotPasswordScreen(),
         ),
 
-        /// --- MAIN APP SHELL (Bottom Navigation) ---
+        /// --- MAIN APP SHELL ---
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return HomeScreen(
@@ -102,7 +103,7 @@ class AppRouter {
             );
           },
           branches: [
-            /// BRANCH 0: EXPLORE / HOME
+            /// 🔹 HOME / EVENTS
             StatefulShellBranch(
               navigatorKey: _shellNavigatorHomeKey,
               routes: [
@@ -110,38 +111,49 @@ class AppRouter {
                   path: '/home',
                   builder: (_, _) => const EventListScreen(),
                   routes: [
+                    // Event Details
                     GoRoute(
                       path: 'event/:id',
                       builder: (_, state) => EventDetailScreen(
                         eventId: state.pathParameters['id']!,
                       ),
+                      routes: [
+                        GoRoute(
+                          // The ':id' tells the router that this is a dynamic variable
+                          path: 'purchase-tickets/:id',
+                          name:
+                              'purchaseTickets', // Adding a name makes navigation much easier
+                          builder: (context, state) {
+                            // Extract the ID from the path
+                            final eventId = state.pathParameters['id']!;
+
+                            return TicketPurchaseScreen(
+                              eventId: eventId,
+                              // We pass null for event because the screen fetches
+                              // the data itself using the eventId via StreamBuilder
+                              event: null,
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ],
             ),
 
-            /// BRANCH 1: CHAT / MESSAGES
+            /// 🔹 CHAT
             StatefulShellBranch(
               navigatorKey: _shellNavigatorChatKey,
               routes: [
                 GoRoute(
                   path: '/chat',
                   builder: (_, _) => const ChatListScreen(),
-                  routes: [
-                    GoRoute(
-                      path: 'room/:chatId/:otherUserId',
-                      builder: (_, state) => ChatRoomScreen(
-                        chatId: state.pathParameters['chatId']!,
-                        otherUserId: state.pathParameters['otherUserId']!,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
 
-            /// BRANCH 2: MY PROFILE (Index 4 in UI)
+            /// 🔹 PROFILE
             StatefulShellBranch(
               navigatorKey: _shellNavigatorProfileKey,
               routes: [
@@ -160,7 +172,7 @@ class AppRouter {
               ],
             ),
 
-            /// BRANCH 3: SEARCH (Index 3 in UI)
+            /// 🔹 SEARCH
             StatefulShellBranch(
               navigatorKey: _shellNavigatorSearchKey,
               routes: [
@@ -173,9 +185,30 @@ class AppRouter {
           ],
         ),
 
-        /// --- TOP-LEVEL PUSH ROUTES (Hides Bottom Nav) ---
+        /// --- TOP-LEVEL ROUTES ---
 
-        // Dynamic Route for viewing other users' profiles from Search or Events
+        // Chat Room
+        GoRoute(
+          path: '/chat/room/:chatId/:otherUserId',
+          parentNavigatorKey: _rootNavigatorKey,
+          pageBuilder: (context, state) {
+            final chatId = state.pathParameters['chatId']!;
+            final otherUserId = state.pathParameters['otherUserId']!;
+            final extra = state.extra as Map<String, dynamic>?;
+
+            return MaterialPage(
+              key: ValueKey('chat_room_$chatId'),
+              child: ChatRoomScreen(
+                chatId: chatId,
+                otherUserId: otherUserId,
+                otherUserName: extra?['peerName'] ?? 'User',
+                otherUserProfilePic: extra?['peerAvatar'],
+              ),
+            );
+          },
+        ),
+
+        // View Other User Profile
         GoRoute(
           path: '/user/:userId',
           parentNavigatorKey: _rootNavigatorKey,
@@ -183,7 +216,7 @@ class AppRouter {
               ProfileScreen(userId: state.pathParameters['userId']!),
         ),
 
-        // Create Post flow
+        // Create Post
         GoRoute(
           path: '/create-post',
           parentNavigatorKey: _rootNavigatorKey,
@@ -196,7 +229,7 @@ class AppRouter {
           ],
         ),
 
-        // Settings stack
+        // Settings
         GoRoute(
           path: '/settings',
           parentNavigatorKey: _rootNavigatorKey,

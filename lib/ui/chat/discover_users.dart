@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,17 +15,30 @@ class DiscoverUsersScreen extends StatefulWidget {
 class _DiscoverUsersScreenState extends State<DiscoverUsersScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
+  Timer? _debounce;
   final String _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  // Theme Constants matching your app
-  static const Color primaryColor = Color(0xFF3E5992);
+  // Theme Constants
   static const Color tiktokRed = Color(0xFFFE2C55);
   static const Color searchFieldBg = Color(0xFFF1F1F2);
 
   @override
   void dispose() {
     _searchController.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  // Optimized Search: Only updates the state after user stops typing for 500ms
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        setState(() {
+          _searchQuery = query.trim();
+        });
+      }
+    });
   }
 
   @override
@@ -42,9 +56,6 @@ class _DiscoverUsersScreenState extends State<DiscoverUsersScreen> {
         centerTitle: false,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // Real-time Search Logic: 
-        // If query is empty, show suggested users. 
-        // If typing, perform prefix search on 'username'.
         stream: _searchQuery.isEmpty
             ? FirebaseFirestore.instance.collection('users').limit(20).snapshots()
             : FirebaseFirestore.instance
@@ -58,7 +69,6 @@ class _DiscoverUsersScreenState extends State<DiscoverUsersScreen> {
             return const Center(child: CircularProgressIndicator(color: tiktokRed));
           }
 
-          // Filter out the logged-in user so they don't follow themselves
           final docs = snapshot.data!.docs.where((doc) => doc.id != _currentUid).toList();
 
           if (docs.isEmpty) {
@@ -70,7 +80,7 @@ class _DiscoverUsersScreenState extends State<DiscoverUsersScreen> {
             itemCount: docs.length,
             separatorBuilder: (context, index) => const Divider(height: 1, indent: 80, color: Color(0xFFF8F8F8)),
             itemBuilder: (context, index) {
-              final userData = docs[index].data() as Map<String, dynamic>;
+              final userData = docs[index].data() as Map<String, dynamic>? ?? {};
               final userId = docs[index].id;
               return _UserTile(userId: userId, userData: userData, currentUid: _currentUid);
             },
@@ -89,20 +99,16 @@ class _DiscoverUsersScreenState extends State<DiscoverUsersScreen> {
       ),
       child: TextField(
         controller: _searchController,
-        onChanged: (val) {
-          setState(() {
-            _searchQuery = val.trim();
-          });
-        },
+        onChanged: _onSearchChanged,
         decoration: InputDecoration(
           hintText: "Search by username",
           hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
           prefixIcon: const Icon(Icons.search, color: Colors.black54, size: 18),
-          suffixIcon: _searchQuery.isNotEmpty 
+          suffixIcon: _searchController.text.isNotEmpty 
             ? GestureDetector(
                 onTap: () {
                   _searchController.clear();
-                  setState(() => _searchQuery = "");
+                  _onSearchChanged("");
                 },
                 child: const Icon(Icons.cancel, color: Colors.grey, size: 18),
               ) 
@@ -140,7 +146,6 @@ class _UserTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Nested StreamBuilder to handle real-time "Follow" button state
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
           .collection('users')
@@ -156,7 +161,7 @@ class _UserTile extends StatelessWidget {
           leading: CircleAvatar(
             radius: 26,
             backgroundColor: const Color(0xFFF1F4F9),
-            backgroundImage: (userData['photoURL'] != null && userData['photoURL'].isNotEmpty)
+            backgroundImage: (userData['photoURL'] != null && (userData['photoURL'] as String).isNotEmpty)
                 ? NetworkImage(userData['photoURL'])
                 : null,
             child: (userData['photoURL'] == null) ? const Icon(Icons.person, color: Colors.grey) : null,
@@ -190,20 +195,22 @@ class _UserTile extends StatelessWidget {
     final followingDocRef = currentUserRef.collection('following').doc(userId);
 
     if (isFollowing) {
-      // Unfollow Logic
       batch.delete(followerDocRef);
       batch.delete(followingDocRef);
       batch.update(targetUserRef, {'followerCount': FieldValue.increment(-1)});
       batch.update(currentUserRef, {'followingCount': FieldValue.increment(-1)});
     } else {
-      // Follow Logic
       batch.set(followerDocRef, {'followedAt': FieldValue.serverTimestamp()});
       batch.set(followingDocRef, {'followedAt': FieldValue.serverTimestamp()});
       batch.update(targetUserRef, {'followerCount': FieldValue.increment(1)});
       batch.update(currentUserRef, {'followingCount': FieldValue.increment(1)});
     }
 
-    await batch.commit();
+    try {
+      await batch.commit();
+    } catch (e) {
+      debugPrint("Error toggling follow: $e");
+    }
   }
 }
 
