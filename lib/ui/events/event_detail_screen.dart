@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:video_player/video_player.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final String eventId;
@@ -16,7 +17,6 @@ class EventDetailScreen extends StatefulWidget {
 class _EventDetailScreenState extends State<EventDetailScreen> {
   final PageController _imagePageController = PageController();
 
-  // Theme Colors
   static const Color bravelionBlue = Colors.deepPurpleAccent;
   static const Color jijiGreen = Color(0xFF3BA73A);
   static const Color textMain = Color(0xFF1C1E21);
@@ -26,32 +26,46 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      // Fixed Bottom Navigation for high-conversion actions
       bottomNavigationBar: _buildBottomActionPanel(context),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('events').doc(widget.eventId).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('events')
+            .doc(widget.eventId)
+            .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) return const Center(child: Text("Error loading event"));
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: bravelionBlue));
-          }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text("Event not found"));
+          if (snapshot.hasError) {
+            return const Center(child: Text("Error loading event"));
           }
 
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          
-          List<String> images = [];
-          if (data['mediaUrls'] != null) {
-            images = List<String>.from(data['mediaUrls']);
+          if (!snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(color: bravelionBlue),
+            );
+          }
+
+          final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+
+          /// ✅ MEDIA HANDLING (IMAGE + VIDEO)
+          List<Map<String, dynamic>> mediaList = [];
+
+          if (data['media'] != null) {
+            mediaList = List<Map<String, dynamic>>.from(data['media']);
+          } else if (data['mediaUrls'] != null) {
+            mediaList = List<String>.from(data['mediaUrls'])
+                .map((url) => {
+                      'url': url,
+                      'type': url.contains('.mp4') ? 'video' : 'image',
+                    })
+                .toList();
           } else if (data['imageUrl'] != null) {
-            images = [data['imageUrl']];
+            mediaList = [
+              {'url': data['imageUrl'], 'type': 'image'}
+            ];
           }
 
           return CustomScrollView(
-            physics: const BouncingScrollPhysics(),
             slivers: [
-              // Immersive Header
+              /// ─── HEADER ─────────────────────────────
               SliverAppBar(
                 expandedHeight: 350,
                 pinned: true,
@@ -61,9 +75,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _buildImageCarousel(images),
+                      _buildMediaCarousel(mediaList),
                       _buildGradientOverlay(),
-                      if (images.length > 1)
+
+                      if (mediaList.length > 1)
                         Positioned(
                           bottom: 60,
                           left: 0,
@@ -71,7 +86,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                           child: Center(
                             child: SmoothPageIndicator(
                               controller: _imagePageController,
-                              count: images.length,
+                              count: mediaList.length,
                               effect: const ScrollingDotsEffect(
                                 dotWidth: 8,
                                 dotHeight: 8,
@@ -81,15 +96,25 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                             ),
                           ),
                         ),
-                      Positioned(bottom: 20, left: 20, child: _buildPriceBadge(data['price'])),
-                      if (images.length > 1)
-                        Positioned(bottom: 20, right: 20, child: _buildCountBadge(images.length)),
+
+                      Positioned(
+                        bottom: 20,
+                        left: 20,
+                        child: _buildPriceBadge(data['price']),
+                      ),
+
+                      if (mediaList.length > 1)
+                        Positioned(
+                          bottom: 20,
+                          right: 20,
+                          child: _buildCountBadge(mediaList.length),
+                        ),
                     ],
                   ),
                 ),
               ),
 
-              // Content Section
+              /// ─── CONTENT ─────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -98,60 +123,42 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                     children: [
                       _buildUserSection(context, data),
                       const SizedBox(height: 24),
+
                       Text(
                         data['title'] ?? 'Untitled Event',
-                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
+
                       const SizedBox(height: 12),
-                      
-                      // Metadata: Date & Location
-                      _buildMetaRow(Icons.calendar_month_outlined, "April 24th, 2026 • 6:00 PM"),
+
+                      _buildMetaRow(Icons.calendar_month, "April 24 • 6PM"),
                       const SizedBox(height: 8),
-                      _buildMetaRow(Icons.location_on_outlined, data['location'] ?? 'Lagos, Nigeria'),
-                      
+                      _buildMetaRow(
+                          Icons.location_on, data['location'] ?? "Lagos"),
+
                       const SizedBox(height: 25),
-                      const Text("About this Event", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+
+                      const Text("About",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+
                       const SizedBox(height: 10),
+
                       Text(
-                        data['description'] ?? 'No description provided.',
-                        style: const TextStyle(fontSize: 15, color: textSub, height: 1.6),
+                        data['description'] ?? "No description",
+                        style: const TextStyle(
+                          color: textSub,
+                          height: 1.6,
+                        ),
                       ),
-                      const SizedBox(height: 30),
-                      const Divider(),
                     ],
                   ),
                 ),
               ),
 
-              // Recommendations Section
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Text("Recommended Events", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
-              ),
-
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 220,
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('events').limit(6).snapshots(),
-                    builder: (context, snap) {
-                      if (!snap.hasData) return const SizedBox();
-                      return ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.only(left: 20),
-                        itemCount: snap.data!.docs.length,
-                        itemBuilder: (context, index) {
-                          final doc = snap.data!.docs[index];
-                          if (doc.id == widget.eventId) return const SizedBox();
-                          return _buildRecommendationCard(doc.data() as Map<String, dynamic>);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ),
               const SliverToBoxAdapter(child: SizedBox(height: 120)),
             ],
           );
@@ -160,160 +167,168 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
-  // --- UI COMPONENTS ---
+  /// ─── MEDIA CAROUSEL ─────────────────────────────
+  Widget _buildMediaCarousel(List<Map<String, dynamic>> mediaList) {
+    if (mediaList.isEmpty) {
+      return Container(color: Colors.grey[200]);
+    }
+
+    return PageView.builder(
+      controller: _imagePageController,
+      itemCount: mediaList.length,
+      itemBuilder: (context, index) {
+        final item = mediaList[index];
+
+        if (item['type'] == 'video') {
+          return _VideoPlayerWidget(videoUrl: item['url']);
+        }
+
+        return Image.network(
+          item['url'],
+          fit: BoxFit.cover,
+        );
+      },
+    );
+  }
+
+  /// ─── VIDEO PLAYER ─────────────────────────────
+  Widget _buildGradientOverlay() => const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.black26, Colors.transparent, Colors.black45],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+      );
 
   Widget _buildBottomActionPanel(BuildContext context) {
     return Container(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).padding.bottom + 10,
-        left: 20, right: 20, top: 15
+        left: 20,
+        right: 20,
+        top: 15,
       ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          _buildQuickSuggestions(),
-          const SizedBox(height: 15),
-          Row(
-            children: [
-              Container(
-                decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
-                child: IconButton(
-                  icon: const Icon(Icons.chat_bubble_outline, color: textMain),
-                  onPressed: () => _sendMessage(context, "I'm interested!"),
-                ),
+          Expanded(
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: bravelionBlue,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: bravelionBlue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () => context.push('/event/${widget.eventId}/purchase-tickets'),
-                  child: const Text("PURCHASE TICKETS", 
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 1)),
-                ),
-              ),
-            ],
+              onPressed: () =>
+                  context.push('/event/${widget.eventId}/purchase-tickets'),
+              child: const Text("PURCHASE TICKETS"),
+            ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildQuickSuggestions() {
-    final suggestions = ["Still available?", "Sitting capacity?", "Final price?", "Starting time?"];
-    return SizedBox(
-      height: 30,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: suggestions.length,
-        itemBuilder: (context, i) => GestureDetector(
-          onTap: () => _sendMessage(context, suggestions[i]),
-          child: Container(
-            margin: const EdgeInsets.only(right: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              border: Border.all(color: Colors.grey[200]!),
-              borderRadius: BorderRadius.circular(20)
-            ),
-            alignment: Alignment.center,
-            child: Text(suggestions[i], style: const TextStyle(fontSize: 11, color: textSub)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImageCarousel(List<String> images) {
-    if (images.isEmpty) return Container(color: Colors.grey[200]);
-    return PageView.builder(
-      controller: _imagePageController,
-      itemCount: images.length,
-      itemBuilder: (context, index) => Image.network(images[index], fit: BoxFit.cover),
     );
   }
 
   Widget _buildMetaRow(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: bravelionBlue),
+        Icon(icon, color: bravelionBlue),
         const SizedBox(width: 8),
-        Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textMain)),
+        Text(text),
       ],
     );
   }
 
   Widget _buildPriceBadge(dynamic price) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(color: jijiGreen, borderRadius: BorderRadius.circular(10)),
-      child: Text("₦$price", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: jijiGreen,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text("₦$price",
+          style: const TextStyle(color: Colors.white)),
+    );
+  }
+
+  Widget _buildCountBadge(int count) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.black45,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text("$count",
+          style: const TextStyle(color: Colors.white)),
     );
   }
 
   Widget _buildUserSection(BuildContext context, Map<String, dynamic> data) {
     return Row(
       children: [
-        CircleAvatar(
-          radius: 20,
-          backgroundImage: data['userProfileUrl'] != null ? NetworkImage(data['userProfileUrl']) : null,
-          backgroundColor: Colors.grey[200],
-        ),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(data['username'] ?? 'Organizer', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            const Text("Official Partner", style: TextStyle(color: textSub, fontSize: 12)),
-          ],
-        ),
-        const Spacer(),
-        OutlinedButton(
-          onPressed: () {}, 
-          style: OutlinedButton.styleFrom(side: const BorderSide(color: bravelionBlue), shape: const StadiumBorder()),
-          child: const Text("Follow", style: TextStyle(color: bravelionBlue, fontSize: 13)),
-        )
+        CircleAvatar(),
+        const SizedBox(width: 10),
+        Text(data['username'] ?? "Organizer"),
       ],
     );
   }
 
-  Widget _buildRecommendationCard(Map<String, dynamic> data) {
-    final thumb = (data['mediaUrls'] as List?)?.first ?? data['imageUrl'] ?? '';
-    return Container(
-      width: 170,
-      margin: const EdgeInsets.only(right: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildCircleBackButton(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back, color: Colors.white),
+      onPressed: () => context.pop(),
+    );
+  }
+}
+
+/// ─── VIDEO PLAYER WIDGET ─────────────────────────────
+class _VideoPlayerWidget extends StatefulWidget {
+  final String videoUrl;
+  const _VideoPlayerWidget({required this.videoUrl});
+
+  @override
+  State<_VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
+}
+
+class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
+  late VideoPlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.network(widget.videoUrl)
+      ..initialize().then((_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_controller.value.isPlaying) {
+      _controller.pause();
+    } else {
+      _controller.play();
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_controller.value.isInitialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return GestureDetector(
+      onTap: _toggle,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.network(thumb, height: 110, width: 170, fit: BoxFit.cover, errorBuilder: (_,__,___) => Container(color: Colors.grey[100])),
-          ),
-          const SizedBox(height: 10),
-          Text(data['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
-          Text("₦${data['price']}", style: const TextStyle(color: jijiGreen, fontWeight: FontWeight.bold, fontSize: 13)),
+          VideoPlayer(_controller),
+          if (!_controller.value.isPlaying)
+            const Icon(Icons.play_circle, size: 60, color: Colors.white),
         ],
       ),
     );
-  }
-
-  Widget _buildGradientOverlay() => const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black26, Colors.transparent, Colors.black45])));
-  
-  Widget _buildCountBadge(int count) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(10)), child: Row(children: [const Icon(Icons.image, color: Colors.white, size: 12), const SizedBox(width: 4), Text("$count", style: const TextStyle(color: Colors.white, fontSize: 11))]));
-
-  Widget _buildCircleBackButton(BuildContext context) => Padding(padding: const EdgeInsets.all(8.0), child: CircleAvatar(backgroundColor: Colors.black26, child: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white, size: 18), onPressed: () => context.pop())));
-
-  void _sendMessage(BuildContext context, String msg) {
-    HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Sending: $msg"), behavior: SnackBarBehavior.floating));
   }
 }

@@ -32,16 +32,15 @@ import '../ui/post/create_post.dart';
 import '../ui/post/tag_people.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
-final _shellNavigatorHomeKey = GlobalKey<NavigatorState>(
-  debugLabel: 'homeFeed',
-);
-final _shellNavigatorChatKey = GlobalKey<NavigatorState>(debugLabel: 'chat');
-final _shellNavigatorProfileKey = GlobalKey<NavigatorState>(
-  debugLabel: 'profile',
-);
-final _shellNavigatorSearchKey = GlobalKey<NavigatorState>(
-  debugLabel: 'search',
-);
+
+final _shellNavigatorHomeKey =
+    GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
+final _shellNavigatorChatKey =
+    GlobalKey<NavigatorState>(debugLabel: 'chat');
+final _shellNavigatorProfileKey =
+    GlobalKey<NavigatorState>(debugLabel: 'profile');
+final _shellNavigatorSearchKey =
+    GlobalKey<NavigatorState>(debugLabel: 'search');
 
 class AppRouter {
   GoRouter? _router;
@@ -59,8 +58,7 @@ class AppRouter {
 
         if (location == '/splash') return null;
 
-        final isAuthPage =
-            location == '/login' ||
+        final isAuthPage = location == '/login' ||
             location == '/register' ||
             location == '/forgot-password';
 
@@ -81,20 +79,18 @@ class AppRouter {
       },
 
       routes: [
-        /// --- AUTH ROUTES ---
-        GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
+        // ───────────────── AUTH ─────────────────
+        GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
         GoRoute(
-          path: '/onboarding',
-          builder: (_, _) => const OnboardingScreen(),
-        ),
-        GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
-        GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
+            path: '/onboarding',
+            builder: (_, __) => const OnboardingScreen()),
+        GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+        GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
         GoRoute(
-          path: '/forgot-password',
-          builder: (_, _) => const ForgotPasswordScreen(),
-        ),
+            path: '/forgot-password',
+            builder: (_, __) => const ForgotPasswordScreen()),
 
-        /// --- MAIN APP SHELL ---
+        // ───────────────── MAIN APP ─────────────────
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return HomeScreen(
@@ -103,15 +99,15 @@ class AppRouter {
             );
           },
           branches: [
-            /// 🔹 HOME / EVENTS
+
+            // ── HOME / EVENTS ──
             StatefulShellBranch(
               navigatorKey: _shellNavigatorHomeKey,
               routes: [
                 GoRoute(
                   path: '/home',
-                  builder: (_, _) => const EventListScreen(),
+                  builder: (_, __) => const EventListScreen(),
                   routes: [
-                    // Event Details
                     GoRoute(
                       path: 'event/:id',
                       builder: (_, state) => EventDetailScreen(
@@ -119,19 +115,22 @@ class AppRouter {
                       ),
                       routes: [
                         GoRoute(
-                          // The ':id' tells the router that this is a dynamic variable
-                          path: 'purchase-tickets/:id',
-                          name:
-                              'purchaseTickets', // Adding a name makes navigation much easier
+                          path: 'purchase-tickets',
+                          name: 'purchaseTickets',
                           builder: (context, state) {
-                            // Extract the ID from the path
-                            final eventId = state.pathParameters['id']!;
+                            final eventId = state.pathParameters['id'];
+
+                            if (eventId == null || eventId.isEmpty) {
+                              return const Scaffold(
+                                body: Center(
+                                  child: Text("Invalid Event ID"),
+                                ),
+                              );
+                            }
 
                             return TicketPurchaseScreen(
                               eventId: eventId,
-                              // We pass null for event because the screen fetches
-                              // the data itself using the eventId via StreamBuilder
-                              event: null,
+                              event: state.extra as Map<String, dynamic>?,
                             );
                           },
                         ),
@@ -142,52 +141,58 @@ class AppRouter {
               ],
             ),
 
-            /// 🔹 CHAT
+            // ── CHAT ──
             StatefulShellBranch(
               navigatorKey: _shellNavigatorChatKey,
               routes: [
                 GoRoute(
                   path: '/chat',
-                  builder: (_, _) => const ChatListScreen(),
+                  builder: (_, __) => const ChatListScreen(),
                 ),
               ],
             ),
 
-            /// 🔹 PROFILE
+            // ── PROFILE ──
             StatefulShellBranch(
               navigatorKey: _shellNavigatorProfileKey,
               routes: [
                 GoRoute(
                   path: '/profile',
-                  builder: (_, _) => ProfileScreen(
-                    userId: FirebaseAuth.instance.currentUser?.uid ?? '',
-                  ),
+                  builder: (_, __) {
+                    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+                    if (uid == null) {
+                      return const Scaffold(
+                        body: Center(child: Text("User not logged in")),
+                      );
+                    }
+
+                    return ProfileScreen(userId: uid);
+                  },
                   routes: [
                     GoRoute(
                       path: 'edit',
-                      builder: (_, _) => const EditProfileScreen(),
+                      builder: (_, __) => const EditProfileScreen(),
                     ),
                   ],
                 ),
               ],
             ),
 
-            /// 🔹 SEARCH
+            // ── SEARCH ──
             StatefulShellBranch(
               navigatorKey: _shellNavigatorSearchKey,
               routes: [
                 GoRoute(
                   path: '/search',
-                  builder: (_, _) => const SearchScreen(),
+                  builder: (_, __) => const SearchScreen(),
                 ),
               ],
             ),
           ],
         ),
 
-        /// --- TOP-LEVEL ROUTES ---
-
-        // Chat Room
+        // ───────────────── CHAT ROOM ─────────────────
         GoRoute(
           path: '/chat/room/:chatId/:otherUserId',
           parentNavigatorKey: _rootNavigatorKey,
@@ -208,54 +213,69 @@ class AppRouter {
           },
         ),
 
-        // View Other User Profile
+        // ───────────────── OTHER USER PROFILE ─────────────────
         GoRoute(
           path: '/user/:userId',
           parentNavigatorKey: _rootNavigatorKey,
-          builder: (context, state) =>
-              ProfileScreen(userId: state.pathParameters['userId']!),
+          builder: (context, state) {
+            final userId = state.pathParameters['userId'];
+
+            if (userId == null || userId.isEmpty) {
+              return const Scaffold(
+                body: Center(child: Text("Invalid User ID")),
+              );
+            }
+
+            return ProfileScreen(userId: userId);
+          },
         ),
 
-        // Create Post
+        // ───────────────── CREATE POST ─────────────────
         GoRoute(
           path: '/create-post',
           parentNavigatorKey: _rootNavigatorKey,
-          builder: (_, _) => const CreatePostScreen(),
+          builder: (_, __) => const CreatePostScreen(),
           routes: [
             GoRoute(
               path: 'tag-people',
-              builder: (_, _) => const TagPeopleScreen(),
+              builder: (_, __) => const TagPeopleScreen(),
             ),
           ],
         ),
 
-        // Settings
+        // ───────────────── SETTINGS ─────────────────
         GoRoute(
           path: '/settings',
           parentNavigatorKey: _rootNavigatorKey,
-          builder: (_, _) => const ProfileSettingsScreen(),
+          builder: (_, __) => const ProfileSettingsScreen(),
           routes: [
             GoRoute(
               path: 'security',
-              builder: (_, _) => const SecurityScreen(),
+              builder: (_, __) => const SecurityScreen(),
             ),
             GoRoute(
               path: 'activity',
-              builder: (_, _) => const ActivityScreen(),
+              builder: (_, __) => const ActivityScreen(),
             ),
             GoRoute(
               path: 'notifications',
-              builder: (_, _) => const NotificationsScreen(),
+              builder: (_, __) => const NotificationsScreen(),
             ),
-            GoRoute(path: 'theme', builder: (_, _) => const ThemeScreen()),
+            GoRoute(
+              path: 'theme',
+              builder: (_, __) => const ThemeScreen(),
+            ),
             GoRoute(
               path: 'language',
-              builder: (_, _) => const LanguageScreen(),
+              builder: (_, __) => const LanguageScreen(),
             ),
-            GoRoute(path: 'help', builder: (_, _) => const HelpScreen()),
+            GoRoute(
+              path: 'help',
+              builder: (_, __) => const HelpScreen(),
+            ),
             GoRoute(
               path: 'privacy',
-              builder: (_, _) => const PrivacyPolicyScreen(),
+              builder: (_, __) => const PrivacyPolicyScreen(),
             ),
           ],
         ),

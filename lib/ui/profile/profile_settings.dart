@@ -12,9 +12,9 @@ class ProfileSettingsScreen extends StatefulWidget {
 
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   // --- Theme Colors ---
-  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color primaryColor = Colors.deepPurpleAccent;
   static const Color backgroundColor = Colors.white;
-  static const Color surfaceColor = Color(0xFFF8F9FA); 
+  static const Color surfaceColor = Color(0xFFF6F7FB);
   static const Color textColor = Color(0xFF1C1E21);
   static const Color dangerColor = Color(0xFFD93025);
 
@@ -25,24 +25,24 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     {
       'title': 'Account',
       'items': [
-        {'title': 'Edit Profile', 'icon': Icons.person_outline, 'route': '/profile/edit_profile', 'isDanger': false},
-        {'title': 'Security', 'icon': Icons.security_outlined, 'route': '/settings/security', 'isDanger': false},
-        {'title': 'Activity', 'icon': Icons.timeline, 'route': '/settings/activity', 'isDanger': false},
+        {'title': 'Edit Profile', 'icon': Icons.person_outline, 'route': '/profile/edit_profile'},
+        {'title': 'Security', 'icon': Icons.security_outlined, 'route': '/settings/security'},
+        {'title': 'Activity', 'icon': Icons.timeline, 'route': '/settings/activity'},
       ],
     },
     {
       'title': 'Content & Display',
       'items': [
-        {'title': 'Notifications', 'icon': Icons.notifications_none, 'route': '/settings/notifications', 'isDanger': false},
-        {'title': 'Theme', 'icon': Icons.brightness_6_outlined, 'route': '/settings/theme', 'isDanger': false},
-        {'title': 'Language', 'icon': Icons.language_outlined, 'route': '/settings/language', 'isDanger': false},
+        {'title': 'Notifications', 'icon': Icons.notifications_none, 'route': '/settings/notifications'},
+        {'title': 'Theme', 'icon': Icons.dark_mode_outlined, 'route': '/settings/theme'},
+        {'title': 'Language', 'icon': Icons.language_outlined, 'route': '/settings/language'},
       ],
     },
     {
       'title': 'Support & About',
       'items': [
-        {'title': 'Help', 'icon': Icons.help_outline, 'route': '/settings/help', 'isDanger': false},
-        {'title': 'Privacy Policy', 'icon': Icons.verified_user_outlined, 'route': '/settings/privacy', 'isDanger': false},
+        {'title': 'Help Center', 'icon': Icons.help_outline},
+        {'title': 'Privacy Policy', 'icon': Icons.verified_user_outlined},
       ],
     },
     {
@@ -62,10 +62,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Filter logic for the search bar
     final filteredGroups = settingGroups.map((group) {
       final filteredItems = (group['items'] as List).where((item) {
-        return item['title'].toString().toLowerCase().contains(_searchQuery.toLowerCase());
+        return item['title']
+            .toString()
+            .toLowerCase()
+            .contains(_searchQuery.toLowerCase());
       }).toList();
       return {...group, 'items': filteredItems};
     }).where((group) => (group['items'] as List).isNotEmpty).toList();
@@ -78,7 +80,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         centerTitle: true,
         title: const Text(
           'Settings',
-          style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 18),
+          style: TextStyle(
+            color: textColor,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: textColor),
@@ -88,165 +94,183 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // --- Search Bar ---
+          // 🔍 Search Bar
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (value) => setState(() => _searchQuery = value),
-                decoration: InputDecoration(
-                  hintText: 'Search settings...',
-                  hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                  prefixIcon: const Icon(Icons.search, size: 20, color: primaryColor),
-                  suffixIcon: _searchQuery.isNotEmpty 
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18), 
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = "");
-                          }) 
-                      : null,
-                  filled: true,
-                  fillColor: surfaceColor,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
+              padding: const EdgeInsets.all(16),
+              child: _buildSearchBar(),
             ),
           ),
 
-          // --- Settings List ---
-          filteredGroups.isEmpty 
-          ? const SliverFillRemaining(
-              child: Center(child: Text("No settings found", style: TextStyle(color: Colors.grey))),
-            )
-          : SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => _buildGroup(context, filteredGroups[index]),
-                childCount: filteredGroups.length,
-              ),
-            ),
+          filteredGroups.isEmpty
+              ? const SliverFillRemaining(
+                  child: Center(
+                    child: Text("No settings found",
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                )
+              : SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) =>
+                        _buildGroup(context, filteredGroups[index]),
+                    childCount: filteredGroups.length,
+                  ),
+                ),
+
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
     );
   }
 
-  Widget _buildGroup(BuildContext context, Map<String, dynamic> group) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 20, top: 24, bottom: 8),
-          child: Text(
-            group['title'].toString().toUpperCase(),
-            style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-            ),
-          ),
+  // 🔍 SEARCH BAR
+  Widget _buildSearchBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (value) => setState(() => _searchQuery = value),
+        decoration: InputDecoration(
+          hintText: "Search settings...",
+          prefixIcon: const Icon(Icons.search, color: primaryColor),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = "");
+                  },
+                )
+              : null,
+          border: InputBorder.none,
         ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: surfaceColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.black.withOpacity(0.03)),
-          ),
-          child: Column(
-            children: (group['items'] as List).asMap().entries.map((entry) {
-              final int idx = entry.key;
-              final item = entry.value;
-              final bool isLast = idx == (group['items'] as List).length - 1;
-
-              return Column(
-                children: [
-                  _buildSettingTile(
-                    context,
-                    item['title'],
-                    item['icon'],
-                    route: item['route'],
-                    action: item['action'],
-                    isDanger: item['isDanger'],
-                  ),
-                  if (!isLast)
-                    Divider(height: 1, indent: 55, color: Colors.grey.withAlpha(20)),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildSettingTile(BuildContext context, String title, IconData icon,
-      {String? route, String? action, bool isDanger = false}) {
+  // 📦 GROUP
+  Widget _buildGroup(BuildContext context, Map<String, dynamic> group) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 20, bottom: 8),
+            child: Text(
+              group['title'].toUpperCase(),
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: surfaceColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: (group['items'] as List).map((item) {
+                return _buildTile(context, item);
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ⚙️ TILE
+  Widget _buildTile(BuildContext context, Map<String, dynamic> item) {
     final auth = Provider.of<AuthProvider>(context, listen: false);
+    final bool isDanger = item['isDanger'] ?? false;
 
     return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: isDanger ? dangerColor.withOpacity(0.1) : primaryColor.withOpacity(0.1),
+          color: isDanger
+              ? dangerColor.withOpacity(0.1)
+              : primaryColor.withOpacity(0.1),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: isDanger ? dangerColor : primaryColor, size: 20),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: isDanger ? dangerColor : textColor,
-          fontWeight: isDanger ? FontWeight.w600 : FontWeight.w500,
-          fontSize: 15,
+        child: Icon(
+          item['icon'],
+          color: isDanger ? dangerColor : primaryColor,
+          size: 20,
         ),
       ),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.black26),
+      title: Text(
+        item['title'],
+        style: TextStyle(
+          color: isDanger ? dangerColor : textColor,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 18),
       onTap: () {
-        if (route != null) {
-          context.push(route);
-        } else if (action == 'logout') {
-          _showConfirmDialog(context, "Logout", "Are you sure you want to sign out?", "Logout", () async {
-            await auth.logout();
-            if (context.mounted) context.go('/login');
-          });
-        } else if (action == 'delete') {
-          _showConfirmDialog(context, "Delete Account", "This action is permanent and cannot be undone.", "Delete", () {
-            // Add Delete logic here
-          }, isDestructive: true);
+        if (item['route'] != null) {
+          context.push(item['route']);
+        } else if (item['action'] == 'logout') {
+          _confirm(
+            context,
+            "Logout",
+            "Are you sure?",
+            () async {
+              await auth.logout();
+              if (context.mounted) context.go('/login');
+            },
+          );
+        } else if (item['action'] == 'delete') {
+          _confirm(
+            context,
+            "Delete Account",
+            "This cannot be undone.",
+            () {},
+            isDanger: true,
+          );
         }
       },
     );
   }
 
-  void _showConfirmDialog(BuildContext context, String title, String content, String confirmText, VoidCallback onConfirm, {bool isDestructive = false}) {
+  // ⚠️ CONFIRM DIALOG
+  void _confirm(
+    BuildContext context,
+    String title,
+    String text,
+    VoidCallback onConfirm, {
+    bool isDanger = false,
+  }) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        content: Text(content, style: const TextStyle(color: Colors.black54)),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        title: Text(title),
+        content: Text(text),
         actions: [
-          TextButton(onPressed: () => context.pop(), child: const Text("Cancel", style: TextStyle(color: Colors.grey))),
+          TextButton(
+            onPressed: () => context.pop(),
+            child: const Text("Cancel"),
+          ),
           ElevatedButton(
             onPressed: () {
               context.pop();
               onConfirm();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: isDestructive ? dangerColor : primaryColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              elevation: 0,
+              backgroundColor: isDanger ? dangerColor : primaryColor,
             ),
-            child: Text(confirmText, style: const TextStyle(color: Colors.white)),
-          ),
+            child: const Text("Confirm"),
+          )
         ],
       ),
     );

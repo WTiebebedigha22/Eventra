@@ -5,6 +5,7 @@ class ChatSession {
   final List<String> participants;
 
   final String lastMessage;
+  final String lastMessageSenderId; // 🔥 Added this field
   final DateTime lastMessageTime;
 
   final Map<String, int> unreadCounts;
@@ -13,6 +14,7 @@ class ChatSession {
     required this.id,
     required this.participants,
     required this.lastMessage,
+    required this.lastMessageSenderId, // 🔥 Added this
     required this.lastMessageTime,
     required this.unreadCounts,
   });
@@ -40,13 +42,14 @@ class ChatSession {
       id: doc.id,
       participants: List<String>.from(data['participants'] ?? []),
       lastMessage: data['lastMessage'] ?? '',
+      lastMessageSenderId: data['lastMessageSenderId'] ?? '', // 🔥 Added this
       lastMessageTime:
           (data['lastMessageTime'] as Timestamp?)?.toDate() ??
               DateTime.now(),
 
       // 🔥 SAFE CASTING (prevents crash)
       unreadCounts: (data['unreadCounts'] as Map<String, dynamic>? ?? {})
-          .map((key, value) => MapEntry(key, value as int)),
+          .map((key, value) => MapEntry(key, (value as num).toInt())), // using num for safety
     );
   }
 
@@ -57,6 +60,7 @@ class ChatSession {
     return {
       'participants': participants,
       'lastMessage': lastMessage,
+      'lastMessageSenderId': lastMessageSenderId,
       'lastMessageTime': FieldValue.serverTimestamp(),
       'unreadCounts': unreadCounts,
     };
