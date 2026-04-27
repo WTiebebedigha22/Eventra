@@ -191,7 +191,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
-  /// ─── VIDEO PLAYER ─────────────────────────────
   Widget _buildGradientOverlay() => const DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -202,6 +201,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         ),
       );
 
+  // ✅ FIXED: correct full nested path
   Widget _buildBottomActionPanel(BuildContext context) {
     return Container(
       padding: EdgeInsets.only(
@@ -210,16 +210,38 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         right: 20,
         top: 15,
       ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, -3),
+          ),
+        ],
+      ),
       child: Row(
         children: [
           Expanded(
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: bravelionBlue,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              onPressed: () =>
-                  context.push('/event/${widget.eventId}/purchase-tickets'),
-              child: const Text("PURCHASE TICKETS"),
+              onPressed: () => context.push(
+                '/home/event/${widget.eventId}/purchase-tickets', // ✅ Fixed path
+              ),
+              child: const Text(
+                "PURCHASE TICKETS",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
             ),
           ),
         ],
@@ -264,7 +286,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   Widget _buildUserSection(BuildContext context, Map<String, dynamic> data) {
     return Row(
       children: [
-        CircleAvatar(),
+        const CircleAvatar(),
         const SizedBox(width: 10),
         Text(data['username'] ?? "Organizer"),
       ],

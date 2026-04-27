@@ -12,6 +12,8 @@ import '../ui/auth/login_screen.dart';
 import '../ui/auth/register_screen.dart';
 import '../ui/auth/forgot_password.dart';
 import '../ui/bookings/ticket_purchase_screen.dart';
+import '../ui/bookings/payment_screen.dart';
+import '../ui/bookings/qr_ticket_screen.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/home/search_screen.dart';
 import '../ui/events/event_list_screen.dart';
@@ -190,6 +192,47 @@ class AppRouter {
               ],
             ),
           ],
+        ),
+
+        // ───────────────── PAYMENT ─────────────────
+        // Flow: TicketPurchaseScreen → PaymentScreen → TicketScreen
+        GoRoute(
+          path: '/payment',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+
+            if (extra == null) {
+              return const Scaffold(
+                body: Center(child: Text("Missing payment details")),
+              );
+            }
+
+            return PaymentScreen(
+              eventId: extra['eventId'] as String,
+              ticketId: extra['ticketId'] as String,
+              totalAmount: (extra['totalAmount'] as num).toDouble(),
+              quantity: extra['quantity'] as int,
+            );
+          },
+        ),
+
+        // ───────────────── TICKET QR ─────────────────
+        // Destination after successful payment
+        GoRoute(
+          path: '/ticket/:ticketId',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (context, state) {
+            final ticketId = state.pathParameters['ticketId'];
+
+            if (ticketId == null || ticketId.isEmpty) {
+              return const Scaffold(
+                body: Center(child: Text("Invalid Ticket ID")),
+              );
+            }
+
+            return TicketScreen(ticketId: ticketId);
+          },
         ),
 
         // ───────────────── CHAT ROOM ─────────────────

@@ -23,6 +23,7 @@ class TicketPurchaseScreen extends StatefulWidget {
 
 class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
   int quantity = 1;
+  bool _isLoading = false;
   late ConfettiController _confettiController;
 
   static const Color primaryColor = Colors.deepPurpleAccent;
@@ -47,16 +48,18 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  // 🔥 FINAL REAL TICKET SYSTEM
   void _handlePurchase(Map<String, dynamic> eventData) async {
-    final bookingService =
-        Provider.of<BookingService>(context, listen: false);
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("User not logged in")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("User not logged in")),
+        );
+        setState(() => _isLoading = false);
+      }
       return;
     }
 
@@ -70,7 +73,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
 
       final ticketId = ticketRef.id;
 
-      // 2. Save REAL ticket in Firestore
+      // 2. Save ticket in Firestore
       await ticketRef.set({
         'ticketId': ticketId,
         'eventId': widget.eventId,
@@ -79,33 +82,45 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
         'eventImageUrl': eventData['imageUrl'] ?? '',
         'eventDate': eventData['eventDate'],
         'eventLocation': eventData['location'] ?? 'Unknown',
+        'location': eventData['location'] ?? 'Unknown',
         'price': _parsePrice(eventData['price']),
         'quantity': quantity,
         'createdAt': FieldValue.serverTimestamp(),
         'isValid': true,
+        'isPaid': true,
       });
 
-      // 3. Optional booking service sync
-      await bookingService.purchaseTicket(
-        eventId: widget.eventId,
-        eventTitle: eventData['title'] ?? 'Untitled Event',
-        eventImageUrl: eventData['imageUrl'] ?? '',
-        eventDate: (eventData['eventDate'] as Timestamp?)
-                ?.toDate()
-                .toString() ??
-            'TBD',
-        eventLocation: eventData['location'] ?? 'Unknown',
-        price: _parsePrice(eventData['price']),
-        quantity: quantity,
-      );
+      // 3. Fire-and-forget booking service sync — don't await, won't block nav
+      final bookingService =
+          Provider.of<BookingService>(context, listen: false);
+      bookingService
+          .purchaseTicket(
+            eventId: widget.eventId,
+            eventTitle: eventData['title'] ?? 'Untitled Event',
+            eventImageUrl: eventData['imageUrl'] ?? '',
+            eventDate: (eventData['eventDate'] as Timestamp?)
+                    ?.toDate()
+                    .toString() ??
+                'TBD',
+            eventLocation: eventData['location'] ?? 'Unknown',
+            price: _parsePrice(eventData['price']),
+            quantity: quantity,
+          )
+          .catchError((e) => debugPrint('BookingService sync error: $e'));
 
+      // 4. Stop loading and play confetti BEFORE pushing
+      if (!mounted) return;
+      setState(() => _isLoading = false);
       _confettiController.play();
 
-      if (!mounted) return;
+      // 5. Small delay so confetti is visible, then navigate
+      await Future.delayed(const Duration(milliseconds: 600));
 
-      // 4. Navigate to QR Ticket screen
+      if (!mounted) return;
       context.push('/ticket/$ticketId');
     } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Purchase failed: $e"),
@@ -128,7 +143,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new,
                   color: Colors.black, size: 20),
-              onPressed: () => context.pop(),
+              onPressed: _isLoading ? null : () => context.pop(),
             ),
             title: const Text(
               "Checkout",
@@ -224,8 +239,8 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                     const SizedBox(height: 4),
                     Text(
                       data['location'] ?? 'Location TBD',
-                      style: TextStyle(
-                          color: Colors.grey[600], fontSize: 13),
+                      style:
+                          TextStyle(color: Colors.grey[600], fontSize: 13),
                     ),
                   ],
                 ),
@@ -255,12 +270,14 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text("Quantity",
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600)),
+                style:
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             Row(
               children: [
-                _qtyBtn(Icons.remove,
-                    () => setState(() => quantity = quantity > 1 ? quantity - 1 : 1)),
+                _qtyBtn(
+                    Icons.remove,
+                    () => setState(() =>
+                        quantity = quantity > 1 ? quantity - 1 : 1)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   child: Text("$quantity",
@@ -295,8 +312,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: TextStyle(color: Colors.grey[600])),
-        Text(value,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -325,7 +341,8 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Total Pay",
-                    style: TextStyle(fontSize: 16, color: Colors.grey)),
+                    style:
+                        TextStyle(fontSize: 16, color: Colors.grey)),
                 Text(
                   "₦${total.toStringAsFixed(0)}",
                   style: const TextStyle(
@@ -346,14 +363,24 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                     borderRadius: BorderRadius.circular(15),
                   ),
                 ),
-                onPressed: () => _handlePurchase(data),
-                child: const Text(
-                  "Confirm & Pay",
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white),
-                ),
+                onPressed:
+                    _isLoading ? null : () => _handlePurchase(data),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
+                        "Continue to Payment",
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white),
+                      ),
               ),
             ),
           ],

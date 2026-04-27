@@ -2,9 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-
 import '../../providers/chat_provider.dart';
 import '../../models/chat/chat_message.dart';
 
@@ -64,9 +62,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       });
     }
   }
-
-  String _formatTime(DateTime date) =>
-      DateFormat('h:mm a').format(date);
 
   @override
   Widget build(BuildContext context) {
@@ -149,7 +144,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           color: isMe ? primaryColor : Colors.white,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: msg.imageUrl != null && msg.imageUrl!.isNotEmpty
+        child: msg.imageUrl.isNotEmpty
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -209,7 +204,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               await provider.send(
                 chatId: widget.chatId,
                 messageText: text,
-                imageFile: _selectedImage, // 🔥 NEW
+                imageFile: _selectedImage, 
                 otherUserId: widget.otherUserId,
               );
 
