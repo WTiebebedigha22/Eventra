@@ -11,11 +11,7 @@ class TicketPurchaseScreen extends StatefulWidget {
   final String eventId;
   final Map<String, dynamic>? event;
 
-  const TicketPurchaseScreen({
-    super.key,
-    required this.eventId,
-    this.event,
-  });
+  const TicketPurchaseScreen({super.key, required this.eventId, this.event});
 
   @override
   State<TicketPurchaseScreen> createState() => _TicketPurchaseScreenState();
@@ -32,8 +28,9 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
   @override
   void initState() {
     super.initState();
-    _confettiController =
-        ConfettiController(duration: const Duration(seconds: 3));
+    _confettiController = ConfettiController(
+      duration: const Duration(seconds: 3),
+    );
   }
 
   @override
@@ -55,9 +52,9 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("User not logged in")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("User not logged in")));
         setState(() => _isLoading = false);
       }
       return;
@@ -91,16 +88,17 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
       });
 
       // 3. Fire-and-forget booking service sync — don't await, won't block nav
-      final bookingService =
-          Provider.of<BookingService>(context, listen: false);
+      final bookingService = Provider.of<BookingService>(
+        context,
+        listen: false,
+      );
       bookingService
           .purchaseTicket(
             eventId: widget.eventId,
             eventTitle: eventData['title'] ?? 'Untitled Event',
             eventImageUrl: eventData['imageUrl'] ?? '',
-            eventDate: (eventData['eventDate'] as Timestamp?)
-                    ?.toDate()
-                    .toString() ??
+            eventDate:
+                (eventData['eventDate'] as Timestamp?)?.toDate().toString() ??
                 'TBD',
             eventLocation: eventData['location'] ?? 'Unknown',
             price: _parsePrice(eventData['price']),
@@ -141,14 +139,19 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
             backgroundColor: backgroundColor,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new,
-                  color: Colors.black, size: 20),
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: Colors.black,
+                size: 20,
+              ),
               onPressed: _isLoading ? null : () => context.pop(),
             ),
             title: const Text(
               "Checkout",
               style: TextStyle(
-                  color: Colors.black, fontWeight: FontWeight.bold),
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           body: StreamBuilder<DocumentSnapshot>(
@@ -167,8 +170,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                 );
               }
 
-              final data =
-                  snapshot.data!.data() as Map<String, dynamic>? ?? {};
+              final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
 
               final price = _parsePrice(data['price']);
               final totalPrice = price * quantity;
@@ -234,13 +236,14 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                     Text(
                       data['title'] ?? 'Event',
                       style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       data['location'] ?? 'Location TBD',
-                      style:
-                          TextStyle(color: Colors.grey[600], fontSize: 13),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
                     ),
                   ],
                 ),
@@ -260,8 +263,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
         decoration: BoxDecoration(
           border: Border.all(color: Colors.grey.shade200),
           borderRadius: BorderRadius.circular(15),
@@ -269,20 +271,27 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text("Quantity",
-                style:
-                    TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const Text(
+              "Quantity",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
             Row(
               children: [
                 _qtyBtn(
-                    Icons.remove,
-                    () => setState(() =>
-                        quantity = quantity > 1 ? quantity - 1 : 1)),
+                  Icons.remove,
+                  () => setState(
+                    () => quantity = quantity > 1 ? quantity - 1 : 1,
+                  ),
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
-                  child: Text("$quantity",
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    "$quantity",
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
                 _qtyBtn(Icons.add, () => setState(() => quantity++)),
               ],
@@ -327,11 +336,9 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
             color: Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, -5),
-          )
+          ),
         ],
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(30),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
       ),
       child: SafeArea(
         child: Column(
@@ -340,15 +347,17 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Total Pay",
-                    style:
-                        TextStyle(fontSize: 16, color: Colors.grey)),
+                const Text(
+                  "Total Pay",
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
                 Text(
                   "₦${total.toStringAsFixed(0)}",
                   style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: primaryColor),
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
+                  ),
                 ),
               ],
             ),
@@ -363,24 +372,15 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                     borderRadius: BorderRadius.circular(15),
                   ),
                 ),
-                onPressed:
-                    _isLoading ? null : () => _handlePurchase(data),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : const Text(
-                        "Continue to Payment",
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
-                      ),
+                onPressed: () => _handlePurchase(data),
+                child: const Text(
+                  "Continue to Payment",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
           ],
