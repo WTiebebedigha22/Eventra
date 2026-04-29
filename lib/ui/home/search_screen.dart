@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
-import '../components/event_card.dart';
+import '../components/event_card.dart'; // Ensure this path is correct
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -14,8 +15,29 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = "";
-  static const Color primaryColor = Color(0xFF3E5992);
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  
+  String _activeQuery = "";
+  Timer? _debounce;
+  static const Color primaryColor = Colors.deepPurple; // Define your primary color here
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  /// Prevents querying Firestore on every single keystroke.
+  /// Waits 500ms after the user stops typing to trigger the rebuild.
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      setState(() {
+        _activeQuery = query.trim().toLowerCase();
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,41 +47,15 @@ class _SearchScreenState extends State<SearchScreen> {
         backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.white,
-          elevation: 0.5,
-          title: Container(
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF2F3F5),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _searchQuery = value.trim()),
-              style: const TextStyle(color: Colors.black, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: "Search events, tags, or people...",
-                hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
-                prefixIcon: const Icon(Icons.search_rounded, color: primaryColor, size: 18),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.black54, size: 16),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = "");
-                        },
-                      )
-                    : null,
-              ),
-            ),
-          ),
+          elevation: 0,
+          centerTitle: false,
+          title: _buildSearchBar(),
           bottom: const TabBar(
             indicatorColor: primaryColor,
-            indicatorWeight: 2,
+            indicatorWeight: 3,
             labelColor: primaryColor,
-            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             unselectedLabelColor: Colors.grey,
+            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             tabs: [
               Tab(text: "Explore"),
               Tab(text: "People"),
@@ -68,37 +64,63 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
         body: TabBarView(
           children: [
-            _searchQuery.isEmpty ? _buildDiscoveryFeed() : _buildEventResults(),
-            _searchQuery.isEmpty ? _buildSuggestedPeople() : _buildUserResults(),
+            _activeQuery.isEmpty ? _buildDiscoveryFeed() : _buildEventResults(),
+            _activeQuery.isEmpty ? _buildSuggestedPeople() : _buildUserResults(),
           ],
         ),
       ),
     );
   }
 
-  // ─── DISCOVERY FEED ───────────────────────────────────────────────────────
+  Widget _buildSearchBar() {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F3F5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: "Search events, tags, or people...",
+          hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
+          prefixIcon: const Icon(Icons.search_rounded, color: primaryColor, size: 20),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? GestureDetector(
+                  onTap: () {
+                    _searchController.clear();
+                    setState(() => _activeQuery = "");
+                  },
+                  child: const Icon(Icons.cancel, color: Colors.black26, size: 18),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  // ─── TAB 1: EXPLORE / EVENTS ──────────────────────────────────────────────
 
   Widget _buildDiscoveryFeed() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
+      stream: _firestore
           .collection('events')
           .orderBy('createdAt', descending: true)
           .limit(20)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: primaryColor));
-        }
+        if (!snapshot.hasData) return _buildLoadingIndicator();
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty) {
-          return const Center(child: Text("No trending events yet. Check back soon!"));
-        }
-
+        
         return MasonryGridView.count(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 16,
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
@@ -110,23 +132,72 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildDiscoveryCard(Map<String, dynamic> event) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = (screenWidth - 12 * 3) / 2; // 2 columns with 12px gaps
+  Widget _buildEventResults() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('events')
+          .where('title_lowercase', isGreaterThanOrEqualTo: _activeQuery)
+          .where('title_lowercase', isLessThanOrEqualTo: '$_activeQuery\uf8ff')
+          .limit(15)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return _buildLoadingIndicator();
+        final results = snapshot.data!.docs;
+        
+        if (results.isEmpty) return _buildNoResults("No events found for '$_activeQuery'");
 
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: results.length,
+          itemBuilder: (context, index) {
+            final data = results[index].data() as Map<String, dynamic>;
+            data['id'] = results[index].id;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: EventCard(event: data),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDiscoveryCard(Map<String, dynamic> event) {
     return InkWell(
       onTap: () => context.push('/home/event/${event['id']}'),
+      borderRadius: BorderRadius.circular(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: _buildNetworkImage(
-              url: event['imageURL'],
-              width: cardWidth,
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              children: [
+                Image.network(
+                  event['imageURL'] ?? '',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 120,
+                    width: double.infinity,
+                    color: Colors.grey[200],
+                    child: const Icon(Icons.broken_image, color: Colors.black12),
+                  ),
+                ),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black.withOpacity(0.3)],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
@@ -141,244 +212,97 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  // ─── SHARED IMAGE HELPER ──────────────────────────────────────────────────
-
-  Widget _buildNetworkImage({required String? url, required double width}) {
-    // Vary height slightly per card for the staggered masonry effect
-    final height = width * (0.75 + (url?.hashCode ?? 0).abs() % 30 / 100);
-
-    if (url == null || url.isEmpty) {
-      return _buildImagePlaceholder(width: width, height: height);
-    }
-
-    return Image.network(
-      url,
-      width: width,
-      height: height,
-      fit: BoxFit.cover,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) return child;
-        return _buildImagePlaceholder(width: width, height: height);
-      },
-      errorBuilder: (context, error, stackTrace) {
-        return _buildImagePlaceholder(width: width, height: height);
-      },
-    );
-  }
-
-  Widget _buildImagePlaceholder({required double width, required double height}) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF2F3F5),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: const Center(
-        child: Icon(Icons.image_outlined, color: Colors.black26, size: 32),
-      ),
-    );
-  }
-
-  // ─── EVENT SEARCH ─────────────────────────────────────────────────────────
-
-  Widget _buildEventResults() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('events')
-          .where('tags', arrayContains: _searchQuery.toLowerCase())
-          .limit(15)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: primaryColor));
-        }
-        var results = snapshot.data!.docs;
-        if (results.isEmpty) {
-          return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('events')
-                .where('title', isGreaterThanOrEqualTo: _searchQuery)
-                .where('title', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
-                .limit(15)
-                .snapshots(),
-            builder: (context, titleSnapshot) {
-              if (!titleSnapshot.hasData) return const SizedBox();
-              if (titleSnapshot.data!.docs.isEmpty) {
-                return _buildNoResultsText("No events or tags found.");
-              }
-              return _buildEventList(titleSnapshot.data!.docs);
-            },
-          );
-        }
-        return _buildEventList(results);
-      },
-    );
-  }
-
-  Widget _buildEventList(List<QueryDocumentSnapshot> docs) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(15),
-      itemCount: docs.length,
-      itemBuilder: (context, index) {
-        final data = docs[index].data() as Map<String, dynamic>;
-        data['id'] = docs[index].id;
-        return EventCard(event: data);
-      },
-    );
-  }
-
-  // ─── SUGGESTED PEOPLE (shown when query is empty) ─────────────────────────
+  // ─── TAB 2: PEOPLE ────────────────────────────────────────────────────────
 
   Widget _buildSuggestedPeople() {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
+      stream: _firestore
           .collection('users')
           .orderBy('followerCount', descending: true)
-          .limit(20)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: primaryColor));
-        }
-
-        final docs = snapshot.data!.docs
-            .where((d) => d.id != currentUid)
-            .toList();
-
-        if (docs.isEmpty) {
-          return const Center(
-            child: Text(
-              "No suggested people yet.",
-              style: TextStyle(color: Colors.black38, fontSize: 14),
-            ),
-          );
-        }
-
-        return CustomScrollView(
-          slivers: [
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-                child: Text(
-                  "Suggested People",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final user = docs[index].data() as Map<String, dynamic>;
-                  return _buildSuggestedUserTile(user);
-                },
-                childCount: docs.length,
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSuggestedUserTile(Map<String, dynamic> user) {
-    final followerCount = user['followerCount'] as int? ?? 0;
-
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: CircleAvatar(
-        radius: 24,
-        backgroundColor: Colors.grey[200],
-        backgroundImage: user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
-        child: user['photoURL'] == null
-            ? const Icon(Icons.person, color: Colors.grey)
-            : null,
-      ),
-      title: Text(
-        user['displayName'] ?? 'User',
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-      ),
-      subtitle: Text(
-        "@${user['username'] ?? ''}",
-        style: const TextStyle(color: Colors.black54, fontSize: 12),
-      ),
-      trailing: followerCount > 0
-          ? Text(
-              _formatCount(followerCount),
-              style: const TextStyle(
-                color: Colors.black38,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            )
-          : null,
-      onTap: () => context.push('/user/${user['uid']}'),
-    );
-  }
-
-  String _formatCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M followers';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K followers';
-    return '$count followers';
-  }
-
-  // ─── USER SEARCH (shown when query is non-empty) ──────────────────────────
-
-  Widget _buildUserResults() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .where('username', isGreaterThanOrEqualTo: _searchQuery.toLowerCase())
-          .where('username', isLessThanOrEqualTo: '${_searchQuery.toLowerCase()}\uf8ff')
           .limit(15)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: primaryColor));
-        }
-        final results = snapshot.data!.docs;
-        if (results.isEmpty) return _buildNoResultsText("No users found.");
+        if (!snapshot.hasData) return _buildLoadingIndicator();
+        final docs = snapshot.data!.docs.where((d) => d.id != currentUid).toList();
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(10),
-          itemCount: results.length,
+        return ListView.separated(
+          padding: const EdgeInsets.only(top: 10),
+          itemCount: docs.length,
+          separatorBuilder: (context, index) => const Divider(height: 1, indent: 80),
           itemBuilder: (context, index) {
-            final user = results[index].data() as Map<String, dynamic>;
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.grey[200],
-                backgroundImage:
-                    user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
-                child: user['photoURL'] == null
-                    ? const Icon(Icons.person, color: Colors.grey)
-                    : null,
-              ),
-              title: Text(
-                user['displayName'] ?? 'User',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text("@${user['username']}"),
-              onTap: () => context.push('/user/${user['uid']}'),
-            );
+            final user = docs[index].data() as Map<String, dynamic>;
+            return _buildUserTile(user);
           },
         );
       },
     );
   }
 
-  // ─── HELPERS ──────────────────────────────────────────────────────────────
+  Widget _buildUserResults() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('users')
+          .where('username', isGreaterThanOrEqualTo: _activeQuery)
+          .where('username', isLessThanOrEqualTo: '$_activeQuery\uf8ff')
+          .limit(20)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return _buildLoadingIndicator();
+        final results = snapshot.data!.docs;
 
-  Widget _buildNoResultsText(String text) {
+        if (results.isEmpty) return _buildNoResults("No people found matching '$_activeQuery'");
+
+        return ListView.separated(
+          padding: const EdgeInsets.only(top: 10),
+          itemCount: results.length,
+          separatorBuilder: (context, index) => const Divider(height: 1, indent: 80),
+          itemBuilder: (context, index) {
+            final user = results[index].data() as Map<String, dynamic>;
+            return _buildUserTile(user);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildUserTile(Map<String, dynamic> user) {
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: Colors.grey[100],
+        backgroundImage: user['photoURL'] != null ? NetworkImage(user['photoURL']) : null,
+        child: user['photoURL'] == null ? const Icon(Icons.person, color: Colors.grey) : null,
+      ),
+      title: Text(
+        user['displayName'] ?? 'User',
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+      ),
+      subtitle: Text(
+        "@${user['username'] ?? ''}",
+        style: const TextStyle(color: Colors.grey, fontSize: 13),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded, color: Colors.black12),
+      onTap: () => context.push('/user/${user['uid'] ?? user['id']}'),
+    );
+  }
+
+  // ─── UTILS ────────────────────────────────────────────────────────────────
+
+  Widget _buildLoadingIndicator() {
+    return const Center(child: CircularProgressIndicator(color: primaryColor, strokeWidth: 2));
+  }
+
+  Widget _buildNoResults(String message) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 50),
-        child: Text(text, style: const TextStyle(color: Colors.black54)),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.search_off_rounded, size: 48, color: Colors.black12),
+          const SizedBox(height: 12),
+          Text(message, style: const TextStyle(color: Colors.black45)),
+        ],
       ),
     );
   }

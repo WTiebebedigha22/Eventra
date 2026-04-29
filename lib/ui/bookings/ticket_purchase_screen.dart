@@ -45,7 +45,9 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  void _handlePurchase(Map<String, dynamic> eventData) async {
+  /// Step 1: Create an unpaid ticket in Firestore, then navigate to PaymentScreen.
+  /// PaymentScreen is responsible for marking the ticket as paid on success.
+  void _goToPayment(Map<String, dynamic> eventData) async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
 
@@ -60,8 +62,14 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
       return;
     }
 
+    // Capture BookingService BEFORE any await — context may be stale after async gaps
+    final bookingService = Provider.of<BookingService>(context, listen: false);
+
     try {
-      // 1. Create ticket reference
+      final price = _parsePrice(eventData['price']);
+      final total = price * quantity;
+
+      // 1. Create ticket reference with isPaid: false
       final ticketRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -70,7 +78,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
 
       final ticketId = ticketRef.id;
 
-      // 2. Save ticket in Firestore
+      // 2. Save unpaid ticket to Firestore
       await ticketRef.set({
         'ticketId': ticketId,
         'eventId': widget.eventId,
@@ -80,52 +88,61 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
         'eventDate': eventData['eventDate'],
         'eventLocation': eventData['location'] ?? 'Unknown',
         'location': eventData['location'] ?? 'Unknown',
-        'price': _parsePrice(eventData['price']),
+        'price': price,
         'quantity': quantity,
         'createdAt': FieldValue.serverTimestamp(),
-        'isValid': true,
-        'isPaid': true,
+        'isValid': false,
+        'isPaid': false,
       });
 
-      // 3. Fire-and-forget booking service sync — don't await, won't block nav
-      final bookingService = Provider.of<BookingService>(
-        context,
-        listen: false,
-      );
+      // 3. Fire-and-forget booking service sync
       bookingService
           .purchaseTicket(
             eventId: widget.eventId,
+            ticketId: ticketId,
             eventTitle: eventData['title'] ?? 'Untitled Event',
             eventImageUrl: eventData['imageUrl'] ?? '',
             eventDate:
                 (eventData['eventDate'] as Timestamp?)?.toDate().toString() ??
                 'TBD',
             eventLocation: eventData['location'] ?? 'Unknown',
-            price: _parsePrice(eventData['price']),
+            price: price,
             quantity: quantity,
           )
           .catchError((e) => debugPrint('BookingService sync error: $e'));
 
-      // 4. Stop loading and play confetti BEFORE pushing
       if (!mounted) return;
       setState(() => _isLoading = false);
-      _confettiController.play();
 
-      // 5. Small delay so confetti is visible, then navigate
-      await Future.delayed(const Duration(milliseconds: 600));
-
-      if (!mounted) return;
-      context.push('/ticket/$ticketId');
+      // 4. Navigate to PaymentScreen
+      context.push(
+        '/payment',
+        extra: {
+          'eventId': widget.eventId,
+          'ticketId': ticketId,
+          'totalAmount': total,
+          'quantity': quantity,
+        },
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Purchase failed: $e"),
+          content: Text("Error preparing order: $e"),
           backgroundColor: Colors.redAccent,
         ),
       );
     }
+  }
+
+  /// Called by PaymentScreen (via callback or from ticket screen) after
+  /// successful payment — plays confetti then navigates to the ticket.
+  void playSuccessConfetti(String ticketId) async {
+    _confettiController.play();
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    context.push('/ticket/$ticketId');
   }
 
   @override
@@ -372,15 +389,24 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
                     borderRadius: BorderRadius.circular(15),
                   ),
                 ),
-                onPressed: () => _handlePurchase(data),
-                child: const Text(
-                  "Continue to Payment",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
+                onPressed: _isLoading ? null : () => _goToPayment(data),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
+                        "Continue to Payment",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
               ),
             ),
           ],

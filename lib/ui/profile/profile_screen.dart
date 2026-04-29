@@ -14,23 +14,40 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   bool isFollowing = false;
   bool isLoadingFollow = false;
+  late final bool isMe;
+
+  // Memoized Streams to prevent excessive Firebase reads on rebuilds
+  late final Stream<DocumentSnapshot> _userStream;
+  late final Stream<QuerySnapshot> _postsStream;
+  Stream<QuerySnapshot>? _likedStream;
+  Stream<QuerySnapshot>? _savedStream;
 
   static const Color brandColor = Color(0xFF3E5992);
-  static const Color jijiGreen = Color(0xFF3BA73A);
   static const Color surfaceColor = Colors.white;
 
   @override
   void initState() {
     super.initState();
-    if (widget.userId != currentUid) {
+    isMe = widget.userId == currentUid;
+    
+    // 1. Initialize streams once to prevent re-fetching on every setState
+    _userStream = _firestore.collection('users').doc(widget.userId).snapshots();
+    _postsStream = _firestore.collection('posts').where('creatorId', isEqualTo: widget.userId).snapshots();
+    
+    if (isMe) {
+      _likedStream = _firestore.collection('posts').where('likedBy', arrayContains: widget.userId).snapshots();
+      _savedStream = _firestore.collection('users').doc(widget.userId).collection('bookmarks').snapshots();
+    } else {
       _checkFollowStatus();
     }
   }
 
   void _checkFollowStatus() async {
-    final doc = await FirebaseFirestore.instance
+    final doc = await _firestore
         .collection('users')
         .doc(widget.userId)
         .collection('followers')
@@ -48,52 +65,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
       isLoadingFollow = true;
     });
 
-    final db = FirebaseFirestore.instance;
-    final userRef = db.collection('users').doc(widget.userId);
-    final currentUserRef = db.collection('users').doc(currentUid);
+    final userRef = _firestore.collection('users').doc(widget.userId);
+    final currentUserRef = _firestore.collection('users').doc(currentUid);
 
-    // Subcollections for tracking the relationship on both sides
     final followerRef = userRef.collection('followers').doc(currentUid);
-    final followingRef = currentUserRef
-        .collection('following')
-        .doc(widget.userId);
+    final followingRef = currentUserRef.collection('following').doc(widget.userId);
 
-    final batch = db.batch();
+    final batch = _firestore.batch();
 
     try {
       if (isFollowing) {
         batch.set(followerRef, {'followedAt': FieldValue.serverTimestamp()});
         batch.set(followingRef, {'followedAt': FieldValue.serverTimestamp()});
         batch.update(userRef, {'followerCount': FieldValue.increment(1)});
-        batch.update(currentUserRef, {
-          'followingCount': FieldValue.increment(1),
-        });
+        batch.update(currentUserRef, {'followingCount': FieldValue.increment(1)});
       } else {
         batch.delete(followerRef);
         batch.delete(followingRef);
         batch.update(userRef, {'followerCount': FieldValue.increment(-1)});
-        batch.update(currentUserRef, {
-          'followingCount': FieldValue.increment(-1),
-        });
+        batch.update(currentUserRef, {'followingCount': FieldValue.increment(-1)});
       }
-
       await batch.commit();
     } catch (e) {
-      // Revert UI state on failure
-      if (mounted) setState(() => isFollowing = !isFollowing);
+      if (mounted) setState(() => isFollowing = !isFollowing); // Revert on failure
       debugPrint("Error toggling follow: $e");
     } finally {
       if (mounted) setState(() => isLoadingFollow = false);
     }
   }
 
-  // Helper method to generate a consistent Chat Room ID based on both UIDs
   String _getChatRoomId(String user1, String user2) {
-    if (user1.compareTo(user2) > 0) {
-      return '${user2}_$user1';
-    } else {
-      return '${user1}_$user2';
-    }
+    return (user1.compareTo(user2) > 0) ? '${user2}_$user1' : '${user1}_$user2';
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
+    return count.toString();
   }
 
   void _showMoreOptions() {
@@ -112,14 +120,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: () => Navigator.pop(context),
             ),
             ListTile(
-              leading: const Icon(
-                Icons.report_problem_outlined,
-                color: Colors.red,
-              ),
-              title: const Text(
-                "Report User",
-                style: TextStyle(color: Colors.red),
-              ),
+              leading: const Icon(Icons.report_problem_outlined, color: Colors.red),
+              title: const Text("Report User", style: TextStyle(color: Colors.red)),
               onTap: () => Navigator.pop(context),
             ),
           ],
@@ -130,26 +132,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isMe = widget.userId == currentUid;
-
     return Scaffold(
       backgroundColor: surfaceColor,
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(widget.userId)
-            .snapshots(),
+        stream: _userStream,
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(color: brandColor),
-            );
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator(color: brandColor));
+          }
+
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return const Center(child: Text("User not found"));
           }
 
           final userData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
           final String? photoURL = userData['photoURL'];
           final String displayName = userData['displayName'] ?? 'User';
           final String username = userData['username'] ?? '';
+          final String bio = userData['bio'] ?? '';
 
           return DefaultTabController(
             length: isMe ? 3 : 1,
@@ -165,21 +165,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   leading: !isMe ? const BackButton(color: Colors.black) : null,
                   title: Text(
                     isMe ? "My Profile" : "@$username",
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   actions: [
                     IconButton(
-                      icon: Icon(
-                        isMe ? Icons.settings_outlined : Icons.more_horiz,
-                        color: Colors.black,
-                      ),
-                      onPressed: isMe
-                          ? () => context.push('/settings')
-                          : _showMoreOptions,
+                      icon: Icon(isMe ? Icons.settings_outlined : Icons.more_horiz, color: Colors.black),
+                      onPressed: isMe ? () => context.push('/settings') : _showMoreOptions,
                     ),
                   ],
                 ),
@@ -189,7 +180,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     children: [
                       const SizedBox(height: 10),
-
                       // Avatar
                       Stack(
                         children: [
@@ -197,96 +187,62 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.grey.shade100,
-                                width: 2,
-                              ),
+                              border: Border.all(color: Colors.grey.shade200, width: 2),
                             ),
                             child: CircleAvatar(
-                              radius: 48,
+                              radius: 46,
                               backgroundColor: Colors.grey[100],
-                              backgroundImage:
-                                  (photoURL != null && photoURL.isNotEmpty)
-                                  ? NetworkImage(photoURL)
-                                  : null,
+                              backgroundImage: (photoURL != null && photoURL.isNotEmpty) ? NetworkImage(photoURL) : null,
                               child: (photoURL == null || photoURL.isEmpty)
-                                  ? const Icon(
-                                      Icons.person,
-                                      size: 50,
-                                      color: Colors.grey,
-                                    )
+                                  ? const Icon(Icons.person, size: 40, color: Colors.black26)
                                   : null,
                             ),
                           ),
                           if (isMe)
                             Positioned(
-                              bottom: 5,
-                              right: 5,
+                              bottom: 2,
+                              right: 2,
                               child: GestureDetector(
-                                onTap: () => HapticFeedback.lightImpact(),
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  // Add photo logic
+                                },
                                 child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
                                     color: brandColor,
                                     shape: BoxShape.circle,
+                                    border: Border.all(color: surfaceColor, width: 2),
                                   ),
-                                  child: const Icon(
-                                    Icons.add,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
+                                  child: const Icon(Icons.add_a_photo_rounded, size: 14, color: Colors.white),
                                 ),
                               ),
                             ),
                         ],
                       ),
-
                       const SizedBox(height: 12),
-
-                      // Display name
-                      Text(
-                        displayName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-
-                      // Username
+                      Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                      
                       if (!isMe && username.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            "@$username",
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
+                          child: Text("@$username", style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
                         ),
 
-                      // Bio
-                      if ((userData['bio'] ?? '').toString().isNotEmpty)
+                      if (bio.isNotEmpty)
                         Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 40,
-                            vertical: 8,
-                          ),
+                          padding: const EdgeInsets.fromLTRB(40, 12, 40, 0),
                           child: Text(
-                            userData['bio'],
+                            bio,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.black87,
-                            ),
+                            style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3),
                           ),
                         ),
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
                       _buildStatsRow(userData),
                       const SizedBox(height: 20),
-                      // Pass user data to actions row for chat routing
-                      _buildActionButtons(isMe, userData),
+                      _buildActionButtons(userData),
                       const SizedBox(height: 20),
                     ],
                   ),
@@ -298,8 +254,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   delegate: _SliverAppBarDelegate(
                     TabBar(
                       indicatorColor: Colors.black,
-                      indicatorWeight: 1.5,
-                      indicatorSize: TabBarIndicatorSize.label,
+                      indicatorWeight: 2,
                       labelColor: Colors.black,
                       unselectedLabelColor: Colors.grey.shade400,
                       tabs: isMe
@@ -317,8 +272,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // ── Tab bodies ───────────────────────────────────────────
               body: TabBarView(
                 children: isMe
-                    ? [_buildPostsGrid(), _buildLikedGrid(), _buildSavedGrid()]
-                    : [_buildPostsGrid()],
+                    ? [
+                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined),
+                        _buildGrid(_likedStream!, "No liked posts", Icons.favorite_border_rounded),
+                        _buildGrid(_savedStream!, "No saved items", Icons.bookmark_outline_rounded),
+                      ]
+                    : [
+                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined),
+                      ],
               ),
             ),
           );
@@ -333,46 +294,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _statItem("${data['followingCount'] ?? 0}", "Following"),
+        _statItem(data['followingCount'] ?? 0, "Following"),
         _statDivider(),
-        _statItem("${data['followerCount'] ?? 0}", "Followers"),
+        _statItem(data['followerCount'] ?? 0, "Followers"),
         _statDivider(),
-        _statItem("${data['totalLikes'] ?? 0}", "Likes"),
+        _statItem(data['totalLikes'] ?? 0, "Likes"),
       ],
     );
   }
 
   Widget _statDivider() => Container(
-    height: 15,
+    height: 20,
     width: 1,
     color: Colors.grey.shade300,
-    margin: const EdgeInsets.symmetric(horizontal: 15),
+    margin: const EdgeInsets.symmetric(horizontal: 24),
   );
 
-  Widget _statItem(String count, String label) => Column(
+  Widget _statItem(int count, String label) => Column(
     children: [
       Text(
-        count,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+        _formatCount(count),
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
       ),
-      const SizedBox(height: 2),
-      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+      const SizedBox(height: 4),
+      Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontWeight: FontWeight.w500)),
     ],
   );
 
   // ─── ACTION BUTTONS ───────────────────────────────────────────────────────
 
-  Widget _buildActionButtons(bool isMe, Map<String, dynamic> userData) {
+  Widget _buildActionButtons(Map<String, dynamic> userData) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: [
           Expanded(
             child: _actionButton(
-              isMe ? "Edit Profile" : (isFollowing ? "Unfollow" : "Follow"),
-              isMe || isFollowing ? Colors.white : Colors.deepPurpleAccent,
-              isMe || isFollowing ? Colors.black : Colors.white,
-              isMe ? () => context.push('./edit') : _toggleFollow,
+              text: isMe ? "Edit Profile" : (isFollowing ? "Unfollow" : "Follow"),
+              isFilled: !isMe && !isFollowing,
+              onTap: isMe ? () => context.push('/edit') : _toggleFollow,
             ),
           ),
           const SizedBox(width: 8),
@@ -382,11 +342,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (isMe) {
                 _showMoreOptions();
               } else {
-                // 1. Generate the unique Chat ID
                 String chatId = _getChatRoomId(currentUid, widget.userId);
-
-                // 2. Navigate using the path defined in your AppRouter
-                // This matches: '/chat' + '/room/:chatId/:otherUserId'
                 context.push('/chat/room/$chatId/${widget.userId}');
               }
             },
@@ -396,99 +352,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _actionButton(
-    String text,
-    Color bg,
-    Color txtColor,
-    VoidCallback onTap,
-  ) => SizedBox(
-    height: 44,
-    child: ElevatedButton(
-      onPressed: onTap,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: bg,
-        foregroundColor: txtColor,
-        elevation: 0,
-        side: BorderSide(
-          color: bg == Colors.white ? Colors.grey.shade300 : Colors.transparent,
+  Widget _actionButton({required String text, required bool isFilled, required VoidCallback onTap}) {
+    return SizedBox(
+      height: 40,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isFilled ? brandColor : Colors.white,
+          foregroundColor: isFilled ? Colors.white : Colors.black87,
+          elevation: 0,
+          side: BorderSide(color: isFilled ? Colors.transparent : Colors.grey.shade300),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
       ),
-      child: Text(
-        text,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-      ),
-    ),
-  );
+    );
+  }
 
   Widget _squareIconButton(IconData icon, VoidCallback onTap) => Container(
-    height: 44,
-    width: 44,
+    height: 40,
+    width: 40,
     decoration: BoxDecoration(
       border: Border.all(color: Colors.grey.shade300),
       borderRadius: BorderRadius.circular(8),
     ),
     child: IconButton(
-      icon: Icon(icon, size: 20, color: Colors.black),
+      icon: Icon(icon, size: 20, color: Colors.black87),
+      padding: EdgeInsets.zero,
       onPressed: onTap,
     ),
   );
 
   // ─── GRIDS ────────────────────────────────────────────────────────────────
 
-  Widget _buildPostsGrid() => _buildBaseGrid(
-    FirebaseFirestore.instance
-        .collection('posts')
-        .where('creatorId', isEqualTo: widget.userId)
-        .snapshots(),
-    "No posts yet",
-  );
-
-  Widget _buildLikedGrid() => _buildBaseGrid(
-    FirebaseFirestore.instance
-        .collection('posts')
-        .where('likedBy', arrayContains: widget.userId)
-        .snapshots(),
-    "No liked posts",
-  );
-
-  Widget _buildSavedGrid() => _buildBaseGrid(
-    FirebaseFirestore.instance
-        .collection('users')
-        .doc(widget.userId)
-        .collection('bookmarks')
-        .snapshots(),
-    "No saved items",
-  );
-
-  Widget _buildBaseGrid(Stream<QuerySnapshot> stream, String emptyMsg) {
+  Widget _buildGrid(Stream<QuerySnapshot> stream, String emptyTitle, IconData emptyIcon) {
     return StreamBuilder<QuerySnapshot>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: brandColor),
-          );
+          return const Center(child: CircularProgressIndicator(color: brandColor));
         }
+        
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
           return Center(
-            child: Text(emptyMsg, style: const TextStyle(color: Colors.grey)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(emptyIcon, size: 48, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                Text(emptyTitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 15)),
+              ],
+            ),
           );
         }
 
         return GridView.builder(
-          padding: const EdgeInsets.all(1),
+          padding: EdgeInsets.zero, // Important for TabBarView inside NestedScrollView
+          physics: const ClampingScrollPhysics(), // Prevent double bouncing
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            childAspectRatio: 0.75,
+            childAspectRatio: 0.8,
             crossAxisSpacing: 2,
             mainAxisSpacing: 2,
           ),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            final String media = data['imageUrl'] ?? data['mediaUrl'] ?? '';
+            final String mediaUrl = data['imageUrl'] ?? data['mediaUrl'] ?? '';
             final String price = data['price'] ?? '';
 
             return GestureDetector(
@@ -496,57 +427,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  media.isNotEmpty
-                      ? Image.network(
-                          media,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: Colors.grey[200],
-                            child: const Icon(
-                              Icons.broken_image_outlined,
-                              color: Colors.black26,
-                            ),
-                          ),
-                        )
-                      : Container(
-                          color: Colors.grey[200],
-                          child: const Icon(
-                            Icons.image_outlined,
-                            color: Colors.black26,
-                          ),
-                        ),
+                  Container(color: Colors.grey.shade200),
+                  if (mediaUrl.isNotEmpty)
+                    Image.network(
+                      mediaUrl,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                      },
+                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: Colors.black26),
+                    ),
                   if (price.isNotEmpty)
                     Positioned(
-                      bottom: 4,
-                      left: 4,
+                      bottom: 6,
+                      left: 6,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 2,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.black54,
+                          color: Colors.black.withOpacity(0.6),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           price,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
-                  const Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Icon(
-                      Icons.play_arrow_outlined,
-                      color: Colors.white70,
-                      size: 16,
-                    ),
-                  ),
                 ],
               ),
             );
@@ -570,10 +477,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(context, offset, overlaps) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
-    ),
+    color: Colors.white,
     child: _tabBar,
   );
 

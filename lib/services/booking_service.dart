@@ -6,14 +6,19 @@ class BookingService extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  final String _bookingCollection = 'bookings';
   bool _isLoading = false;
-
   bool get isLoading => _isLoading;
 
-  // --- 1. Purchase Ticket (Sync with Firestore) ---
+  // ---------------------------------------------------------------------------
+  // 1. Sync ticket to the top-level `bookings` collection.
+  //    Called fire-and-forget from TicketPurchaseScreen AFTER the ticket has
+  //    already been written to users/{uid}/tickets. This method does NOT
+  //    duplicate that write — it only syncs a lightweight booking record used
+  //    for admin queries and gate scanning.
+  // ---------------------------------------------------------------------------
   Future<void> purchaseTicket({
     required String eventId,
+    required String ticketId,       // pass the ID already created in the screen
     required String eventTitle,
     required String eventImageUrl,
     required String eventDate,
@@ -24,64 +29,95 @@ class BookingService extends ChangeNotifier {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User must be logged in to book.");
 
-    _setLoading(true);
-
     try {
       final double totalAmount = price * quantity;
 
-      // Generate a unique Ticket ID
-      final String ticketId = 'EVN-${DateTime.now().millisecondsSinceEpoch}-${uid.substring(0, 4)}'.toUpperCase();
-
-      final bookingData = {
+      await _firestore.collection('bookings').doc(ticketId).set({
         'userId': uid,
         'eventId': eventId,
+        'ticketId': ticketId,
         'eventTitle': eventTitle,
         'eventImageUrl': eventImageUrl,
         'eventDate': eventDate,
         'eventLocation': eventLocation,
         'totalAmount': totalAmount,
         'quantity': quantity,
-        'ticketId': ticketId,
-        'bookingStatus': 'confirmed', // confirmed, cancelled, attended
+        'bookingStatus': 'pending',       // becomes 'confirmed' after payment
+        'qrCodeData': 'eventra_verify_$ticketId',
         'createdAt': FieldValue.serverTimestamp(),
-        'qrCodeData': 'eventra_verify_$ticketId', // Used for scanning at the gate
-      };
+      });
+    } catch (e) {
+      debugPrint("BookingService sync error: $e");
+      rethrow;
+    }
+  }
 
-      // Use a batch write to ensure data integrity
-      WriteBatch batch = _firestore.batch();
-      
-      DocumentReference bookingRef = _firestore.collection(_bookingCollection).doc();
-      batch.set(bookingRef, bookingData);
+  // ---------------------------------------------------------------------------
+  // 2. Called by PaymentScreen after successful payment — marks the booking
+  //    record confirmed and updates the user's ticket in one batch.
+  // ---------------------------------------------------------------------------
+  Future<void> confirmPayment({
+    required String ticketId,
+    required String paymentMethod,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw Exception("User must be logged in.");
 
-      // (Optional) Update the event's ticket count logic here
-      // DocumentReference eventRef = _firestore.collection('events').doc(eventId);
-      // batch.update(eventRef, {'ticketsSold': FieldValue.increment(quantity)});
+    _setLoading(true);
+
+    try {
+      final batch = _firestore.batch();
+
+      // Mark booking confirmed
+      final bookingRef = _firestore.collection('bookings').doc(ticketId);
+      batch.update(bookingRef, {
+        'bookingStatus': 'confirmed',
+        'paymentMethod': paymentMethod,
+        'paidAt': FieldValue.serverTimestamp(),
+      });
+
+      // Mark user ticket valid
+      final ticketRef = _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('tickets')
+          .doc(ticketId);
+      batch.update(ticketRef, {
+        'isPaid': true,
+        'isValid': true,
+        'paymentMethod': paymentMethod,
+        'paidAt': FieldValue.serverTimestamp(),
+      });
 
       await batch.commit();
     } catch (e) {
-      debugPrint("Booking Error: $e");
+      debugPrint("BookingService confirmPayment error: $e");
       rethrow;
     } finally {
       _setLoading(false);
     }
   }
 
-  // --- 2. Real-Time "My Tickets" Stream ---
+  // ---------------------------------------------------------------------------
+  // 3. Real-time stream of the current user's confirmed tickets
+  // ---------------------------------------------------------------------------
   Stream<QuerySnapshot> getUserTicketsStream() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return const Stream.empty();
 
     return _firestore
-        .collection(_bookingCollection)
+        .collection('bookings')
         .where('userId', isEqualTo: uid)
         .where('bookingStatus', isEqualTo: 'confirmed')
         .orderBy('createdAt', descending: true)
         .snapshots();
   }
 
-  // --- 3. Get Specific Ticket Details ---
-  Future<DocumentSnapshot> getTicketDetails(String bookingId) {
-    return _firestore.collection(_bookingCollection).doc(bookingId).get();
+  // ---------------------------------------------------------------------------
+  // 4. Fetch a specific booking record
+  // ---------------------------------------------------------------------------
+  Future<DocumentSnapshot> getTicketDetails(String ticketId) {
+    return _firestore.collection('bookings').doc(ticketId).get();
   }
 
   void _setLoading(bool value) {
