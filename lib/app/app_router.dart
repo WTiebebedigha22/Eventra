@@ -31,7 +31,9 @@ import '../ui/settings/privacy.dart';
 import '../ui/settings/security.dart';
 import '../ui/settings/theme.dart';
 import '../ui/post/create_post.dart';
+import '../ui/post/post_detail.dart';
 import '../ui/post/tag_people.dart';
+import '../ui/home/explore_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -39,10 +41,12 @@ final _shellNavigatorHomeKey =
     GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
 final _shellNavigatorChatKey =
     GlobalKey<NavigatorState>(debugLabel: 'chat');
-final _shellNavigatorProfileKey =
-    GlobalKey<NavigatorState>(debugLabel: 'profile');
+final _shellNavigatorExploreKey =
+    GlobalKey<NavigatorState>(debugLabel: 'explore');
 final _shellNavigatorSearchKey =
     GlobalKey<NavigatorState>(debugLabel: 'search');
+final _shellNavigatorProfileKey =
+    GlobalKey<NavigatorState>(debugLabel: 'profile');
 
 class AppRouter {
   GoRouter? _router;
@@ -103,6 +107,7 @@ class AppRouter {
           branches: [
 
             // ── HOME / EVENTS ──
+            // Branch index: 0  →  nav index 0
             StatefulShellBranch(
               navigatorKey: _shellNavigatorHomeKey,
               routes: [
@@ -143,7 +148,8 @@ class AppRouter {
               ],
             ),
 
-            // ── CHAT ──
+            // ── CHAT / MESSAGES ──
+            // Branch index: 1  →  nav index 1
             StatefulShellBranch(
               navigatorKey: _shellNavigatorChatKey,
               routes: [
@@ -154,7 +160,32 @@ class AppRouter {
               ],
             ),
 
+            // ── EXPLORE  (FAB: create post sits above this tab in HomeScreen) ──
+            // Branch index: 2  →  nav index 2  (centre tab)
+            StatefulShellBranch(
+              navigatorKey: _shellNavigatorExploreKey,
+              routes: [
+                GoRoute(
+                  path: '/explore',
+                  builder: (_, __) => const MasonryExploreScreen(),
+                ),
+              ],
+            ),
+
+            // ── SEARCH ──
+            // Branch index: 3  →  nav index 3
+            StatefulShellBranch(
+              navigatorKey: _shellNavigatorSearchKey,
+              routes: [
+                GoRoute(
+                  path: '/search',
+                  builder: (_, __) => const SearchScreen(),
+                ),
+              ],
+            ),
+
             // ── PROFILE ──
+            // Branch index: 4  →  nav index 4
             StatefulShellBranch(
               navigatorKey: _shellNavigatorProfileKey,
               routes: [
@@ -180,22 +211,10 @@ class AppRouter {
                 ),
               ],
             ),
-
-            // ── SEARCH ──
-            StatefulShellBranch(
-              navigatorKey: _shellNavigatorSearchKey,
-              routes: [
-                GoRoute(
-                  path: '/search',
-                  builder: (_, __) => const SearchScreen(),
-                ),
-              ],
-            ),
           ],
         ),
 
         // ───────────────── PAYMENT ─────────────────
-        // Flow: TicketPurchaseScreen → PaymentScreen → TicketScreen
         GoRoute(
           path: '/payment',
           parentNavigatorKey: _rootNavigatorKey,
@@ -218,7 +237,6 @@ class AppRouter {
         ),
 
         // ───────────────── TICKET QR ─────────────────
-        // Destination after successful payment
         GoRoute(
           path: '/ticket/:ticketId',
           parentNavigatorKey: _rootNavigatorKey,
@@ -270,6 +288,23 @@ class AppRouter {
             }
 
             return ProfileScreen(userId: userId);
+          },
+        ),
+
+        // ───────────────── POST DETAIL ─────────────────
+        GoRoute(
+          path: '/post/:id',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (context, state) {
+            final id = state.pathParameters['id'];
+
+            if (id == null || id.isEmpty) {
+              return const Scaffold(
+                body: Center(child: Text("Invalid Post ID")),
+              );
+            }
+
+            return PostDetailScreen(postId: id);
           },
         ),
 

@@ -22,7 +22,6 @@ class _ChatListScreenState extends State<ChatListScreen>
   late AnimationController _fadeController;
   final Map<String, Future<Map<String, dynamic>?>> _profileCache = {};
 
-  // Cached profile fetcher — avoids re-fetching on every rebuild
   Future<Map<String, dynamic>?> _getProfile(String uid) {
     return _profileCache.putIfAbsent(uid, () => _chatService.getUserProfile(uid));
   }
@@ -120,7 +119,6 @@ class _ChatListScreenState extends State<ChatListScreen>
         ),
       ),
       actions: [
-        // Live online count badge
         StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('users')
@@ -167,7 +165,6 @@ class _ChatListScreenState extends State<ChatListScreen>
     );
   }
 
-  // Shimmer skeleton for loading state
   Widget _buildShimmer() {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -240,9 +237,6 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 }
 
-// ---------------------------------------------------------------------------
-// Individual chat tile — self-contained widget with its own animation
-// ---------------------------------------------------------------------------
 class _ChatTile extends StatefulWidget {
   final ChatSession session;
   final Future<Map<String, dynamic>?> profileFuture;
@@ -276,6 +270,7 @@ class _ChatTileState extends State<_ChatTile>
   late AnimationController _slideController;
   late Animation<Offset> _slideAnim;
   late Animation<double> _fadeAnim;
+  final ChatService _chatService = ChatService();
 
   @override
   void initState() {
@@ -292,7 +287,6 @@ class _ChatTileState extends State<_ChatTile>
       CurvedAnimation(parent: _slideController, curve: Curves.easeOut),
     );
 
-    // Staggered entry
     Future.delayed(Duration(milliseconds: widget.index * 50), () {
       if (mounted) _slideController.forward();
     });
@@ -323,17 +317,21 @@ class _ChatTileState extends State<_ChatTile>
               final name = user?['displayName'] ?? 'User';
               final avatar = user?['photoURL'] as String?;
 
-              // Real-time online status via a StreamBuilder
+              // FIX: Safe real-time online status listener
               return StreamBuilder<DocumentSnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('users')
                     .doc(widget.otherId)
                     .snapshots(),
                 builder: (context, userSnap) {
-                  final isOnline =
-                      userSnap.data?.get('isOnline') as bool? ?? false;
-                  final isTyping =
-                      userSnap.data?.get('typingTo') == widget.currentUid;
+                  // Existence check to prevent "Bad State" error
+                  if (!userSnap.hasData || !userSnap.data!.exists) {
+                    return _buildTile(name, avatar, false, false);
+                  }
+
+                  final userData = userSnap.data!.data() as Map<String, dynamic>?;
+                  final isOnline = userData?['isOnline'] as bool? ?? false;
+                  final isTyping = userData?['typingTo'] == widget.currentUid;
 
                   return _buildTile(name, avatar, isOnline, isTyping);
                 },
@@ -345,8 +343,7 @@ class _ChatTileState extends State<_ChatTile>
     );
   }
 
-  Widget _buildTile(
-      String name, String? avatar, bool isOnline, bool isTyping) {
+  Widget _buildTile(String name, String? avatar, bool isOnline, bool isTyping) {
     return GestureDetector(
       onTap: () => widget.onTap(name, avatar),
       child: Container(
@@ -426,8 +423,6 @@ class _ChatTileState extends State<_ChatTile>
     );
   }
 
-  final ChatService _chatService = ChatService();
-
   Widget _buildAvatar(String? avatar, bool isOnline) {
     return Stack(
       children: [
@@ -447,14 +442,7 @@ class _ChatTileState extends State<_ChatTile>
             backgroundColor: Colors.deepPurple.shade50,
             backgroundImage: avatar != null ? NetworkImage(avatar) : null,
             child: avatar == null
-                ? Text(
-                    // Initials fallback
-                    '',
-                    style: const TextStyle(
-                      color: Colors.deepPurpleAccent,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  )
+                ? const Icon(Icons.person, color: Colors.deepPurpleAccent)
                 : null,
           ),
         ),
@@ -593,9 +581,6 @@ class _ChatTileState extends State<_ChatTile>
   }
 }
 
-// ---------------------------------------------------------------------------
-// Animated typing indicator  (3 bouncing dots)
-// ---------------------------------------------------------------------------
 class _TypingIndicator extends StatefulWidget {
   @override
   State<_TypingIndicator> createState() => _TypingIndicatorState();
@@ -618,8 +603,8 @@ class _TypingIndicatorState extends State<_TypingIndicator>
     );
     _anims = _controllers
         .map((c) => Tween<double>(begin: 0, end: -5).animate(
-              CurvedAnimation(parent: c, curve: Curves.easeInOut),
-            ))
+            CurvedAnimation(parent: c, curve: Curves.easeInOut),
+          ))
         .toList();
 
     for (int i = 0; i < 3; i++) {
@@ -674,9 +659,6 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shimmer loading tile
-// ---------------------------------------------------------------------------
 class _ShimmerTile extends StatefulWidget {
   final int delay;
   const _ShimmerTile({required this.delay});
@@ -755,18 +737,8 @@ class _ShimmerTileState extends State<_ShimmerTile>
       width: width,
       height: height,
       decoration: BoxDecoration(
+        color: Colors.grey.shade200,
         borderRadius: BorderRadius.circular(6),
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          stops: const [0.0, 0.5, 1.0],
-          colors: [
-            Colors.grey.shade200,
-            Colors.grey.shade100,
-            Colors.grey.shade200,
-          ],
-          transform: GradientRotation(_anim.value),
-        ),
       ),
     );
   }
@@ -776,16 +748,8 @@ class _ShimmerTileState extends State<_ShimmerTile>
       width: size,
       height: size,
       decoration: BoxDecoration(
+        color: Colors.grey.shade200,
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          stops: const [0.0, 0.5, 1.0],
-          colors: [
-            Colors.grey.shade200,
-            Colors.grey.shade100,
-            Colors.grey.shade200,
-          ],
-          transform: GradientRotation(_anim.value),
-        ),
       ),
     );
   }
