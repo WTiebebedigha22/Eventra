@@ -26,7 +26,6 @@ class ChatService {
 
   /// Deletes the session doc AND all its messages in a batched write.
   Future<void> deleteConversation(String chatId) async {
-    // Delete all messages first
     final messages = await _firestore
         .collection('chat_sessions')
         .doc(chatId)
@@ -37,10 +36,7 @@ class ChatService {
     for (final doc in messages.docs) {
       batch.delete(doc.reference);
     }
-
-    // Delete the session doc itself
     batch.delete(_firestore.collection('chat_sessions').doc(chatId));
-
     await batch.commit();
   }
 
@@ -53,10 +49,12 @@ class ChatService {
         .collection('chat_sessions')
         .doc(chatId)
         .collection('messages')
-        .orderBy('timestamp', descending: true)
+        // ✅ FIX: order by 'createdAt' — matches ChatMessage.fromMap
+        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => ChatMessage.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => ChatMessage.fromFirestore(doc))
+            .toList());
   }
 
   Future<void> sendMessage({
@@ -94,14 +92,22 @@ class ChatService {
         .doc(chatId)
         .collection('messages')
         .add({
+      'chatId': chatId,
       'senderId': currentUid,
       'receiverId': otherUserId,
-      'text': messageText,
+      // ✅ FIX: was 'text', must be 'message' to match ChatMessage.fromMap
+      'message': messageText,
       'imageUrl': imageUrl,
-      'timestamp': now,
+      'type': imageFile != null && messageText.isEmpty
+          ? 'image'
+          : imageFile != null
+              ? 'image_text'
+              : 'text',
+      // ✅ FIX: was 'timestamp', must be 'createdAt' to match ChatMessage.fromMap
+      'createdAt': now,
+      'isRead': false,
     });
 
-    // Clear typing status after sending
     await setTypingStatus(otherUserId: otherUserId, isTyping: false);
   }
 
@@ -117,8 +123,6 @@ class ChatService {
 
   // ─────────────────────────────
   // TYPING STATUS
-  // Writes `typingTo: otherUserId` on the current user's doc while typing,
-  // clears it when done. ChatListScreen reads this to show the indicator.
   // ─────────────────────────────
 
   Future<void> setTypingStatus({
@@ -133,7 +137,6 @@ class ChatService {
 
   // ─────────────────────────────
   // ONLINE PRESENCE
-  // Call on app foreground/background transitions.
   // ─────────────────────────────
 
   Future<void> setOnlineStatus(bool isOnline) async {
@@ -155,8 +158,6 @@ class ChatService {
 
   // ─────────────────────────────
   // TIMESTAMP FORMATTING
-  // Accepts nullable DateTime — Firestore serverTimestamp() is null
-  // on the first local write before the server responds.
   // ─────────────────────────────
 
   String formatTimestamp(DateTime? dateTime) {
@@ -164,21 +165,13 @@ class ChatService {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final msgDay = DateTime(dateTime.year, dateTime.month, dateTime.day);
+    final msgDay =
+        DateTime(dateTime.year, dateTime.month, dateTime.day);
     final diff = today.difference(msgDay).inDays;
 
-    if (diff == 0) {
-      // Today → show time e.g. "3:45 PM"
-      return DateFormat.jm().format(dateTime);
-    } else if (diff == 1) {
-      // Yesterday
-      return 'Yesterday';
-    } else if (diff < 7) {
-      // This week → show day e.g. "Mon"
-      return DateFormat.E().format(dateTime);
-    } else {
-      // Older → show date e.g. "04/12/25"
-      return DateFormat('MM/dd/yy').format(dateTime);
-    }
+    if (diff == 0) return DateFormat.jm().format(dateTime);
+    if (diff == 1) return 'Yesterday';
+    if (diff < 7) return DateFormat.E().format(dateTime);
+    return DateFormat('MM/dd/yy').format(dateTime);
   }
 }

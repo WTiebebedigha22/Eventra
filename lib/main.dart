@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:provider/provider.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,12 +22,18 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // 2. OneSignal
+  // 2. App Check — debug provider for dev, swap to playIntegrity/deviceCheck for production
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+  );
+
+  // 3. OneSignal
   OneSignal.Debug.setLogLevel(OSLogLevel.none);
   OneSignal.initialize("729c13e9-37c8-4881-b376-2e8441e04a35");
   OneSignal.Notifications.requestPermission(true);
 
-  // 3. Auth Provider
+  // 4. Auth Provider
   final authProvider = AuthProvider();
   await authProvider.initialize();
 
@@ -35,13 +42,13 @@ void main() async {
     _syncUserWithOneSignal(firebaseUser);
   }
 
-  // 4. Notification Click
+  // 5. Notification Click
   OneSignal.Notifications.addClickListener((event) {
     final data = event.notification.additionalData;
     debugPrint('Notification Data received: $data');
   });
 
-  // 5. Load saved theme
+  // 6. Load saved theme
   final prefs = await SharedPreferences.getInstance();
   final savedTheme = prefs.getString('theme') ?? 'System';
 
@@ -62,7 +69,6 @@ void main() async {
           create: (_) => BookingService(),
         ),
 
-        // ✅ Theme Provider
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(savedTheme),
         ),
@@ -86,7 +92,7 @@ void _syncUserWithOneSignal(User user) {
 }
 
 ////////////////////////////////////////////////////////////
-/// ✅ THEME PROVIDER (SAFE VERSION)
+/// THEME PROVIDER
 ////////////////////////////////////////////////////////////
 
 class ThemeProvider extends ChangeNotifier {
@@ -94,7 +100,7 @@ class ThemeProvider extends ChangeNotifier {
   String _currentTheme = 'System';
 
   ThemeProvider(String savedTheme) {
-    _applyTheme(savedTheme); // ✅ no async here
+    _applyTheme(savedTheme);
   }
 
   ThemeMode get themeMode => _themeMode;
@@ -103,14 +109,12 @@ class ThemeProvider extends ChangeNotifier {
   Future<void> setTheme(String theme) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('theme', theme);
-
     _applyTheme(theme);
     notifyListeners();
   }
 
   void _applyTheme(String theme) {
     _currentTheme = theme;
-
     switch (theme) {
       case 'Dark':
         _themeMode = ThemeMode.dark;

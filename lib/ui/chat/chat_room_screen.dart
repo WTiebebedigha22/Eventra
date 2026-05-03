@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -25,13 +26,17 @@ class ChatRoomScreen extends StatefulWidget {
 }
 
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
-  final _ctrl = TextEditingController();
+  final TextEditingController _ctrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
 
-  // ✅ FIX 1: No FocusNode — was causing the IME/keyboard crash
   final String currentUserId =
       FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  // ── Stream cached here so rebuilds (e.g. _hasText setState) don't
+  //    re-create a new Firestore listener on every frame.
+  late final Stream<List<ChatMessage>> _messageStream;
+  StreamSubscription<List<ChatMessage>>? _chatSub;
 
   File? _selectedImage;
   bool _hasText = false;
@@ -43,14 +48,24 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   @override
   void initState() {
     super.initState();
-    _ctrl.addListener(() {
-      final hasText = _ctrl.text.trim().isNotEmpty;
-      if (hasText != _hasText) setState(() => _hasText = hasText);
-    });
+    _ctrl.addListener(_handleTextChange);
+
+    // Obtain provider once and cache the stream.
+    final provider = Provider.of<ChatProvider>(context, listen: false);
+    _messageStream = provider.loadChat(widget.chatId);
+
+    // Keep a subscription so we can cancel it cleanly on dispose.
+    _chatSub = _messageStream.listen((_) {});
+  }
+
+  void _handleTextChange() {
+    final hasText = _ctrl.text.trim().isNotEmpty;
+    if (hasText != _hasText) setState(() => _hasText = hasText);
   }
 
   @override
   void dispose() {
+    _chatSub?.cancel();
     _ctrl.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -69,7 +84,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   Future<void> _pickImage() async {
     final picked = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 75,
+      imageQuality: 70,
     );
     if (picked != null) {
       setState(() => _selectedImage = File(picked.path));
@@ -80,20 +95,24 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final text = _ctrl.text.trim();
     if (text.isEmpty && _selectedImage == null) return;
 
+    final imageFile = _selectedImage;
+    _ctrl.clear();
+    setState(() => _selectedImage = null);
+
     await provider.send(
       chatId: widget.chatId,
       messageText: text,
-      imageFile: _selectedImage,
+      imageFile: imageFile,
       otherUserId: widget.otherUserId,
     );
 
-    _ctrl.clear();
-    setState(() => _selectedImage = null);
     _scrollToBottom();
   }
 
   @override
   Widget build(BuildContext context) {
+    // listen: false because we drive UI through the cached StreamBuilder,
+    // not through Provider rebuilds.
     final chatProvider =
         Provider.of<ChatProvider>(context, listen: false);
 
@@ -104,41 +123,37 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         children: [
           Expanded(
             child: StreamBuilder<List<ChatMessage>>(
-              stream: chatProvider.loadChat(widget.chatId),
+              // Re-uses the same stream — no new Firestore listener on rebuild.
+              stream: _messageStream,
               builder: (context, snapshot) {
-                if (snapshot.connectionState ==
-                    ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
                     child: CircularProgressIndicator(color: _purple),
                   );
                 }
 
                 final messages = snapshot.data ?? [];
-
                 if (messages.isEmpty) return _buildEmptyState();
 
                 return ListView.builder(
                   controller: _scrollController,
                   reverse: true,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 20,
-                  ),
+                      horizontal: 16, vertical: 20),
                   itemCount: messages.length,
                   itemBuilder: (context, i) {
                     final msg = messages[i];
                     final isMe = msg.senderId == currentUserId;
                     final showAvatar = !isMe &&
-                        (i == messages.length - 1 ||
-                            messages[i + 1].senderId ==
-                                currentUserId);
-                    return _buildMessage(msg, isMe, showAvatar);
+                        (i == 0 ||
+                            messages[i - 1].senderId == currentUserId);
+                    return _buildMessageBubble(msg, isMe, showAvatar);
                   },
                 );
               },
             ),
           ),
-          _buildImagePreview(),
+          if (_selectedImage != null) _buildImagePreview(),
           _buildInputBar(chatProvider),
         ],
       ),
@@ -175,7 +190,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           const SizedBox(height: 6),
           Text(
             "Say hello to ${widget.otherUserName}!",
-            style: const TextStyle(fontSize: 13, color: Colors.grey),
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.grey,
+            ),
           ),
         ],
       ),
@@ -183,46 +201,25 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   // ───────── MESSAGE BUBBLE ─────────
-  Widget _buildMessage(
+  Widget _buildMessageBubble(
       ChatMessage msg, bool isMe, bool showAvatar) {
+    final hasImage = msg.imageUrl.isNotEmpty;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         mainAxisAlignment:
             isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (!isMe) ...[
-            if (showAvatar)
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: _purpleLight,
-                backgroundImage: widget.otherUserProfilePic != null
-                    ? NetworkImage(widget.otherUserProfilePic!)
-                    : null,
-                child: widget.otherUserProfilePic == null
-                    ? Text(
-                        widget.otherUserName[0].toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: _purple,
-                        ),
-                      )
-                    : null,
-              )
-            else
-              const SizedBox(width: 28),
-            const SizedBox(width: 8),
-          ],
+          if (!isMe) _buildOtherUserAvatar(showAvatar),
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.68,
+              maxWidth: MediaQuery.of(context).size.width * 0.72,
             ),
             child: Container(
-              // ✅ FIX 2: padding based on whether it's an image message
-              padding: _hasImage(msg)
-                  ? const EdgeInsets.all(4)
+              padding: hasImage
+                  ? const EdgeInsets.all(5)
                   : const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -236,7 +233,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.05),
-                    blurRadius: 6,
+                    blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
                 ],
@@ -244,26 +241,60 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               child: _buildBubbleContent(msg, isMe),
             ),
           ),
-          if (isMe) const SizedBox(width: 4),
         ],
       ),
     );
   }
 
-  // ✅ FIX 2: Central helper — check imageUrl is non-empty string
-  bool _hasImage(ChatMessage msg) => msg.imageUrl.isNotEmpty;
-
+  // ───────── BUBBLE CONTENT ─────────
   Widget _buildBubbleContent(ChatMessage msg, bool isMe) {
+    final hasImage = msg.imageUrl.isNotEmpty;
+    final hasText = msg.message.trim().isNotEmpty;
+
     final textStyle = TextStyle(
       color: isMe ? Colors.white : const Color(0xFF1A1A2E),
       fontSize: 14.5,
-      height: 1.4,
+      height: 1.3,
     );
 
-    // ✅ FIX 2: Use _hasImage() not null check — imageUrl is non-nullable
-    if (_hasImage(msg)) {
+    if (!hasImage && hasText) {
+      return Text(msg.message.trim(), style: textStyle);
+    }
+
+    if (hasImage && !hasText) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.network(
+          msg.imageUrl,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Container(
+              height: 160,
+              width: 200,
+              color: _purpleLight,
+              child: const Center(
+                child: CircularProgressIndicator(
+                  color: _purple,
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (_, __, ___) => Container(
+            height: 100,
+            width: 160,
+            color: _purpleLight,
+            child: const Icon(Icons.broken_image, color: _purple),
+          ),
+        ),
+      );
+    }
+
+    if (hasImage && hasText) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
@@ -285,43 +316,59 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 );
               },
               errorBuilder: (_, __, ___) => Container(
-                height: 160,
-                width: 200,
-                decoration: BoxDecoration(
-                  color: _purpleLight,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.broken_image_outlined,
-                  color: _purple,
-                ),
+                height: 100,
+                width: 160,
+                color: _purpleLight,
+                child: const Icon(Icons.broken_image, color: _purple),
               ),
             ),
           ),
-          // ✅ Caption below image if both exist
-          if (msg.message.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-              child: Text(msg.message, style: textStyle),
-            ),
+          const SizedBox(height: 6),
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Text(msg.message.trim(), style: textStyle),
+          ),
         ],
       );
     }
 
-    // ✅ FIX 2: Pure text message — only reached when imageUrl is empty
-    return Text(
-      msg.message.isNotEmpty ? msg.message : '',
-      style: textStyle,
+    // Fallback — empty message
+    return const SizedBox.shrink();
+  }
+
+  // ───────── OTHER USER AVATAR ─────────
+  Widget _buildOtherUserAvatar(bool showAvatar) {
+    return Container(
+      width: 32,
+      margin: const EdgeInsets.only(right: 8),
+      child: showAvatar
+          ? CircleAvatar(
+              radius: 14,
+              backgroundColor: _purpleLight,
+              backgroundImage: widget.otherUserProfilePic != null
+                  ? NetworkImage(widget.otherUserProfilePic!)
+                  : null,
+              child: widget.otherUserProfilePic == null
+                  ? Text(
+                      widget.otherUserName[0].toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: _purple,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  : null,
+            )
+          : const SizedBox.shrink(),
     );
   }
 
   // ───────── IMAGE PREVIEW ─────────
   Widget _buildImagePreview() {
-    if (_selectedImage == null) return const SizedBox.shrink();
-
     return Container(
-      color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      color: Colors.white,
       child: Stack(
         children: [
           ClipRRect(
@@ -360,42 +407,50 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   // ───────── INPUT BAR ─────────
   Widget _buildInputBar(ChatProvider provider) {
     return Container(
-      padding: EdgeInsets.only(
-        left: 12,
-        right: 12,
-        top: 10,
-        bottom: MediaQuery.of(context).padding.bottom + 10,
+      padding: EdgeInsets.fromLTRB(
+        10,
+        8,
+        10,
+        MediaQuery.of(context).padding.bottom + 10,
       ),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        border: Border(top: BorderSide(color: Color(0xFFE8E8E8))),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _InputIconButton(
-            icon: Icons.image_outlined,
+          // Image picker
+          GestureDetector(
             onTap: _pickImage,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                color: _purpleLight,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.image_outlined,
+                color: _purple,
+                size: 20,
+              ),
+            ),
           ),
+
           const SizedBox(width: 8),
+
+          // Text field
           Expanded(
             child: Container(
               constraints: const BoxConstraints(maxHeight: 120),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 color: _bg,
                 borderRadius: BorderRadius.circular(24),
               ),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 4),
               child: TextField(
                 controller: _ctrl,
-                // ✅ FIX 1: No focusNode, no autofocus — kills the IME error
                 maxLines: null,
                 textCapitalization: TextCapitalization.sentences,
                 style: const TextStyle(
@@ -410,24 +465,53 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   contentPadding:
                       EdgeInsets.symmetric(vertical: 10),
                 ),
-                onSubmitted: (_) => _sendMessage(provider),
               ),
             ),
           ),
+
           const SizedBox(width: 8),
+
+          // Send / mic button
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
             transitionBuilder: (child, animation) =>
                 ScaleTransition(scale: animation, child: child),
-            child: _hasText || _selectedImage != null
-                ? _SendButton(
+            child: (_hasText || _selectedImage != null)
+                ? GestureDetector(
                     key: const ValueKey('send'),
                     onTap: () => _sendMessage(provider),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: const BoxDecoration(
+                        color: _purple,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.send_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
                   )
-                : _InputIconButton(
+                : GestureDetector(
                     key: const ValueKey('mic'),
-                    icon: Icons.mic_none_rounded,
+                    // TODO: Implement voice message recording
                     onTap: () {},
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        // Visually dimmed to signal "not yet active"
+                        color: _purpleLight.withOpacity(0.6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.mic_none_rounded,
+                        color: _purple.withOpacity(0.5),
+                        size: 20,
+                      ),
+                    ),
                   ),
           ),
         ],
@@ -491,6 +575,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   color: Color(0xFF1A1A2E),
                 ),
               ),
+              // TODO: Replace with real presence data from Firestore
+              // e.g. StreamBuilder on users/{uid}/isOnline
               const Text(
                 "Online",
                 style: TextStyle(
@@ -506,11 +592,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       actions: [
         IconButton(
           icon: const Icon(Icons.videocam_outlined),
+          // TODO: Implement video call
           onPressed: () {},
           color: _purple,
         ),
         IconButton(
           icon: const Icon(Icons.call_outlined),
+          // TODO: Implement voice call
           onPressed: () {},
           color: _purple,
         ),
@@ -518,65 +606,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       ],
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
-        child: Container(height: 1, color: Colors.grey.shade100),
-      ),
-    );
-  }
-}
-
-// ───────── REUSABLE WIDGETS ─────────
-
-class _InputIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _InputIconButton({
-    super.key,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: const BoxDecoration(
-          color: Color(0xFFEDE9FD),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(
-          Icons.image_outlined,
-          color: Color(0xFF6C4EF2),
-          size: 20,
-        ),
-      ),
-    );
-  }
-}
-
-class _SendButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _SendButton({super.key, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: const BoxDecoration(
-          color: Color(0xFF6C4EF2),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(
-          Icons.send_rounded,
-          color: Colors.white,
-          size: 18,
+        child: Container(
+          height: 1,
+          color: Colors.grey.shade100,
         ),
       ),
     );

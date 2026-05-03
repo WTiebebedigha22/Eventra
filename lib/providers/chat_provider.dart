@@ -27,14 +27,17 @@ class ChatProvider extends ChangeNotifier {
     File? imageFile,
   }) async {
     try {
+      debugPrint(">> send() called — chatId: $chatId, text: $messageText");
       await _chatService.sendMessage(
         chatId: chatId,
         messageText: messageText,
         otherUserId: otherUserId,
         imageFile: imageFile,
       );
-    } catch (e) {
-      debugPrint("Error sending message: $e");
+      debugPrint(">> send() SUCCESS ✅");
+    } catch (e, stack) {
+      debugPrint(">> send() ERROR ❌: $e");
+      debugPrint("$stack");
     }
   }
 }
