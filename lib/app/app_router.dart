@@ -191,7 +191,7 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/profile',
-                  builder: (_, __) {
+                  builder: (_, _) {
                     final uid = FirebaseAuth.instance.currentUser?.uid;
 
                     if (uid == null) {
@@ -204,8 +204,17 @@ class AppRouter {
                   },
                   routes: [
                     GoRoute(
-                      path: '/edit',
-                      builder: (_, __) => const EditProfileScreen(),
+                      path: 'edit',
+                      builder: (_, _) {
+                        final uid = FirebaseAuth.instance.currentUser?.uid;
+
+                        if (uid == null) {
+                          return const Scaffold(
+                            body: Center(child: Text("User not logged in")),
+                          );
+                        }
+                        return EditProfileScreen(userId: uid);
+                      },
                     ),
                   ],
                 ),

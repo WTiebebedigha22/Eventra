@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 
 class EditProfileScreen extends StatefulWidget {
-  const EditProfileScreen({super.key});
+  const EditProfileScreen({super.key, required String userId});
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
