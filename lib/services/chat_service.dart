@@ -1,16 +1,30 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart';
 import '../models/chat/chat_message.dart';
+import '../../services/imgbb_service.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ImgBBService _imgbbService = ImgBBService();
 
   String get currentUid => _auth.currentUser?.uid ?? '';
+
+  // ─────────────────────────────
+  // ID GENERATION (CONSISTENT)
+  // ─────────────────────────────
+
+  /// Generates a consistent ID for a 1-to-1 chat.
+  /// Always returns 'smallerUid_largerUid' regardless of who calls it.
+  String getChatId(String otherUserId) {
+    if (currentUid.isEmpty) return '';
+    List<String> ids = [currentUid, otherUserId];
+    ids.sort(); // Sorting ensures both users point to the same document
+    return ids.join('_');
+  }
 
   // ─────────────────────────────
   // CONVERSATIONS
@@ -18,16 +32,15 @@ class ChatService {
 
   Stream<QuerySnapshot> getConversationsStream() {
     return _firestore
-        .collection('chat_sessions')
+        .collection('chats') // Updated from chat_sessions
         .where('participants', arrayContains: currentUid)
         .orderBy('lastMessageTime', descending: true)
         .snapshots();
   }
 
-  /// Deletes the session doc AND all its messages in a batched write.
   Future<void> deleteConversation(String chatId) async {
     final messages = await _firestore
-        .collection('chat_sessions')
+        .collection('chats')
         .doc(chatId)
         .collection('messages')
         .get();
@@ -36,7 +49,7 @@ class ChatService {
     for (final doc in messages.docs) {
       batch.delete(doc.reference);
     }
-    batch.delete(_firestore.collection('chat_sessions').doc(chatId));
+    batch.delete(_firestore.collection('chats').doc(chatId));
     await batch.commit();
   }
 
@@ -45,41 +58,46 @@ class ChatService {
   // ─────────────────────────────
 
   Stream<List<ChatMessage>> getMessagesStream(String chatId) {
+    debugPrint(">> ChatService: Listening to chats/$chatId/messages");
     return _firestore
-        .collection('chat_sessions')
+        .collection('chats') // Updated from chat_sessions
         .doc(chatId)
         .collection('messages')
-        // ✅ FIX: order by 'createdAt' — matches ChatMessage.fromMap
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
+        .map((snapshot) {
+          debugPrint(">> ChatService: Received ${snapshot.docs.length} docs from Firestore");
+          return snapshot.docs
             .map((doc) => ChatMessage.fromFirestore(doc))
-            .toList());
+            .toList();
+        });
   }
 
   Future<void> sendMessage({
-    required String chatId,
+    required String chatId, 
     required String messageText,
     required String otherUserId,
     File? imageFile,
   }) async {
+    if (currentUid.isEmpty) return;
+
     String imageUrl = '';
 
+    // Upload image if present
     if (imageFile != null) {
-      final ref = _storage
-          .ref()
-          .child('chat_images')
-          .child('${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await ref.putFile(imageFile);
-      imageUrl = await ref.getDownloadURL();
+      imageUrl = await ImgBBService.uploadImage(imageFile) ?? '';
     }
+
+    // Don't send if both are empty
+    if (messageText.trim().isEmpty && imageUrl.isEmpty) return;
 
     final String finalMessage =
         imageUrl.isNotEmpty && messageText.isEmpty ? '📷 Photo' : messageText;
 
     final now = FieldValue.serverTimestamp();
 
-    await _firestore.collection('chat_sessions').doc(chatId).set({
+    // Update or Create the Chat Parent Doc
+    await _firestore.collection('chats').doc(chatId).set({
       'participants': [currentUid, otherUserId]..sort(),
       'lastMessage': finalMessage,
       'lastMessageSenderId': currentUid,
@@ -87,23 +105,22 @@ class ChatService {
       'unreadCounts.$otherUserId': FieldValue.increment(1),
     }, SetOptions(merge: true));
 
+    // Add Message to Subcollection
     await _firestore
-        .collection('chat_sessions')
+        .collection('chats')
         .doc(chatId)
         .collection('messages')
         .add({
       'chatId': chatId,
       'senderId': currentUid,
       'receiverId': otherUserId,
-      // ✅ FIX: was 'text', must be 'message' to match ChatMessage.fromMap
-      'message': messageText,
+      'message': messageText.trim(),
       'imageUrl': imageUrl,
       'type': imageFile != null && messageText.isEmpty
           ? 'image'
           : imageFile != null
               ? 'image_text'
               : 'text',
-      // ✅ FIX: was 'timestamp', must be 'createdAt' to match ChatMessage.fromMap
       'createdAt': now,
       'isRead': false,
     });
@@ -116,9 +133,14 @@ class ChatService {
   // ─────────────────────────────
 
   Future<void> markAsRead(String chatId) async {
-    await _firestore.collection('chat_sessions').doc(chatId).update({
-      'unreadCounts.$currentUid': 0,
-    });
+    if (currentUid.isEmpty) return;
+    try {
+      await _firestore.collection('chats').doc(chatId).update({
+        'unreadCounts.$currentUid': 0,
+      });
+    } catch (e) {
+      debugPrint(">> Error marking as read: $e");
+    }
   }
 
   // ─────────────────────────────
@@ -165,8 +187,7 @@ class ChatService {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final msgDay =
-        DateTime(dateTime.year, dateTime.month, dateTime.day);
+    final msgDay = DateTime(dateTime.year, dateTime.month, dateTime.day);
     final diff = today.difference(msgDay).inDays;
 
     if (diff == 0) return DateFormat.jm().format(dateTime);

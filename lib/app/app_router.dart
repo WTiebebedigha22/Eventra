@@ -204,7 +204,7 @@ class AppRouter {
                   },
                   routes: [
                     GoRoute(
-                      path: 'edit',
+                      path: '/edit',
                       builder: (_, __) => const EditProfileScreen(),
                     ),
                   ],

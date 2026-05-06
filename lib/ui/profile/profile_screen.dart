@@ -22,7 +22,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   late final Stream<DocumentSnapshot> _userStream;
   late final Stream<QuerySnapshot> _postsStream;
-  Stream<QuerySnapshot>? _likedStream;
+  // ✅ REPLACED: Liked stream with Tickets stream
+  Stream<QuerySnapshot>? _ticketsStream; 
   Stream<QuerySnapshot>? _savedStream;
 
   static const Color brandColor = Color(0xFF3E5992);
@@ -33,18 +34,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     isMe = widget.userId == currentUid;
 
-    _userStream =
-        _firestore.collection('users').doc(widget.userId).snapshots();
+    _userStream = _firestore.collection('users').doc(widget.userId).snapshots();
     _postsStream = _firestore
         .collection('posts')
         .where('creatorId', isEqualTo: widget.userId)
         .snapshots();
 
     if (isMe) {
-      _likedStream = _firestore
-          .collection('posts')
-          .where('likedBy', arrayContains: widget.userId)
+      // ✅ TICKETS: Using collectionGroup to find all tickets belonging to this user
+      _ticketsStream = _firestore
+          .collectionGroup('tickets')
+          .where('userId', isEqualTo: widget.userId)
           .snapshots();
+
       _savedStream = _firestore
           .collection('users')
           .doc(widget.userId)
@@ -82,27 +84,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userRef = _firestore.collection('users').doc(widget.userId);
     final currentUserRef = _firestore.collection('users').doc(currentUid);
     final followerRef = userRef.collection('followers').doc(currentUid);
-    final followingRef =
-        currentUserRef.collection('following').doc(widget.userId);
+    final followingRef = currentUserRef.collection('following').doc(widget.userId);
     final batch = _firestore.batch();
 
     try {
       if (isFollowing) {
-        batch.set(
-            followerRef, {'followedAt': FieldValue.serverTimestamp()});
-        batch.set(
-            followingRef, {'followedAt': FieldValue.serverTimestamp()});
-        batch.update(
-            userRef, {'followerCount': FieldValue.increment(1)});
-        batch.update(
-            currentUserRef, {'followingCount': FieldValue.increment(1)});
+        batch.set(followerRef, {'followedAt': FieldValue.serverTimestamp()});
+        batch.set(followingRef, {'followedAt': FieldValue.serverTimestamp()});
+        batch.update(userRef, {'followerCount': FieldValue.increment(1)});
+        batch.update(currentUserRef, {'followingCount': FieldValue.increment(1)});
       } else {
         batch.delete(followerRef);
         batch.delete(followingRef);
-        batch.update(
-            userRef, {'followerCount': FieldValue.increment(-1)});
-        batch.update(
-            currentUserRef, {'followingCount': FieldValue.increment(-1)});
+        batch.update(userRef, {'followerCount': FieldValue.increment(-1)});
+        batch.update(currentUserRef, {'followingCount': FieldValue.increment(-1)});
       }
       await batch.commit();
     } catch (e) {
@@ -113,9 +108,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // ✅ FIX: generates the same chatId format as Firestore document IDs
-  // Firestore doc ID = sorted UIDs joined with '_'
-  // e.g. "NypGo46TxBNK2ihX5jOY_j1kz37O60CeVLcEce1DIjs0nyj32"
   String _getChatId(String uid1, String uid2) {
     final sorted = [uid1, uid2]..sort();
     return '${sorted[0]}_${sorted[1]}';
@@ -143,10 +135,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: () => Navigator.pop(context),
             ),
             ListTile(
-              leading: const Icon(Icons.report_problem_outlined,
-                  color: Colors.red),
-              title: const Text("Report User",
-                  style: TextStyle(color: Colors.red)),
+              leading: const Icon(Icons.report_problem_outlined, color: Colors.red),
+              title: const Text("Report User", style: TextStyle(color: Colors.red)),
               onTap: () => Navigator.pop(context),
             ),
           ],
@@ -162,18 +152,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: StreamBuilder<DocumentSnapshot>(
         stream: _userStream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(
-                child: CircularProgressIndicator(color: brandColor));
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator(color: brandColor));
           }
 
           if (!snapshot.hasData || !snapshot.data!.exists) {
             return const Center(child: Text("User not found"));
           }
 
-          final userData =
-              snapshot.data!.data() as Map<String, dynamic>? ?? {};
+          final userData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
           final String? photoURL = userData['photoURL'];
           final String displayName = userData['displayName'] ?? 'User';
           final String username = userData['username'] ?? '';
@@ -183,114 +170,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
             length: isMe ? 3 : 1,
             child: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                // ── AppBar ──
                 SliverAppBar(
                   backgroundColor: surfaceColor,
                   elevation: 0,
                   pinned: true,
                   centerTitle: true,
                   automaticallyImplyLeading: !isMe,
-                  leading: !isMe
-                      ? const BackButton(color: Colors.black)
-                      : null,
+                  leading: !isMe ? const BackButton(color: Colors.black) : null,
                   title: Text(
                     isMe ? "My Profile" : "@$username",
-                    style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16),
+                    style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   actions: [
                     IconButton(
-                      icon: Icon(
-                          isMe
-                              ? Icons.settings_outlined
-                              : Icons.more_horiz,
-                          color: Colors.black),
-                      onPressed: isMe
-                          ? () => context.push('/settings')
-                          : _showMoreOptions,
+                      icon: Icon(isMe ? Icons.settings_outlined : Icons.more_horiz, color: Colors.black),
+                      onPressed: isMe ? () => context.push('/settings') : _showMoreOptions,
                     ),
                   ],
                 ),
-
-                // ── Profile header ──
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
                       const SizedBox(height: 10),
-                      Stack(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: Colors.grey.shade200, width: 2),
-                            ),
-                            child: CircleAvatar(
-                              radius: 46,
-                              backgroundColor: Colors.grey[100],
-                              backgroundImage:
-                                  (photoURL != null && photoURL.isNotEmpty)
-                                      ? NetworkImage(photoURL)
-                                      : null,
-                              child: (photoURL == null || photoURL.isEmpty)
-                                  ? const Icon(Icons.person,
-                                      size: 40, color: Colors.black26)
-                                  : null,
-                            ),
-                          ),
-                          if (isMe)
-                            Positioned(
-                              bottom: 2,
-                              right: 2,
-                              child: GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.lightImpact();
-                                  // TODO: Add photo logic
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: brandColor,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: surfaceColor, width: 2),
-                                  ),
-                                  child: const Icon(
-                                      Icons.add_a_photo_rounded,
-                                      size: 14,
-                                      color: Colors.white),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+                      _buildAvatar(photoURL),
                       const SizedBox(height: 12),
-                      Text(displayName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                       if (!isMe && username.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
-                          child: Text("@$username",
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600)),
+                          child: Text("@$username", style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
                         ),
                       if (bio.isNotEmpty)
                         Padding(
-                          padding:
-                              const EdgeInsets.fromLTRB(40, 12, 40, 0),
-                          child: Text(
-                            bio,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 14,
-                                color: Colors.black87,
-                                height: 1.3),
-                          ),
+                          padding: const EdgeInsets.fromLTRB(40, 12, 40, 0),
+                          child: Text(bio, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.3)),
                         ),
                       const SizedBox(height: 20),
                       _buildStatsRow(userData),
@@ -300,8 +213,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 ),
-
-                // ── Tab bar ──
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _SliverAppBarDelegate(
@@ -313,35 +224,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       tabs: isMe
                           ? const [
                               Tab(icon: Icon(Icons.grid_on_rounded)),
-                              Tab(
-                                  icon: Icon(
-                                      Icons.favorite_border_rounded)),
-                              Tab(
-                                  icon: Icon(
-                                      Icons.bookmark_outline_rounded)),
+                              Tab(icon: Icon(Icons.confirmation_number_outlined)), // ✅ UPDATED ICON
+                              Tab(icon: Icon(Icons.bookmark_outline_rounded)),
                             ]
                           : const [
-                              Tab(icon: Icon(Icons.grid_on_rounded))
+                              Tab(icon: Icon(Icons.grid_on_rounded)),
                             ],
                     ),
                   ),
                 ),
               ],
-
-              // ── Tab bodies ──
               body: TabBarView(
                 children: isMe
                     ? [
-                        _buildGrid(_postsStream, "No posts yet",
-                            Icons.camera_alt_outlined),
-                        _buildGrid(_likedStream!, "No liked posts",
-                            Icons.favorite_border_rounded),
-                        _buildGrid(_savedStream!, "No saved items",
-                            Icons.bookmark_outline_rounded),
+                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined),
+                        _buildGrid(_ticketsStream!, "No tickets yet", Icons.confirmation_number_outlined), // ✅ TICKETS GRID
+                        _buildGrid(_savedStream!, "No saved items", Icons.bookmark_outline_rounded),
                       ]
                     : [
-                        _buildGrid(_postsStream, "No posts yet",
-                            Icons.camera_alt_outlined),
+                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined),
                       ],
               ),
             ),
@@ -351,7 +252,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ─── STATS ───────────────────────────────────────────────────────────────
+  Widget _buildAvatar(String? photoURL) {
+    return Stack(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.grey.shade200, width: 2),
+          ),
+          child: CircleAvatar(
+            radius: 46,
+            backgroundColor: Colors.grey[100],
+            backgroundImage: (photoURL != null && photoURL.isNotEmpty) ? NetworkImage(photoURL) : null,
+            child: (photoURL == null || photoURL.isEmpty) ? const Icon(Icons.person, size: 40, color: Colors.black26) : null,
+          ),
+        ),
+        if (isMe)
+          Positioned(
+            bottom: 2,
+            right: 2,
+            child: GestureDetector(
+              onTap: () => HapticFeedback.lightImpact(),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: brandColor, shape: BoxShape.circle, border: Border.all(color: surfaceColor, width: 2)),
+                child: const Icon(Icons.add_a_photo_rounded, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 
   Widget _buildStatsRow(Map<String, dynamic> data) {
     return Row(
@@ -366,47 +298,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _statDivider() => Container(
-        height: 20,
-        width: 1,
-        color: Colors.grey.shade300,
-        margin: const EdgeInsets.symmetric(horizontal: 24),
-      );
+  Widget _statDivider() => Container(height: 20, width: 1, color: Colors.grey.shade300, margin: const EdgeInsets.symmetric(horizontal: 24));
 
   Widget _statItem(int count, String label) => Column(
-        children: [
-          Text(
-            _formatCount(count),
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-          const SizedBox(height: 4),
-          Text(label,
-              style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500)),
-        ],
-      );
+    children: [
+      Text(_formatCount(count), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+      const SizedBox(height: 4),
+      Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontWeight: FontWeight.w500)),
+    ],
+  );
 
-  // ─── ACTION BUTTONS ───────────────────────────────────────────────────────
-
-  // ✅ FIX: now receives displayName and photoURL to pass to chat room
-  Widget _buildActionButtons(
-      Map<String, dynamic> userData, String displayName, String? photoURL) {
+  Widget _buildActionButtons(Map<String, dynamic> userData, String displayName, String? photoURL) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: [
           Expanded(
             child: _actionButton(
-              text: isMe
-                  ? "Edit Profile"
-                  : (isFollowing ? "Unfollow" : "Follow"),
+              text: isMe ? "Edit Profile" : (isFollowing ? "Unfollow" : "Follow"),
               isFilled: !isMe && !isFollowing,
-              onTap: isMe
-                  ? () => context.push('/edit')
-                  : _toggleFollow,
+              onTap: isMe ? () => context.push('/edit') : _toggleFollow,
             ),
           ),
           const SizedBox(width: 8),
@@ -416,15 +327,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (isMe) {
                 _showMoreOptions();
               } else {
-                // ✅ FIX: use same chatId format as Firestore document IDs
                 final chatId = _getChatId(currentUid, widget.userId);
                 context.push(
                   '/chat/room/$chatId/${widget.userId}',
-                  // ✅ FIX: pass name and avatar so chat room renders correctly
-                  extra: {
-                    'peerName': displayName,
-                    'peerAvatar': photoURL,
-                  },
+                  extra: {'peerName': displayName, 'peerAvatar': photoURL},
                 );
               }
             },
@@ -434,57 +340,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _actionButton(
-      {required String text,
-      required bool isFilled,
-      required VoidCallback onTap}) {
+  Widget _actionButton({required String text, required bool isFilled, required VoidCallback onTap}) {
     return SizedBox(
       height: 40,
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: isFilled ? brandColor : Colors.white,
-          foregroundColor:
-              isFilled ? Colors.white : Colors.black87,
+          foregroundColor: isFilled ? Colors.white : Colors.black87,
           elevation: 0,
-          side: BorderSide(
-              color:
-                  isFilled ? Colors.transparent : Colors.grey.shade300),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8)),
+          side: BorderSide(color: isFilled ? Colors.transparent : Colors.grey.shade300),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        child: Text(text,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 14)),
+        child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
       ),
     );
   }
 
-  Widget _squareIconButton(IconData icon, VoidCallback onTap) =>
-      Container(
-        height: 40,
-        width: 40,
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: IconButton(
-          icon: Icon(icon, size: 20, color: Colors.black87),
-          padding: EdgeInsets.zero,
-          onPressed: onTap,
-        ),
-      );
+  Widget _squareIconButton(IconData icon, VoidCallback onTap) => Container(
+    height: 40,
+    width: 40,
+    decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+    child: IconButton(
+      icon: Icon(icon, size: 20, color: Colors.black87),
+      padding: EdgeInsets.zero,
+      onPressed: onTap,
+    ),
+  );
 
-  // ─── GRIDS ────────────────────────────────────────────────────────────────
-
-  Widget _buildGrid(
-      Stream<QuerySnapshot> stream, String emptyTitle, IconData emptyIcon) {
+  Widget _buildGrid(Stream<QuerySnapshot> stream, String emptyTitle, IconData emptyIcon) {
     return StreamBuilder<QuerySnapshot>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: brandColor));
+          return const Center(child: CircularProgressIndicator(color: brandColor));
         }
 
         final docs = snapshot.data?.docs ?? [];
@@ -495,9 +384,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Icon(emptyIcon, size: 48, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
-                Text(emptyTitle,
-                    style: TextStyle(
-                        color: Colors.grey.shade500, fontSize: 15)),
+                Text(emptyTitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 15)),
               ],
             ),
           );
@@ -515,13 +402,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            final String mediaUrl =
-                data['imageUrl'] ?? data['mediaUrl'] ?? '';
-            final String price = data['price'] ?? '';
+            // ✅ TICKETS SUPPORT: Check for imageUrl or eventImage
+            final String mediaUrl = data['imageUrl'] ?? data['mediaUrl'] ?? data['eventImage'] ?? '';
+            final String price = data['price']?.toString() ?? '';
 
             return GestureDetector(
-              onTap: () =>
-                  context.push('/post/${docs[index].id}', extra: data),
+              onTap: () => context.push('/post/${docs[index].id}', extra: data),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -532,32 +418,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, progress) {
                         if (progress == null) return child;
-                        return const Center(
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2));
+                        return const Center(child: CircularProgressIndicator(strokeWidth: 2));
                       },
-                      errorBuilder: (_, __, ___) => const Icon(
-                          Icons.broken_image_outlined,
-                          color: Colors.black26),
+                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: Colors.black26),
                     ),
                   if (price.isNotEmpty)
                     Positioned(
                       bottom: 6,
                       left: 6,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          price,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold),
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(4)),
+                        child: Text(price, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                     ),
                 ],
@@ -570,23 +442,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-// ─── SLIVER DELEGATE ──────────────────────────────────────────────────────────
-
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar);
   final TabBar _tabBar;
 
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(context, offset, overlaps) => Container(
-        color: Colors.white,
-        child: _tabBar,
-      );
-
-  @override
-  bool shouldRebuild(_SliverAppBarDelegate old) => false;
+  @override double get minExtent => _tabBar.preferredSize.height;
+  @override double get maxExtent => _tabBar.preferredSize.height;
+  @override Widget build(context, offset, overlaps) => Container(color: Colors.white, child: _tabBar);
+  @override bool shouldRebuild(_SliverAppBarDelegate old) => false;
 }

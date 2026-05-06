@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart'; 
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:go_router/go_router.dart';
 
@@ -12,6 +13,9 @@ class TicketScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Get the current user ID to satisfy security rules
+    final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+
     return Scaffold(
       backgroundColor: const Color(0xFFF7F7FB),
       appBar: AppBar(
@@ -28,14 +32,17 @@ class TicketScreen extends StatelessWidget {
         centerTitle: true,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // Ensure you have created a Composite Index in Firestore for this query
+        // UPDATED: Added userId filter to satisfy security rules
         stream: FirebaseFirestore.instance
             .collectionGroup('tickets')
+            .where('userId', isEqualTo: currentUserId) 
             .where('ticketId', isEqualTo: ticketId)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return _buildErrorState("Check your internet or Firestore indexes.");
+            // If you still see an error here, check if you clicked the 
+            // generated Link in the console to create the composite index.
+            return _buildErrorState("Permission denied or missing index.");
           }
 
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -43,10 +50,9 @@ class TicketScreen extends StatelessWidget {
           }
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return _buildErrorState("Ticket not found. It may still be processing.");
+            return _buildErrorState("Ticket not found for this account.");
           }
 
-          // Use the first document found
           final doc = snapshot.data!.docs.first;
           final data = doc.data() as Map<String, dynamic>;
 
@@ -67,12 +73,8 @@ class TicketScreen extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                // SUCCESS/PENDING BANNER
                 _buildStatusBanner(isPaid),
-
                 const SizedBox(height: 24),
-
-                // TICKET CARD
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -88,17 +90,10 @@ class TicketScreen extends StatelessWidget {
                   ),
                   child: Column(
                     children: [
-                      // Header
                       _buildTicketHeader(eventTitle, location),
-
                       _buildDashedDivider(),
-
-                      // QR Code Section
                       _buildQRSection(qrData.toString()),
-
                       _buildDashedDivider(),
-
-                      // Details Section
                       Padding(
                         padding: const EdgeInsets.all(24),
                         child: Column(
@@ -121,10 +116,7 @@ class TicketScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 30),
-
-                // DONE BUTTON
                 _buildHomeButton(context),
               ],
             ),
@@ -134,7 +126,7 @@ class TicketScreen extends StatelessWidget {
     );
   }
 
-  // --- COMPONENT WIDGETS ---
+  // --- UI HELPER METHODS ---
 
   Widget _buildStatusBanner(bool isPaid) {
     return Container(
@@ -254,7 +246,6 @@ class TicketScreen extends StatelessWidget {
     );
   }
 
-  // --- ORIGINAL UI UTILS ---
   Widget _buildDashedDivider() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -30,10 +30,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
 
-  final String currentUserId =
-      FirebaseAuth.instance.currentUser?.uid ?? '';
+  final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  late final Stream<List<ChatMessage>> _messageStream;
+  late Stream<List<ChatMessage>> _messageStream;
   StreamSubscription<List<ChatMessage>>? _chatSub;
 
   File? _selectedImage;
@@ -51,12 +50,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     final provider = Provider.of<ChatProvider>(context, listen: false);
     _messageStream = provider.loadChat(widget.chatId);
 
-    _chatSub = _messageStream.listen(
-      (msgs) => debugPrint(">> stream received ${msgs.length} messages"),
-      onError: (e) => debugPrint(">> stream error: $e"),
-    );
+    // ✅ Works now that markAsRead is in ChatProvider
+    provider.markAsRead(widget.chatId);
 
-    debugPrint(">> ChatRoomScreen init — chatId: '${widget.chatId}' otherUserId: '${widget.otherUserId}'");
+    _chatSub = _messageStream.listen(
+      (msgs) => debugPrint(">> Received ${msgs.length} messages"),
+      onError: (e) => debugPrint(">> Stream Error: $e"),
+    );
   }
 
   void _handleTextChange() {
@@ -74,45 +74,32 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     }
   }
 
   Future<void> _pickImage() async {
-    final picked = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70,
-    );
-    if (picked != null) {
-      setState(() => _selectedImage = File(picked.path));
-    }
+    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (picked != null) setState(() => _selectedImage = File(picked.path));
   }
 
-  // ✅ FIX: provider obtained fresh inside method — not passed as parameter
   Future<void> _sendMessage() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty && _selectedImage == null) return;
 
     final imageFile = _selectedImage;
     _ctrl.clear();
-    setState(() => _selectedImage = null);
+    setState(() {
+      _selectedImage = null;
+      _hasText = false;
+    });
 
-    final provider = Provider.of<ChatProvider>(context, listen: false);
-
-    debugPrint(">> send() called — chatId: ${widget.chatId}, text: $text");
-
-    await provider.send(
+    await Provider.of<ChatProvider>(context, listen: false).send(
       chatId: widget.chatId,
       messageText: text,
       imageFile: imageFile,
       otherUserId: widget.otherUserId,
     );
-
-    debugPrint(">> send() SUCCESS ✅");
     _scrollToBottom();
   }
 
@@ -128,15 +115,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               stream: _messageStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: _purple),
-                  );
+                  return const Center(child: CircularProgressIndicator(color: _purple));
                 }
-
-                if (snapshot.hasError) {
-                  debugPrint(">> StreamBuilder error: ${snapshot.error}");
-                  return Center(child: Text("Error: ${snapshot.error}"));
-                }
+                if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
 
                 final messages = snapshot.data ?? [];
                 if (messages.isEmpty) return _buildEmptyState();
@@ -144,15 +125,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 return ListView.builder(
                   controller: _scrollController,
                   reverse: true,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                   itemCount: messages.length,
                   itemBuilder: (context, i) {
                     final msg = messages[i];
                     final isMe = msg.senderId == currentUserId;
-                    final showAvatar = !isMe &&
-                        (i == 0 ||
-                            messages[i - 1].senderId == currentUserId);
+                    final showAvatar = !isMe && (i == 0 || messages[i - 1].senderId == currentUserId);
                     return _buildMessageBubble(msg, isMe, showAvatar);
                   },
                 );
@@ -166,7 +144,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 
-  // ───────── EMPTY STATE ─────────
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -174,60 +151,29 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              color: _purpleLight,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 36,
-              color: _purple,
-            ),
+            decoration: const BoxDecoration(color: _purpleLight, shape: BoxShape.circle),
+            child: const Icon(Icons.chat_bubble_outline_rounded, size: 36, color: _purple),
           ),
           const SizedBox(height: 16),
-          const Text(
-            "No messages yet",
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A2E),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "Say hello to ${widget.otherUserName}!",
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.grey,
-            ),
-          ),
+          const Text("No messages yet", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 
-  // ───────── MESSAGE BUBBLE ─────────
-  Widget _buildMessageBubble(
-      ChatMessage msg, bool isMe, bool showAvatar) {
+  Widget _buildMessageBubble(ChatMessage msg, bool isMe, bool showAvatar) {
     final hasImage = msg.imageUrl.isNotEmpty;
-
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        mainAxisAlignment:
-            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) _buildOtherUserAvatar(showAvatar),
           ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.72,
-            ),
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
             child: Container(
-              padding: hasImage
-                  ? const EdgeInsets.all(5)
-                  : const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+              padding: hasImage ? const EdgeInsets.all(5) : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isMe ? _purple : Colors.white,
                 borderRadius: BorderRadius.only(
@@ -236,13 +182,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   bottomLeft: Radius.circular(isMe ? 18 : 4),
                   bottomRight: Radius.circular(isMe ? 4 : 18),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: _buildBubbleContent(msg, isMe),
             ),
@@ -252,97 +191,39 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 
-  // ───────── BUBBLE CONTENT ─────────
   Widget _buildBubbleContent(ChatMessage msg, bool isMe) {
     final hasImage = msg.imageUrl.isNotEmpty;
     final hasText = msg.message.trim().isNotEmpty;
+    final textStyle = TextStyle(color: isMe ? Colors.white : const Color(0xFF1A1A2E), fontSize: 14.5);
 
-    final textStyle = TextStyle(
-      color: isMe ? Colors.white : const Color(0xFF1A1A2E),
-      fontSize: 14.5,
-      height: 1.3,
-    );
-
-    if (!hasImage && hasText) {
-      return Text(msg.message.trim(), style: textStyle);
-    }
-
-    if (hasImage && !hasText) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Image.network(
-          msg.imageUrl,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return Container(
-              height: 160,
-              width: 200,
-              color: _purpleLight,
-              child: const Center(
-                child: CircularProgressIndicator(
-                  color: _purple,
-                  strokeWidth: 2,
-                ),
-              ),
-            );
-          },
-          errorBuilder: (_, __, ___) => Container(
-            height: 100,
-            width: 160,
-            color: _purpleLight,
-            child: const Icon(Icons.broken_image, color: _purple),
-          ),
-        ),
-      );
-    }
-
-    if (hasImage && hasText) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hasImage)
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: Image.network(
               msg.imageUrl,
               fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) {
-                if (progress == null) return child;
+              // ✅ FIXED: Using loadingBuilder and errorBuilder for Image.network
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
                 return Container(
-                  height: 160,
-                  width: 200,
-                  color: _purpleLight,
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: _purple,
-                      strokeWidth: 2,
-                    ),
-                  ),
+                  height: 160, width: 200, color: _purpleLight,
+                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 );
               },
-              errorBuilder: (_, __, ___) => Container(
-                height: 100,
-                width: 160,
-                color: _purpleLight,
-                child: const Icon(Icons.broken_image, color: _purple),
-              ),
+              errorBuilder: (context, error, stackTrace) => 
+                const SizedBox(height: 160, width: 200, child: Icon(Icons.broken_image)),
             ),
           ),
-          const SizedBox(height: 6),
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Text(msg.message.trim(), style: textStyle),
-          ),
-        ],
-      );
-    }
-
-    return const SizedBox.shrink();
+        if (hasImage && hasText) const SizedBox(height: 6),
+        if (hasText) Text(msg.message, style: textStyle),
+      ],
+    );
   }
 
-  // ───────── OTHER USER AVATAR ─────────
   Widget _buildOtherUserAvatar(bool showAvatar) {
     return Container(
       width: 32,
@@ -351,25 +232,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           ? CircleAvatar(
               radius: 14,
               backgroundColor: _purpleLight,
-              backgroundImage: widget.otherUserProfilePic != null
-                  ? NetworkImage(widget.otherUserProfilePic!)
-                  : null,
+              backgroundImage: widget.otherUserProfilePic != null ? NetworkImage(widget.otherUserProfilePic!) : null,
               child: widget.otherUserProfilePic == null
-                  ? Text(
-                      widget.otherUserName[0].toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: _purple,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    )
+                  ? Text(widget.otherUserName[0].toUpperCase(), style: const TextStyle(fontSize: 10, color: _purple, fontWeight: FontWeight.bold))
                   : null,
             )
           : const SizedBox.shrink(),
     );
   }
 
-  // ───────── IMAGE PREVIEW ─────────
   Widget _buildImagePreview() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -378,29 +249,16 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.file(
-              _selectedImage!,
-              height: 110,
-              width: 110,
-              fit: BoxFit.cover,
-            ),
+            child: Image.file(_selectedImage!, height: 110, width: 110, fit: BoxFit.cover),
           ),
           Positioned(
-            top: 4,
-            left: 4,
+            top: 4, left: 4,
             child: GestureDetector(
               onTap: () => setState(() => _selectedImage = null),
               child: Container(
                 padding: const EdgeInsets.all(3),
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.close,
-                  size: 14,
-                  color: Colors.white,
-                ),
+                decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                child: const Icon(Icons.close, size: 14, color: Colors.white),
               ),
             ),
           ),
@@ -409,206 +267,54 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 
-  // ───────── INPUT BAR ─────────
-  // ✅ FIX: no longer takes provider as parameter
   Widget _buildInputBar() {
     return Container(
-      padding: EdgeInsets.fromLTRB(
-        10,
-        8,
-        10,
-        MediaQuery.of(context).padding.bottom + 10,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFE8E8E8))),
-      ),
+      padding: EdgeInsets.fromLTRB(10, 8, 10, MediaQuery.of(context).padding.bottom + 10),
+      decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE8E8E8)))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          GestureDetector(
-            onTap: _pickImage,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                color: _purpleLight,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.image_outlined,
-                color: _purple,
-                size: 20,
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 8),
-
+          IconButton(icon: const Icon(Icons.image_outlined, color: _purple), onPressed: _pickImage),
           Expanded(
             child: Container(
-              constraints: const BoxConstraints(maxHeight: 120),
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: _bg,
-                borderRadius: BorderRadius.circular(24),
-              ),
+              decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(24)),
               child: TextField(
                 controller: _ctrl,
                 maxLines: null,
-                textCapitalization: TextCapitalization.sentences,
-                style: const TextStyle(
-                  fontSize: 14.5,
-                  color: Color(0xFF1A1A2E),
-                ),
-                decoration: const InputDecoration(
-                  hintText: "Message...",
-                  hintStyle: TextStyle(color: Colors.grey),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 10),
-                ),
+                decoration: const InputDecoration(hintText: "Message...", border: InputBorder.none, isDense: true),
               ),
             ),
           ),
-
           const SizedBox(width: 8),
-
-          // ✅ FIX: onTap calls _sendMessage() with no arguments
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            transitionBuilder: (child, animation) =>
-                ScaleTransition(scale: animation, child: child),
-            child: (_hasText || _selectedImage != null)
-                ? GestureDetector(
-                    key: const ValueKey('send'),
-                    onTap: () {
-                      debugPrint(">> send button tapped");
-                      _sendMessage();
-                    },
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        color: _purple,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.send_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                  )
-                : GestureDetector(
-                    key: const ValueKey('mic'),
-                    onTap: () {},
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _purpleLight.withOpacity(0.6),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.mic_none_rounded,
-                        color: _purple.withOpacity(0.5),
-                        size: 20,
-                      ),
-                    ),
-                  ),
+          GestureDetector(
+            onTap: _sendMessage,
+            child: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: (_hasText || _selectedImage != null) ? _purple : _purpleLight, shape: BoxShape.circle),
+              child: Icon(Icons.send_rounded, color: (_hasText || _selectedImage != null) ? Colors.white : _purple.withOpacity(0.5), size: 18),
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ───────── APP BAR ─────────
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
-      scrolledUnderElevation: 0,
-      iconTheme: const IconThemeData(color: Color(0xFF1A1A2E)),
-      titleSpacing: 0,
       title: Row(
         children: [
-          Stack(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: _purpleLight,
-                backgroundImage: widget.otherUserProfilePic != null
-                    ? NetworkImage(widget.otherUserProfilePic!)
-                    : null,
-                child: widget.otherUserProfilePic == null
-                    ? Text(
-                        widget.otherUserName[0].toUpperCase(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: _purple,
-                        ),
-                      )
-                    : null,
-              ),
-              Positioned(
-                bottom: 1,
-                right: 1,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF22C55E),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                ),
-              ),
-            ],
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: _purpleLight,
+            backgroundImage: widget.otherUserProfilePic != null ? NetworkImage(widget.otherUserProfilePic!) : null,
+            child: widget.otherUserProfilePic == null ? Text(widget.otherUserName[0]) : null,
           ),
           const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.otherUserName,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A1A2E),
-                ),
-              ),
-              const Text(
-                "Online",
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFF22C55E),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
+          Text(widget.otherUserName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black)),
         ],
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.videocam_outlined),
-          onPressed: () {},
-          color: _purple,
-        ),
-        IconButton(
-          icon: const Icon(Icons.call_outlined),
-          onPressed: () {},
-          color: _purple,
-        ),
-        const SizedBox(width: 4),
-      ],
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(1),
-        child: Container(
-          height: 1,
-          color: Colors.grey.shade100,
-        ),
       ),
     );
   }
