@@ -41,7 +41,6 @@ class _EventraAppState extends State<EventraApp> {
 
       routerConfig: _appRouter.router(auth),
 
-      // ✅ CONNECTED THEME SYSTEM
       themeMode: themeProvider.themeMode,
 
       // 🌞 LIGHT THEME

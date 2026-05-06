@@ -4,10 +4,8 @@ class ChatMessage {
   final String id;
   final String chatId;
   final String senderId;
-
   final String message;
-  final String imageUrl; // ✅ MUST EXIST
-
+  final String imageUrl;
   final String type;
   final DateTime createdAt;
   final bool isRead;
@@ -28,12 +26,16 @@ class ChatMessage {
       id: id,
       chatId: data['chatId'] ?? '',
       senderId: data['senderId'] ?? '',
-      message: data['message'] ?? '',
-      imageUrl: data['imageUrl'] ?? '', // ✅ FIX
+      // ✅ handles both old 'text' field and new 'message' field
+      message: data['message'] ?? data['text'] ?? '',
+      imageUrl: data['imageUrl'] ?? '',
       type: data['type'] ?? 'text',
+      // ✅ handles both old 'timestamp' field and new 'createdAt' field
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
-          : DateTime.now(),
+          : data['timestamp'] != null
+              ? (data['timestamp'] as Timestamp).toDate()
+              : DateTime.now(),
       isRead: data['isRead'] ?? false,
     );
   }

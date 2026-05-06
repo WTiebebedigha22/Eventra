@@ -33,8 +33,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final String currentUserId =
       FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  // ── Stream cached here so rebuilds (e.g. _hasText setState) don't
-  //    re-create a new Firestore listener on every frame.
   late final Stream<List<ChatMessage>> _messageStream;
   StreamSubscription<List<ChatMessage>>? _chatSub;
 
@@ -50,12 +48,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     super.initState();
     _ctrl.addListener(_handleTextChange);
 
-    // Obtain provider once and cache the stream.
     final provider = Provider.of<ChatProvider>(context, listen: false);
     _messageStream = provider.loadChat(widget.chatId);
 
-    // Keep a subscription so we can cancel it cleanly on dispose.
-    _chatSub = _messageStream.listen((_) {});
+    _chatSub = _messageStream.listen(
+      (msgs) => debugPrint(">> stream received ${msgs.length} messages"),
+      onError: (e) => debugPrint(">> stream error: $e"),
+    );
+
+    debugPrint(">> ChatRoomScreen init — chatId: '${widget.chatId}' otherUserId: '${widget.otherUserId}'");
   }
 
   void _handleTextChange() {
@@ -91,13 +92,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
   }
 
-  Future<void> _sendMessage(ChatProvider provider) async {
+  // ✅ FIX: provider obtained fresh inside method — not passed as parameter
+  Future<void> _sendMessage() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty && _selectedImage == null) return;
 
     final imageFile = _selectedImage;
     _ctrl.clear();
     setState(() => _selectedImage = null);
+
+    final provider = Provider.of<ChatProvider>(context, listen: false);
+
+    debugPrint(">> send() called — chatId: ${widget.chatId}, text: $text");
 
     await provider.send(
       chatId: widget.chatId,
@@ -106,16 +112,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       otherUserId: widget.otherUserId,
     );
 
+    debugPrint(">> send() SUCCESS ✅");
     _scrollToBottom();
   }
 
   @override
   Widget build(BuildContext context) {
-    // listen: false because we drive UI through the cached StreamBuilder,
-    // not through Provider rebuilds.
-    final chatProvider =
-        Provider.of<ChatProvider>(context, listen: false);
-
     return Scaffold(
       backgroundColor: _bg,
       appBar: _buildAppBar(),
@@ -123,13 +125,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         children: [
           Expanded(
             child: StreamBuilder<List<ChatMessage>>(
-              // Re-uses the same stream — no new Firestore listener on rebuild.
               stream: _messageStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
                     child: CircularProgressIndicator(color: _purple),
                   );
+                }
+
+                if (snapshot.hasError) {
+                  debugPrint(">> StreamBuilder error: ${snapshot.error}");
+                  return Center(child: Text("Error: ${snapshot.error}"));
                 }
 
                 final messages = snapshot.data ?? [];
@@ -154,7 +160,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ),
           ),
           if (_selectedImage != null) _buildImagePreview(),
-          _buildInputBar(chatProvider),
+          _buildInputBar(),
         ],
       ),
     );
@@ -333,7 +339,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       );
     }
 
-    // Fallback — empty message
     return const SizedBox.shrink();
   }
 
@@ -405,7 +410,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   // ───────── INPUT BAR ─────────
-  Widget _buildInputBar(ChatProvider provider) {
+  // ✅ FIX: no longer takes provider as parameter
+  Widget _buildInputBar() {
     return Container(
       padding: EdgeInsets.fromLTRB(
         10,
@@ -420,7 +426,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Image picker
           GestureDetector(
             onTap: _pickImage,
             child: Container(
@@ -440,7 +445,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
           const SizedBox(width: 8),
 
-          // Text field
           Expanded(
             child: Container(
               constraints: const BoxConstraints(maxHeight: 120),
@@ -462,8 +466,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   hintStyle: TextStyle(color: Colors.grey),
                   border: InputBorder.none,
                   isDense: true,
-                  contentPadding:
-                      EdgeInsets.symmetric(vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
             ),
@@ -471,7 +474,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
           const SizedBox(width: 8),
 
-          // Send / mic button
+          // ✅ FIX: onTap calls _sendMessage() with no arguments
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
             transitionBuilder: (child, animation) =>
@@ -479,7 +482,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             child: (_hasText || _selectedImage != null)
                 ? GestureDetector(
                     key: const ValueKey('send'),
-                    onTap: () => _sendMessage(provider),
+                    onTap: () {
+                      debugPrint(">> send button tapped");
+                      _sendMessage();
+                    },
                     child: Container(
                       width: 40,
                       height: 40,
@@ -496,13 +502,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   )
                 : GestureDetector(
                     key: const ValueKey('mic'),
-                    // TODO: Implement voice message recording
                     onTap: () {},
                     child: Container(
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        // Visually dimmed to signal "not yet active"
                         color: _purpleLight.withOpacity(0.6),
                         shape: BoxShape.circle,
                       ),
@@ -556,8 +560,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF22C55E),
                     shape: BoxShape.circle,
-                    border:
-                        Border.all(color: Colors.white, width: 1.5),
+                    border: Border.all(color: Colors.white, width: 1.5),
                   ),
                 ),
               ),
@@ -575,8 +578,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   color: Color(0xFF1A1A2E),
                 ),
               ),
-              // TODO: Replace with real presence data from Firestore
-              // e.g. StreamBuilder on users/{uid}/isOnline
               const Text(
                 "Online",
                 style: TextStyle(
@@ -592,13 +593,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       actions: [
         IconButton(
           icon: const Icon(Icons.videocam_outlined),
-          // TODO: Implement video call
           onPressed: () {},
           color: _purple,
         ),
         IconButton(
           icon: const Icon(Icons.call_outlined),
-          // TODO: Implement voice call
           onPressed: () {},
           color: _purple,
         ),

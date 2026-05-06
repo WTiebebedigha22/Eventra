@@ -2,11 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 
 class CommentsScreen extends StatefulWidget {
   final String postId;
-  const CommentsScreen({super.key, required this.postId});
+
+  // ✅ FIX: pass 'posts' or 'events' depending on where it's opened from
+  // Defaults to 'posts' — pass 'events' when opening from EventDetailScreen
+  final String collection;
+
+  const CommentsScreen({
+    super.key,
+    required this.postId,
+    this.collection = 'posts',
+  });
 
   @override
   State<CommentsScreen> createState() => _CommentsScreenState();
@@ -15,16 +23,18 @@ class CommentsScreen extends StatefulWidget {
 class _CommentsScreenState extends State<CommentsScreen> {
   final TextEditingController _commentController = TextEditingController();
   final FocusNode _commentFocusNode = FocusNode();
-  
+
   bool _isSending = false;
   String? _replyingToCommentId;
   String? _replyingToUserName;
 
-  // --- Theme ---
   static const Color primaryColor = Color(0xFF3E5992);
   static const Color backgroundColor = Colors.white;
   static const Color inputBg = Color(0xFFF8F9FA);
-  static const Color textColor = Color(0xFF1C1E21);
+
+  // ✅ FIX: single source of truth for the parent document reference
+  DocumentReference get _parentRef =>
+      FirebaseFirestore.instance.collection(widget.collection).doc(widget.postId.trim());
 
   void _setReply(String commentId, String userName) {
     setState(() {
@@ -38,11 +48,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    final docRef = FirebaseFirestore.instance
-        .collection('events')
-        .doc(widget.postId)
-        .collection('comments')
-        .doc(commentId);
+    final docRef = _parentRef.collection('comments').doc(commentId);
 
     if (likedBy.contains(uid)) {
       await docRef.update({'likedBy': FieldValue.arrayRemove([uid])});
@@ -57,12 +63,14 @@ class _CommentsScreenState extends State<CommentsScreen> {
     if (currentUser == null || currentUser.uid == targetUid) return;
 
     final batch = FirebaseFirestore.instance.batch();
-    final followRef = FirebaseFirestore.instance.collection('users').doc(currentUser.uid).collection('following').doc(targetUid);
-    
-    // For simplicity, we assume if the doc exists, we unfollow. 
-    // In a production app, check state first.
+    final followRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser.uid)
+        .collection('following')
+        .doc(targetUid);
+
     final doc = await followRef.get();
-    
+
     if (doc.exists) {
       batch.delete(followRef);
     } else {
@@ -79,12 +87,15 @@ class _CommentsScreenState extends State<CommentsScreen> {
 
     setState(() => _isSending = true);
     final batch = FirebaseFirestore.instance.batch();
-    final eventRef = FirebaseFirestore.instance.collection('events').doc(widget.postId.trim());
 
     try {
       if (_replyingToCommentId != null) {
-        // --- POSTING A REPLY ---
-        final replyRef = eventRef.collection('comments').doc(_replyingToCommentId).collection('replies').doc();
+        // --- REPLY ---
+        final replyRef = _parentRef
+            .collection('comments')
+            .doc(_replyingToCommentId)
+            .collection('replies')
+            .doc();
         batch.set(replyRef, {
           'text': text,
           'userName': user.displayName ?? 'User',
@@ -93,8 +104,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
           'createdAt': FieldValue.serverTimestamp(),
         });
       } else {
-        // --- POSTING A MAIN COMMENT ---
-        final commentRef = eventRef.collection('comments').doc();
+        // --- MAIN COMMENT ---
+        final commentRef = _parentRef.collection('comments').doc();
         batch.set(commentRef, {
           'text': text,
           'userName': user.displayName ?? 'User',
@@ -103,38 +114,74 @@ class _CommentsScreenState extends State<CommentsScreen> {
           'createdAt': FieldValue.serverTimestamp(),
           'likedBy': [],
         });
-        batch.set(eventRef, {'commentCount': FieldValue.increment(1)}, SetOptions(merge: true));
+        // ✅ increment commentCount on the correct parent doc
+        batch.set(_parentRef, {'commentCount': FieldValue.increment(1)},
+            SetOptions(merge: true));
       }
 
       await batch.commit();
       _commentController.clear();
-      setState(() { _replyingToCommentId = null; _replyingToUserName = null; });
+      setState(() {
+        _replyingToCommentId = null;
+        _replyingToUserName = null;
+      });
       FocusScope.of(context).unfocus();
     } catch (e) {
-      debugPrint(e.toString());
+      debugPrint("_postComment error: $e");
     } finally {
       setState(() => _isSending = false);
     }
   }
 
   @override
+  void dispose() {
+    _commentController.dispose();
+    _commentFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(color: backgroundColor, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      decoration: const BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       height: MediaQuery.of(context).size.height * 0.9,
       child: Column(
         children: [
           _buildHeader(),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('events').doc(widget.postId).collection('comments').orderBy('createdAt', descending: true).snapshots(),
+              // ✅ FIX: uses _parentRef so collection is always correct
+              stream: _parentRef
+                  .collection('comments')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                if (snapshot.hasError) {
+                  debugPrint(">> Comments error: ${snapshot.error}");
+                  return Center(child: Text("Error: ${snapshot.error}"));
+                }
+                if (!snapshot.hasData) {
+                  return const Center(
+                      child: CircularProgressIndicator(color: primaryColor));
+                }
                 final docs = snapshot.data!.docs;
+                if (docs.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      "No comments yet.\nBe the first to comment!",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey, fontSize: 14),
+                    ),
+                  );
+                }
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: docs.length,
-                  itemBuilder: (context, index) => _buildCommentItem(docs[index]),
+                  itemBuilder: (context, index) =>
+                      _buildCommentItem(docs[index]),
                 );
               },
             ),
@@ -148,7 +195,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
   Widget _buildCommentItem(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final List likedBy = data['likedBy'] ?? [];
-    final bool isLiked = likedBy.contains(FirebaseAuth.instance.currentUser?.uid);
+    final bool isLiked =
+        likedBy.contains(FirebaseAuth.instance.currentUser?.uid);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,19 +212,30 @@ class _CommentsScreenState extends State<CommentsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(data['userName'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text(data['userName'] ?? 'User',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 2),
-                    Text(data['text'], style: const TextStyle(fontSize: 14)),
+                    Text(data['text'] ?? '',
+                        style: const TextStyle(fontSize: 14)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        _buildActionBtn(isLiked ? Icons.favorite : Icons.favorite_border, "${likedBy.length}", 
-                          color: isLiked ? Colors.red : Colors.grey, onTap: () => _toggleLike(doc.id, likedBy)),
+                        _buildActionBtn(
+                          isLiked ? Icons.favorite : Icons.favorite_border,
+                          "${likedBy.length}",
+                          color: isLiked ? Colors.red : Colors.grey,
+                          onTap: () => _toggleLike(doc.id, likedBy),
+                        ),
                         const SizedBox(width: 20),
-                        _buildActionBtn(Icons.reply_rounded, "Reply", onTap: () => _setReply(doc.id, data['userName'])),
+                        _buildActionBtn(
+                          Icons.reply_rounded,
+                          "Reply",
+                          onTap: () => _setReply(doc.id, data['userName'] ?? 'User'),
+                        ),
                       ],
                     ),
-                    _buildRepliesList(doc.id), // Recursive-ish replies
+                    _buildRepliesList(doc.id),
                   ],
                 ),
               ),
@@ -188,13 +247,20 @@ class _CommentsScreenState extends State<CommentsScreen> {
     );
   }
 
-  Widget _buildAvatarWithFollow(String? url, String uid) {
+  Widget _buildAvatarWithFollow(String? url, String? uid) {
     final isMe = FirebaseAuth.instance.currentUser?.uid == uid;
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        CircleAvatar(radius: 20, backgroundImage: url != null ? NetworkImage(url) : null, child: url == null ? const Icon(Icons.person) : null),
-        if (!isMe)
+        CircleAvatar(
+          radius: 20,
+          backgroundImage:
+              (url != null && url.isNotEmpty) ? NetworkImage(url) : null,
+          child: (url == null || url.isEmpty)
+              ? const Icon(Icons.person)
+              : null,
+        ),
+        if (!isMe && uid != null)
           Positioned(
             bottom: -4,
             right: -4,
@@ -202,8 +268,10 @@ class _CommentsScreenState extends State<CommentsScreen> {
               onTap: () => _toggleFollow(uid),
               child: Container(
                 padding: const EdgeInsets.all(2),
-                decoration: const BoxDecoration(color: primaryColor, shape: BoxShape.circle),
-                child: const Icon(Icons.add, size: 12, color: Colors.white),
+                decoration: const BoxDecoration(
+                    color: primaryColor, shape: BoxShape.circle),
+                child:
+                    const Icon(Icons.add, size: 12, color: Colors.white),
               ),
             ),
           ),
@@ -213,21 +281,54 @@ class _CommentsScreenState extends State<CommentsScreen> {
 
   Widget _buildRepliesList(String parentId) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('events').doc(widget.postId).collection('comments').doc(parentId).collection('replies').orderBy('createdAt', descending: false).snapshots(),
+      // ✅ FIX: uses _parentRef so replies are also in the correct collection
+      stream: _parentRef
+          .collection('comments')
+          .doc(parentId)
+          .collection('replies')
+          .orderBy('createdAt', descending: false)
+          .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox.shrink();
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
         return Padding(
           padding: const EdgeInsets.only(top: 10),
           child: Column(
             children: snapshot.data!.docs.map((d) {
               final r = d.data() as Map<String, dynamic>;
+              final profileUrl = r['userProfile'] as String?;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    CircleAvatar(radius: 10, backgroundImage: NetworkImage(r['userProfile'])),
+                    CircleAvatar(
+                      radius: 10,
+                      backgroundImage: (profileUrl != null &&
+                              profileUrl.isNotEmpty)
+                          ? NetworkImage(profileUrl)
+                          : null,
+                      child: (profileUrl == null || profileUrl.isEmpty)
+                          ? const Icon(Icons.person, size: 10)
+                          : null,
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: Text("${r['userName']} ${r['text']}", style: const TextStyle(fontSize: 12))),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black87),
+                          children: [
+                            TextSpan(
+                              text: "${r['userName'] ?? 'User'} ",
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            TextSpan(text: r['text'] ?? ''),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -238,18 +339,35 @@ class _CommentsScreenState extends State<CommentsScreen> {
     );
   }
 
-  Widget _buildActionBtn(IconData icon, String label, {Color color = Colors.grey, VoidCallback? onTap}) {
+  Widget _buildActionBtn(IconData icon, String label,
+      {Color color = Colors.grey, VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,
-      child: Row(children: [Icon(icon, size: 16, color: color), const SizedBox(width: 4), Text(label, style: TextStyle(fontSize: 12, color: color))]),
+      child: Row(children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 12, color: color))
+      ]),
     );
   }
 
   Widget _buildHeader() {
     return Column(
       children: [
-        Container(margin: const EdgeInsets.only(top: 12), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-        const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Text("Comments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+        Container(
+          margin: const EdgeInsets.only(top: 12),
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2)),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Text("Comments",
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
         const Divider(height: 1),
       ],
     );
@@ -257,8 +375,12 @@ class _CommentsScreenState extends State<CommentsScreen> {
 
   Widget _buildInputArea() {
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).viewInsets.bottom + 16),
-      decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey.shade200))),
+      padding: EdgeInsets.fromLTRB(
+          16, 8, 16, MediaQuery.of(context).viewInsets.bottom + 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -266,9 +388,17 @@ class _CommentsScreenState extends State<CommentsScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(children: [
-                Text("Replying to $_replyingToUserName", style: const TextStyle(fontSize: 12, color: primaryColor)),
+                Text("Replying to $_replyingToUserName",
+                    style: const TextStyle(
+                        fontSize: 12, color: primaryColor)),
                 const Spacer(),
-                GestureDetector(onTap: () => setState(() => _replyingToUserName = null), child: const Icon(Icons.close, size: 14)),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _replyingToUserName = null;
+                    _replyingToCommentId = null;
+                  }),
+                  child: const Icon(Icons.close, size: 14),
+                ),
               ]),
             ),
           Row(
@@ -277,11 +407,23 @@ class _CommentsScreenState extends State<CommentsScreen> {
                 child: TextField(
                   controller: _commentController,
                   focusNode: _commentFocusNode,
-                  decoration: InputDecoration(hintText: "Add a comment...", filled: true, fillColor: inputBg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none)),
+                  decoration: InputDecoration(
+                    hintText: "Add a comment...",
+                    filled: true,
+                    fillColor: inputBg,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(onPressed: _isSending ? null : _postComment, icon: Icon(Icons.send_rounded, color: _isSending ? Colors.grey : primaryColor)),
+              IconButton(
+                onPressed: _isSending ? null : _postComment,
+                icon: Icon(Icons.send_rounded,
+                    color: _isSending ? Colors.grey : primaryColor),
+              ),
             ],
           ),
         ],
