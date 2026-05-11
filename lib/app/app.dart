@@ -43,7 +43,6 @@ class _EventraAppState extends State<EventraApp> {
 
       themeMode: themeProvider.themeMode,
 
-      // 🌞 LIGHT THEME
       theme: ThemeData(
         brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFF7F7FB),
@@ -60,7 +59,6 @@ class _EventraAppState extends State<EventraApp> {
         ),
       ),
 
-      // 🌙 DARK THEME
       darkTheme: ThemeData(
         brightness: Brightness.dark,
 

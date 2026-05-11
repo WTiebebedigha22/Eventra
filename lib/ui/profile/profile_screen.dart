@@ -22,7 +22,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   late final Stream<DocumentSnapshot> _userStream;
   late final Stream<QuerySnapshot> _postsStream;
-  // ✅ REPLACED: Liked stream with Tickets stream
   Stream<QuerySnapshot>? _ticketsStream; 
   Stream<QuerySnapshot>? _savedStream;
 
@@ -41,7 +40,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .snapshots();
 
     if (isMe) {
-      // ✅ TICKETS: Using collectionGroup to find all tickets belonging to this user
       _ticketsStream = _firestore
           .collectionGroup('tickets')
           .where('userId', isEqualTo: widget.userId)
@@ -224,7 +222,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       tabs: isMe
                           ? const [
                               Tab(icon: Icon(Icons.grid_on_rounded)),
-                              Tab(icon: Icon(Icons.confirmation_number_outlined)), // ✅ UPDATED ICON
+                              Tab(icon: Icon(Icons.confirmation_number_outlined)), 
                               Tab(icon: Icon(Icons.bookmark_outline_rounded)),
                             ]
                           : const [
@@ -237,12 +235,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               body: TabBarView(
                 children: isMe
                     ? [
-                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined),
-                        _buildGrid(_ticketsStream!, "No tickets yet", Icons.confirmation_number_outlined), // ✅ TICKETS GRID
-                        _buildGrid(_savedStream!, "No saved items", Icons.bookmark_outline_rounded),
+                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined, "post"),
+                        _buildGrid(_ticketsStream!, "No tickets yet", Icons.confirmation_number_outlined, "ticket"),
+                        _buildGrid(_savedStream!, "No saved items", Icons.bookmark_outline_rounded, "post"),
                       ]
                     : [
-                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined),
+                        _buildGrid(_postsStream, "No posts yet", Icons.camera_alt_outlined, "post"),
                       ],
               ),
             ),
@@ -368,7 +366,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ),
   );
 
-  Widget _buildGrid(Stream<QuerySnapshot> stream, String emptyTitle, IconData emptyIcon) {
+  Widget _buildGrid(Stream<QuerySnapshot> stream, String emptyTitle, IconData emptyIcon, String type) {
     return StreamBuilder<QuerySnapshot>(
       stream: stream,
       builder: (context, snapshot) {
@@ -402,12 +400,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            // ✅ TICKETS SUPPORT: Check for imageUrl or eventImage
-            final String mediaUrl = data['imageUrl'] ?? data['mediaUrl'] ?? data['eventImage'] ?? '';
+            final String mediaUrl = data['imageUrl'] ?? data['mediaUrl'] ?? data['eventImageUrl'] ?? '';
             final String price = data['price']?.toString() ?? '';
 
             return GestureDetector(
-              onTap: () => context.push('/post/${docs[index].id}', extra: data),
+              onTap: () {
+                final docId = docs[index].id;
+                // ✅ ROUTING FIX: Tickets go to ticket route, posts go to post route
+                if (type == "ticket") {
+                  context.push('/ticket/$docId', extra: data);
+                } else {
+                  context.push('/post/$docId', extra: data);
+                }
+              },
               child: Stack(
                 fit: StackFit.expand,
                 children: [

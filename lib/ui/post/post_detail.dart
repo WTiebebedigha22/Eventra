@@ -197,7 +197,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
                     ),
                     Text(
                       price,
-                      style: const TextStyle(color: Color(0xFF4CAF50), fontSize: 22, fontWeight: FontWeight.w900),
+                      style: const TextStyle(color: Colors.deepPurpleAccent, fontSize: 22, fontWeight: FontWeight.w900),
                     ),
                   ],
                 ),
@@ -219,10 +219,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
                   child: ElevatedButton(
                     onPressed: () {},
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3BA73A),
+                      backgroundColor: Colors.deepPurpleAccent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                       elevation: 0,
                     ),
                     child: const Text("CONTACT SELLER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),

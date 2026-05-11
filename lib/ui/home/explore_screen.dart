@@ -14,11 +14,17 @@ class MasonryExploreScreen extends StatefulWidget {
 class _MasonryExploreScreenState extends State<MasonryExploreScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  
+  // Define the stream as a late variable to persist it
+  late Stream<List<Map<String, dynamic>>> _masonryStream;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    
+    // Initialize the stream once so all TabBarView children share the same data source
+    _masonryStream = _getMasonryFeed();
   }
 
   @override
@@ -28,11 +34,11 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
   }
 
   Stream<List<Map<String, dynamic>>> _getMasonryFeed() {
-    final posts =
-        FirebaseFirestore.instance.collection('posts').snapshots();
-    final events =
-        FirebaseFirestore.instance.collection('events').snapshots();
+    final posts = FirebaseFirestore.instance.collection('posts').snapshots();
+    final events = FirebaseFirestore.instance.collection('events').snapshots();
 
+    // CombineLatestStream creates a new stream. .asBroadcastStream() allows 
+    // multiple StreamBuilders (tabs) to listen to it simultaneously.
     return CombineLatestStream.combine2(posts, events, (pSnap, eSnap) {
       final pList = pSnap.docs
           .map((d) => {...d.data(), 'id': d.id, 'type': 'post'})
@@ -41,14 +47,16 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
           .map((d) => {...d.data(), 'id': d.id, 'type': 'event'})
           .toList();
 
-      return [...pList, ...eList]..sort((a, b) {
-          final tA = (a['createdAt'] ?? a['date']) as Timestamp? ??
-              Timestamp.now();
-          final tB = (b['createdAt'] ?? b['date']) as Timestamp? ??
-              Timestamp.now();
-          return tB.compareTo(tA);
-        });
-    });
+      final combined = [...pList, ...eList];
+      
+      combined.sort((a, b) {
+        final tA = (a['createdAt'] ?? a['date']) as Timestamp? ?? Timestamp.now();
+        final tB = (b['createdAt'] ?? b['date']) as Timestamp? ?? Timestamp.now();
+        return tB.compareTo(tA);
+      });
+      
+      return combined;
+    }).asBroadcastStream(); 
   }
 
   @override
@@ -104,21 +112,28 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
 
   Widget _buildMasonryGrid(String filter) {
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _getMasonryFeed(),
+      // Use the persisted stream variable here
+      stream: _masonryStream,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text("Error: ${snapshot.error}"));
+        }
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(color: Colors.deepPurple),
           );
         }
 
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+        final data = snapshot.data ?? [];
+        
+        if (data.isEmpty) {
           return const Center(child: Text("No items found."));
         }
 
         final items = filter == 'all'
-            ? snapshot.data!
-            : snapshot.data!.where((i) => i['type'] == filter).toList();
+            ? data
+            : data.where((i) => i['type'] == filter).toList();
 
         if (items.isEmpty) {
           return Center(child: Text("No ${filter}s found."));
@@ -211,9 +226,6 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
     );
   }
 
-  /// Routes to the correct detail screen based on item type.
-  /// Events  → /home/event/:id  (existing EventDetailScreen)
-  /// Posts   → /post/:id        (requires PostDetailScreen + route)
   void _navigateToDetail(Map<String, dynamic> item) {
     final String? id = item['id'] as String?;
 
