@@ -365,7 +365,7 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  "Total Pay",
+                  "Total Amount to be Paid",
                   style: TextStyle(fontSize: 16, color: Colors.grey),
                 ),
                 Text(

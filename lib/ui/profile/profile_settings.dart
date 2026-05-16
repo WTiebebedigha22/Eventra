@@ -1,55 +1,94 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+
 import '../../providers/auth_provider.dart';
+import '../../app/app_theme.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
 
   @override
-  State<ProfileSettingsScreen> createState() => _ProfileSettingsScreenState();
+  State<ProfileSettingsScreen> createState() =>
+      _ProfileSettingsScreenState();
 }
 
-class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
-  // --- Theme Colors ---
-  static const Color primaryColor = Colors.deepPurpleAccent;
-  static const Color backgroundColor = Colors.white;
-  static const Color surfaceColor = Color(0xFFF6F7FB);
-  static const Color textColor = Color(0xFF1C1E21);
-  static const Color dangerColor = Color(0xFFD93025);
+class _ProfileSettingsScreenState
+    extends State<ProfileSettingsScreen> {
+  final TextEditingController _searchController =
+      TextEditingController();
 
-  final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
 
   final List<Map<String, dynamic>> settingGroups = const [
     {
       'title': 'Account',
       'items': [
-        {'title': 'Edit Profile', 'icon': Icons.person_outline, 'route': '/profile/edit_profile'},
-        {'title': 'Security', 'icon': Icons.security_outlined, 'route': '/settings/security'},
-        {'title': 'Activity', 'icon': Icons.timeline, 'route': '/settings/activity'},
+        {
+          'title': 'Edit Profile',
+          'icon': Icons.person_outline,
+          'route': '/profile/edit_profile'
+        },
+        {
+          'title': 'Security',
+          'icon': Icons.security_outlined,
+          'route': '/settings/security'
+        },
+        {
+          'title': 'Activity',
+          'icon': Icons.timeline,
+          'route': '/settings/activity'
+        },
       ],
     },
     {
       'title': 'Content & Display',
       'items': [
-        {'title': 'Notifications', 'icon': Icons.notifications_none, 'route': '/settings/notifications'},
-        {'title': 'Theme', 'icon': Icons.dark_mode_outlined, 'route': '/settings/theme'},
-        {'title': 'Language', 'icon': Icons.language_outlined, 'route': '/settings/language'},
+        {
+          'title': 'Notifications',
+          'icon': Icons.notifications_none,
+          'route': '/settings/notifications'
+        },
+        {
+          'title': 'Theme',
+          'icon': Icons.dark_mode_outlined,
+          'route': '/settings/theme'
+        },
+        {
+          'title': 'Language',
+          'icon': Icons.language_outlined,
+          'route': '/settings/language'
+        },
       ],
     },
     {
       'title': 'Support & About',
       'items': [
-        {'title': 'Help Center', 'icon': Icons.help_outline},
-        {'title': 'Privacy Policy', 'icon': Icons.verified_user_outlined},
+        {
+          'title': 'Help Center',
+          'icon': Icons.help_outline
+        },
+        {
+          'title': 'Privacy Policy',
+          'icon': Icons.verified_user_outlined
+        },
       ],
     },
     {
       'title': 'Danger Zone',
       'items': [
-        {'title': 'Log Out', 'icon': Icons.logout, 'action': 'logout', 'isDanger': true},
-        {'title': 'Delete Account', 'icon': Icons.delete_forever_outlined, 'action': 'delete', 'isDanger': true},
+        {
+          'title': 'Log Out',
+          'icon': Icons.logout,
+          'action': 'logout',
+          'isDanger': true
+        },
+        {
+          'title': 'Delete Account',
+          'icon': Icons.delete_forever_outlined,
+          'action': 'delete',
+          'isDanger': true
+        },
       ],
     },
   ];
@@ -62,123 +101,269 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredGroups = settingGroups.map((group) {
-      final filteredItems = (group['items'] as List).where((item) {
-        return item['title']
-            .toString()
-            .toLowerCase()
-            .contains(_searchQuery.toLowerCase());
-      }).toList();
-      return {...group, 'items': filteredItems};
-    }).where((group) => (group['items'] as List).isNotEmpty).toList();
+    final filteredGroups = settingGroups
+        .map((group) {
+          final filteredItems =
+              (group['items'] as List).where((item) {
+            return item['title']
+                .toString()
+                .toLowerCase()
+                .contains(_searchQuery.toLowerCase());
+          }).toList();
+
+          return {
+            ...group,
+            'items': filteredItems,
+          };
+        })
+        .where(
+          (group) => (group['items'] as List).isNotEmpty,
+        )
+        .toList();
 
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppColors.bgPrimary,
+
       appBar: AppBar(
-        backgroundColor: backgroundColor,
+        backgroundColor: AppColors.bgPrimary,
         elevation: 0,
         centerTitle: true,
-        title: const Text(
-          'Settings',
-          style: TextStyle(
-            color: textColor,
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-          ),
-        ),
+
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: textColor),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            size: 20,
+          ),
           onPressed: () => context.pop(),
         ),
+
+        title: Text(
+          'Settings',
+          style: AppTextStyles.headlineMedium,
+        ),
       ),
+
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // 🔍 Search Bar
+          /// HEADER CARD
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(
+                18,
+                8,
+                18,
+                0,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: AppColors.cardGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: AppColors.borderDefault,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentPurple
+                            .withOpacity(.12),
+                        borderRadius:
+                            BorderRadius.circular(18),
+                      ),
+                      child: const Icon(
+                        Icons.settings_rounded,
+                        color: AppColors.accentPurple,
+                        size: 28,
+                      ),
+                    ),
+
+                    const SizedBox(width: 16),
+
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Manage Preferences',
+                            style:
+                                AppTextStyles.headlineMedium,
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            'Customize your app experience.',
+                            style:
+                                AppTextStyles.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          /// SEARCH
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
               child: _buildSearchBar(),
             ),
           ),
 
           filteredGroups.isEmpty
-              ? const SliverFillRemaining(
+              ? SliverFillRemaining(
                   child: Center(
-                    child: Text("No settings found",
-                        style: TextStyle(color: Colors.grey)),
+                    child: Text(
+                      "No settings found",
+                      style:
+                          AppTextStyles.bodyMedium,
+                    ),
                   ),
                 )
               : SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) =>
-                        _buildGroup(context, filteredGroups[index]),
-                    childCount: filteredGroups.length,
+                  delegate:
+                      SliverChildBuilderDelegate(
+                    (context, index) => _buildGroup(
+                      context,
+                      filteredGroups[index],
+                    ),
+                    childCount:
+                        filteredGroups.length,
                   ),
                 ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 40),
+          ),
         ],
       ),
     );
   }
 
-  // 🔍 SEARCH BAR
+  /// SEARCH BAR
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
-        color: surfaceColor,
-        borderRadius: BorderRadius.circular(14),
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.borderDefault,
+        ),
       ),
       child: TextField(
         controller: _searchController,
-        onChanged: (value) => setState(() => _searchQuery = value),
+        style: AppTextStyles.bodyLarge,
+
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+          });
+        },
+
         decoration: InputDecoration(
           hintText: "Search settings...",
-          prefixIcon: const Icon(Icons.search, color: primaryColor),
+          hintStyle: AppTextStyles.bodyMedium,
+
+          prefixIcon: const Icon(
+            Icons.search_rounded,
+            color: AppColors.accentPurple,
+          ),
+
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppColors.textSecondary,
+                  ),
                   onPressed: () {
                     _searchController.clear();
-                    setState(() => _searchQuery = "");
+
+                    setState(() {
+                      _searchQuery = "";
+                    });
                   },
                 )
               : null,
+
           border: InputBorder.none,
         ),
       ),
     );
   }
 
-  // 📦 GROUP
-  Widget _buildGroup(BuildContext context, Map<String, dynamic> group) {
+  /// GROUP
+  Widget _buildGroup(
+    BuildContext context,
+    Map<String, dynamic> group,
+  ) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 22),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 20, bottom: 8),
+            padding: const EdgeInsets.only(
+              left: 20,
+              bottom: 10,
+            ),
             child: Text(
-              group['title'].toUpperCase(),
-              style: const TextStyle(
-                color: Colors.grey,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.2,
-              ),
+              group['title']
+                  .toString()
+                  .toUpperCase(),
+              style: AppTextStyles.labelSmall,
             ),
           ),
+
           Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: surfaceColor,
-              borderRadius: BorderRadius.circular(16),
+            margin:
+                const EdgeInsets.symmetric(
+              horizontal: 16,
             ),
+
+            decoration: BoxDecoration(
+              color: AppColors.bgSecondary,
+              borderRadius:
+                  BorderRadius.circular(22),
+              border: Border.all(
+                color: AppColors.borderDefault,
+              ),
+            ),
+
             child: Column(
-              children: (group['items'] as List).map((item) {
-                return _buildTile(context, item);
+              children:
+                  (group['items'] as List)
+                      .asMap()
+                      .entries
+                      .map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+
+                return Column(
+                  children: [
+                    _buildTile(context, item),
+
+                    if (index !=
+                        (group['items'] as List)
+                                .length -
+                            1)
+                      const Divider(
+                        height: 1,
+                      ),
+                  ],
+                );
               }).toList(),
             ),
           ),
@@ -187,53 +372,88 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  // ⚙️ TILE
-  Widget _buildTile(BuildContext context, Map<String, dynamic> item) {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-    final bool isDanger = item['isDanger'] ?? false;
+  /// TILE
+  Widget _buildTile(
+    BuildContext context,
+    Map<String, dynamic> item,
+  ) {
+    final auth =
+        Provider.of<AuthProvider>(
+      context,
+      listen: false,
+    );
+
+    final bool isDanger =
+        item['isDanger'] ?? false;
 
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding:
+          const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 6,
+      ),
+
       leading: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isDanger
-              ? dangerColor.withOpacity(0.1)
-              : primaryColor.withOpacity(0.1),
-          shape: BoxShape.circle,
+              ? AppColors.error
+                  .withOpacity(.12)
+              : AppColors.accentPurple
+                  .withOpacity(.12),
+          borderRadius:
+              BorderRadius.circular(16),
         ),
         child: Icon(
           item['icon'],
-          color: isDanger ? dangerColor : primaryColor,
-          size: 20,
+          color: isDanger
+              ? AppColors.error
+              : AppColors.accentPurple,
+          size: 22,
         ),
       ),
+
       title: Text(
         item['title'],
-        style: TextStyle(
-          color: isDanger ? dangerColor : textColor,
+        style:
+            AppTextStyles.titleMedium.copyWith(
+          color: isDanger
+              ? AppColors.error
+              : AppColors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
       ),
-      trailing: const Icon(Icons.chevron_right, size: 18),
+
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        color: isDanger
+            ? AppColors.error
+            : AppColors.textSecondary,
+      ),
+
       onTap: () {
         if (item['route'] != null) {
           context.push(item['route']);
-        } else if (item['action'] == 'logout') {
+        } else if (item['action'] ==
+            'logout') {
           _confirm(
             context,
             "Logout",
-            "Are you sure?",
+            "Are you sure you want to logout?",
             () async {
               await auth.logout();
-              if (context.mounted) context.go('/login');
+
+              if (context.mounted) {
+                context.go('/login');
+              }
             },
           );
-        } else if (item['action'] == 'delete') {
+        } else if (item['action'] ==
+            'delete') {
           _confirm(
             context,
             "Delete Account",
-            "This cannot be undone.",
+            "This action cannot be undone.",
             () {},
             isDanger: true,
           );
@@ -242,7 +462,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  // ⚠️ CONFIRM DIALOG
+  /// CONFIRM DIALOG
   void _confirm(
     BuildContext context,
     String title,
@@ -252,27 +472,61 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(title),
-        content: Text(text),
-        actions: [
-          TextButton(
-            onPressed: () => context.pop(),
-            child: const Text("Cancel"),
+      builder: (_) {
+        return AlertDialog(
+          backgroundColor:
+              AppColors.bgSecondary,
+
+          shape: RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(24),
           ),
-          ElevatedButton(
-            onPressed: () {
-              context.pop();
-              onConfirm();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isDanger ? dangerColor : primaryColor,
+
+          title: Text(
+            title,
+            style:
+                AppTextStyles.headlineSmall,
+          ),
+
+          content: Text(
+            text,
+            style:
+                AppTextStyles.bodyMedium,
+          ),
+
+          actions: [
+            TextButton(
+              onPressed: () => context.pop(),
+              child: Text(
+                "Cancel",
+                style:
+                    AppTextStyles.labelLarge,
+              ),
             ),
-            child: const Text("Confirm"),
-          )
-        ],
-      ),
+
+            ElevatedButton(
+              onPressed: () {
+                context.pop();
+                onConfirm();
+              },
+
+              style:
+                  ElevatedButton.styleFrom(
+                backgroundColor: isDanger
+                    ? AppColors.error
+                    : AppColors
+                        .accentPurple,
+                minimumSize:
+                    const Size(100, 45),
+              ),
+
+              child: const Text(
+                "Confirm",
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

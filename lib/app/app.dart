@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../main.dart'; // make sure ThemeProvider is accessible
+import '../providers/theme_provider.dart';
 import 'app_router.dart';
 
 class EventraApp extends StatefulWidget {

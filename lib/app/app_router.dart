@@ -37,16 +37,11 @@ import '../ui/home/explore_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
-final _shellNavigatorHomeKey =
-    GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
-final _shellNavigatorChatKey =
-    GlobalKey<NavigatorState>(debugLabel: 'chat');
-final _shellNavigatorExploreKey =
-    GlobalKey<NavigatorState>(debugLabel: 'explore');
-final _shellNavigatorSearchKey =
-    GlobalKey<NavigatorState>(debugLabel: 'search');
-final _shellNavigatorProfileKey =
-    GlobalKey<NavigatorState>(debugLabel: 'profile');
+final _shellNavigatorHomeKey = GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
+final _shellNavigatorChatKey = GlobalKey<NavigatorState>(debugLabel: 'chat');
+final _shellNavigatorExploreKey = GlobalKey<NavigatorState>(debugLabel: 'explore');
+final _shellNavigatorSearchKey = GlobalKey<NavigatorState>(debugLabel: 'search');
+final _shellNavigatorProfileKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
 
 class AppRouter {
   GoRouter? _router;
@@ -76,8 +71,7 @@ class AppRouter {
           return '/login';
         }
 
-        if (loggedIn &&
-            (isAuthPage || location == '/' || location == '/splash')) {
+        if (loggedIn && (isAuthPage || location == '/' || location == '/splash')) {
           return '/home';
         }
 
@@ -105,9 +99,7 @@ class AppRouter {
             );
           },
           branches: [
-
             // ── HOME / EVENTS ──
-            // Branch index: 0  →  nav index 0
             StatefulShellBranch(
               navigatorKey: _shellNavigatorHomeKey,
               routes: [
@@ -126,15 +118,9 @@ class AppRouter {
                           name: 'purchaseTickets',
                           builder: (context, state) {
                             final eventId = state.pathParameters['id'];
-
                             if (eventId == null || eventId.isEmpty) {
-                              return const Scaffold(
-                                body: Center(
-                                  child: Text("Invalid Event ID"),
-                                ),
-                              );
+                              return const Scaffold(body: Center(child: Text("Invalid Event ID")));
                             }
-
                             return TicketPurchaseScreen(
                               eventId: eventId,
                               event: state.extra as Map<String, dynamic>?,
@@ -148,8 +134,7 @@ class AppRouter {
               ],
             ),
 
-            // ── CHAT / MESSAGES ──
-            // Branch index: 1  →  nav index 1
+            // ── CHAT ──
             StatefulShellBranch(
               navigatorKey: _shellNavigatorChatKey,
               routes: [
@@ -160,8 +145,7 @@ class AppRouter {
               ],
             ),
 
-            // ── EXPLORE  (FAB: create post sits above this tab in HomeScreen) ──
-            // Branch index: 2  →  nav index 2  (centre tab)
+            // ── EXPLORE ──
             StatefulShellBranch(
               navigatorKey: _shellNavigatorExploreKey,
               routes: [
@@ -173,7 +157,6 @@ class AppRouter {
             ),
 
             // ── SEARCH ──
-            // Branch index: 3  →  nav index 3
             StatefulShellBranch(
               navigatorKey: _shellNavigatorSearchKey,
               routes: [
@@ -185,35 +168,23 @@ class AppRouter {
             ),
 
             // ── PROFILE ──
-            // Branch index: 4  →  nav index 4
             StatefulShellBranch(
               navigatorKey: _shellNavigatorProfileKey,
               routes: [
                 GoRoute(
                   path: '/profile',
-                  builder: (_, _) {
+                  builder: (context, state) {
                     final uid = FirebaseAuth.instance.currentUser?.uid;
-
-                    if (uid == null) {
-                      return const Scaffold(
-                        body: Center(child: Text("User not logged in")),
-                      );
-                    }
-
+                    if (uid == null) return const Scaffold(body: Center(child: Text("Not Logged In")));
                     return ProfileScreen(userId: uid);
                   },
                   routes: [
                     GoRoute(
                       path: 'edit',
-                      builder: (_, _) {
+                      builder: (context, state) {
                         final uid = FirebaseAuth.instance.currentUser?.uid;
-
-                        if (uid == null) {
-                          return const Scaffold(
-                            body: Center(child: Text("User not logged in")),
-                          );
-                        }
-                        return EditProfileScreen(userId: uid);
+                        if (uid == null) return const Scaffold(body: Center(child: Text("Not Logged In")));
+                        return EditProfileScreen();
                       },
                     ),
                   ],
@@ -229,18 +200,13 @@ class AppRouter {
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final extra = state.extra as Map<String, dynamic>?;
-
-            if (extra == null) {
-              return const Scaffold(
-                body: Center(child: Text("Missing payment details")),
-              );
-            }
+            if (extra == null) return const Scaffold(body: Center(child: Text("Missing Details")));
 
             return PaymentScreen(
               eventId: extra['eventId'] as String,
               ticketId: extra['ticketId'] as String,
               totalAmount: (extra['totalAmount'] as num).toDouble(),
-              quantity: extra['quantity'] as int,
+              quantity: extra['quantity'] as int, 
             );
           },
         ),
@@ -251,13 +217,9 @@ class AppRouter {
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final ticketId = state.pathParameters['ticketId'];
-
-            if (ticketId == null || ticketId.isEmpty) {
-              return const Scaffold(
-                body: Center(child: Text("Invalid Ticket ID")),
-              );
-            }
-
+            if (ticketId == null) return const Scaffold(body: Center(child: Text("Invalid ID")));
+            
+            // Assuming class name is TicketScreen based on your file import
             return TicketScreen(ticketId: ticketId);
           },
         ),
@@ -289,13 +251,7 @@ class AppRouter {
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final userId = state.pathParameters['userId'];
-
-            if (userId == null || userId.isEmpty) {
-              return const Scaffold(
-                body: Center(child: Text("Invalid User ID")),
-              );
-            }
-
+            if (userId == null) return const Scaffold(body: Center(child: Text("Invalid User")));
             return ProfileScreen(userId: userId);
           },
         ),
@@ -306,13 +262,7 @@ class AppRouter {
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final id = state.pathParameters['id'];
-
-            if (id == null || id.isEmpty) {
-              return const Scaffold(
-                body: Center(child: Text("Invalid Post ID")),
-              );
-            }
-
+            if (id == null) return const Scaffold(body: Center(child: Text("Invalid Post")));
             return PostDetailScreen(postId: id);
           },
         ),
@@ -336,34 +286,13 @@ class AppRouter {
           parentNavigatorKey: _rootNavigatorKey,
           builder: (_, __) => const ProfileSettingsScreen(),
           routes: [
-            GoRoute(
-              path: 'security',
-              builder: (_, __) => const SecurityScreen(),
-            ),
-            GoRoute(
-              path: 'activity',
-              builder: (_, __) => const ActivityScreen(),
-            ),
-            GoRoute(
-              path: 'notifications',
-              builder: (_, __) => const NotificationsScreen(),
-            ),
-            GoRoute(
-              path: 'theme',
-              builder: (_, __) => const ThemeScreen(),
-            ),
-            GoRoute(
-              path: 'language',
-              builder: (_, __) => const LanguageScreen(),
-            ),
-            GoRoute(
-              path: 'help',
-              builder: (_, __) => const HelpScreen(),
-            ),
-            GoRoute(
-              path: 'privacy',
-              builder: (_, __) => const PrivacyPolicyScreen(),
-            ),
+            GoRoute(path: 'security', builder: (_, __) => const SecurityScreen()),
+            GoRoute(path: 'activity', builder: (_, __) => const ActivityScreen()),
+            GoRoute(path: 'notifications', builder: (_, __) => const NotificationsScreen()),
+            GoRoute(path: 'theme', builder: (_, __) => const ThemeScreen()),
+            GoRoute(path: 'language', builder: (_, __) => const LanguageScreen()),
+            GoRoute(path: 'help', builder: (_, __) => const HelpScreen()),
+            GoRoute(path: 'privacy', builder: (_, __) => const PrivacyPolicyScreen()),
           ],
         ),
       ],

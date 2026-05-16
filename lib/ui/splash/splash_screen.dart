@@ -12,8 +12,8 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   // --- Styling Constants ---
-  static const Color primaryColor = Color(0xFF3E5992);
-  static const Color backgroundColor = Colors.white; // Matching your Eventra theme
+  static const Color primaryColor = Colors.deepPurpleAccent;
+  static const Color backgroundColor = Colors.white;
   static const Color textColor = Colors.black54;
 
   // --- Configuration for Animated GIF ---
@@ -27,11 +27,10 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   void _startAppFlow() {
-    // 1. Duration should match the length of your GIF animation
     Future.delayed(const Duration(milliseconds: 3000), () {
       if (!mounted) return;
 
-      // 2. Real-time Auth Check
+      //Real-time Auth Check
       final User? user = FirebaseAuth.instance.currentUser;
 
       if (user != null) {
@@ -71,20 +70,19 @@ class _SplashScreenState extends State<SplashScreen> {
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: textColor,
-                  letterSpacing: 6.0, // Uses a wider spacing for "Premium" look
+                  letterSpacing: 6.0,
                 ),
               ),
             ),
 
             SizedBox(height: screenHeight * 0.1),
 
-            // 3. Elegant Progress Bar
             SizedBox(
               width: 120,
               child: LinearProgressIndicator(
                 backgroundColor: primaryColor.withOpacity(0.1),
                 valueColor: const AlwaysStoppedAnimation<Color>(primaryColor),
-                minHeight: 2.0, // Thinner line looks more modern
+                minHeight: 2.5, 
               ),
             ),
           ],
