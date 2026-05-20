@@ -3,47 +3,116 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if user is logged in
+    // ==================== HELPER FUNCTIONS ====================
+    
     function isSignedIn() {
       return request.auth != null;
     }
-
-    // Helper to check if the user is the owner of the document
+    
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
     }
-
-    // --- USERS COLLECTION ---
+    
+    function isAdmin() {
+      return request.auth != null && request.auth.uid in ['admin_uid_1', 'admin_uid_2'];
+    }
+    
+    // ==================== USERS COLLECTION ====================
     match /users/{userId} {
-      allow read: if isSignedIn(); // Any logged-in user can view profiles
-      allow write: if isOwner(userId); // Only the user can edit their own profile
+      allow read: if true;  // Allow public read access for testing
+      allow create, update: if isSignedIn() && isOwner(userId);
+      allow delete: if isAdmin();
+      
+      // Subcollections
+      match /{subcollection}/{docId} {
+        allow read: if true;
+        allow write: if isSignedIn() && isOwner(userId);
+      }
     }
-
-    // --- POSTS COLLECTION ---
+    
+    // ==================== POSTS COLLECTION ====================
     match /posts/{postId} {
-      allow read: if true; // Publicly viewable feed
-      allow create: if isSignedIn(); // Must be logged in to post
-      allow update: if isSignedIn(); // Required for Liking/Commenting
-      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+      allow read: if true;  // Public read access
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && isOwner(resource.data.userId);
+      
+      // Post likes
+      match /likes/{likeId} {
+        allow read: if true;
+        allow create: if isSignedIn() && !exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid));
+        allow delete: if isSignedIn() && request.auth.uid == likeId;
+      }
+      
+      // Post comments
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isSignedIn() && isOwner(resource.data.userId);
+      }
     }
-
-    // --- NOTIFICATIONS COLLECTION ---
-    match /notifications/{notifId} {
-      // Only the recipient can see or delete their notifications
-      allow read, delete: if isSignedIn() && isOwner(resource.data.userId);
-      // Any logged in user can trigger a notification (e.g. by liking a post)
+    
+    // ==================== EVENTS COLLECTION ====================
+    match /events/{eventId} {
+      allow read: if true;  // Public read access
+      allow create, update, delete: if isSignedIn() && isAdmin();  // Only admins can modify events
+      
+      // Event bookings
+      match /bookings/{bookingId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      }
+    }
+    
+    // ==================== BOOKINGS COLLECTION ====================
+    match /bookings/{bookingId} {
+      allow read: if true;
       allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (isOwner(resource.data.customerId) || isAdmin());
     }
-
-    // --- MESSAGES / CHATS COLLECTION ---
-    // Assuming a structure: /chats/{chatId}/messages/{messageId}
+    
+    // ==================== VENDORS COLLECTION ====================
+    match /vendors/{vendorId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() && isOwner(vendorId);
+      allow delete: if isAdmin();
+      
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+        allow update, delete: if isSignedIn() && (isOwner(resource.data.customerId) || isAdmin());
+      }
+    }
+    
+    // ==================== CHATS COLLECTION ====================
     match /chats/{chatId} {
-      // Users can only read/write if their UID is in the participants array
-      allow read, write: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
       
       match /messages/{messageId} {
-        allow read, write: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if isSignedIn() && isOwner(resource.data.senderId);
       }
+      
+      match /typing/{userId} {
+        allow read, write, delete: if isSignedIn();
+      }
+    }
+    
+    // ==================== NOTIFICATIONS COLLECTION ====================
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isOwner(resource.data.recipientId);
+    }
+    
+    // ==================== REVIEWS COLLECTION ====================
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (isOwner(resource.data.customerId) || isAdmin());
     }
   }
 }

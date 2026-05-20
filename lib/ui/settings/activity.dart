@@ -2,108 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-
-// --- MOCK DATABASE STATE MANAGER ---
-// Simulates Firestore updates and broadcasts them via streams
-class MockFirestore {
-  static final MockFirestore instance = MockFirestore._internal();
-  MockFirestore._internal();
-
-  final _controller = StreamController<List<Map<String, dynamic>>>.broadcast();
-
-  // Initial Seed Data representing Firestore documents
-  List<Map<String, dynamic>> _data = [
-    {
-      'id': 'notif_1',
-      'userId': 'mock_user_123',
-      'type': 'like',
-      'senderName': 'Sarah Jenkins',
-      'senderProfile': 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-      'message': 'liked your recent photography post.',
-      'timestamp': DateTime.now().subtract(const Duration(minutes: 5)),
-      'isRead': false,
-      'postImage': 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=150',
-      'postId': 'post_99',
-    },
-    {
-      'id': 'notif_2',
-      'userId': 'mock_user_123',
-      'type': 'booking_request',
-      'senderName': 'David Miller',
-      'senderProfile': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-      'message': 'requested a studio booking for Friday.',
-      'timestamp': DateTime.now().subtract(const Duration(hours: 2)),
-      'isRead': false,
-    },
-    {
-      'id': 'notif_3',
-      'userId': 'mock_user_123',
-      'type': 'comment',
-      'senderName': 'Alex Rivera',
-      'senderProfile': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-      'message': 'commented: "This layout looks incredibly clean!"',
-      'timestamp': DateTime.now().subtract(const Duration(hours: 4)),
-      'isRead': true,
-      'postImage': 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=150',
-      'postId': 'post_99',
-    },
-    {
-      'id': 'notif_4',
-      'userId': 'mock_user_123',
-      'type': 'follow',
-      'senderName': 'Emma Watson',
-      'senderProfile': 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-      'message': 'started following you.',
-      'timestamp': DateTime.now().subtract(const Duration(days: 1)),
-      'isRead': true,
-      'senderId': 'user_emma',
-    },
-    {
-      'id': 'notif_5',
-      'userId': 'mock_user_123',
-      'type': 'booking_confirmed',
-      'senderName': 'System',
-      'senderProfile': '',
-      'message': 'Your booking for Session #402 has been confirmed.',
-      'timestamp': DateTime.now().subtract(const Duration(days: 2)),
-      'isRead': true,
-    },
-  ];
-
-  // Expose filtered stream updates just like Firestore snapshots
-  Stream<List<Map<String, dynamic>>> streamNotifications({
-    required String userId,
-    required List<String> types,
-  }) {
-    // Immediate seed
-    Timer.run(() => _emitFiltered(userId, types));
-    return _controller.stream.map((allDocs) => allDocs
-        .where((doc) => doc['userId'] == userId && types.contains(doc['type']))
-        .toList()
-      ..sort((a, b) => (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime)));
-  }
-
-  void _emitFiltered(String userId, List<String> types) {
-    _controller.add(List.from(_data));
-  }
-
-  // Simulates document updating
-  void updateDoc(String docId, Map<String, dynamic> updates) {
-    final index = _data.indexWhere((element) => element['id'] == docId);
-    if (index != -1) {
-      _data[index] = {..._data[index], ...updates};
-      _controller.add(List.from(_data));
-    }
-  }
-
-  // Simulates batch deletes
-  void clearAllForUser(String userId) {
-    _data.removeWhere((element) => element['userId'] == userId);
-    _controller.add(List.from(_data));
-  }
-}
-
-// --- MAIN WIDGET IMPLEMENTATION ---
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -114,22 +16,28 @@ class ActivityScreen extends StatefulWidget {
 
 class _ActivityScreenState extends State<ActivityScreen>
     with SingleTickerProviderStateMixin {
-  static const Color primaryColor = Colors.deepPurpleAccent;
+  static const Color primaryColor = Color(0xFF6C63FF);
   static const Color textColor = Color(0xFF1C1E21);
-  static const Color subtleText = Colors.black54;
+  static const Color subtleText = Color(0xFF7A7E8B);
 
-  static const List<String> _interactionTypes = ['like', 'comment', 'follow', 'tag', 'message'];
+  static const List<String> _interactionTypes = ['like', 'comment', 'follow', 'tag'];
   static const List<String> _bookingTypes = ['booking_request', 'booking_confirmed', 'booking_cancelled', 'booking_reminder'];
 
   late TabController _tabController;
-  
-  // Set to empty string '' to see the logged out screen state block toggle
-  final String _mockUid = 'mock_user_123'; 
+  String? _currentUid;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _currentUid = FirebaseAuth.instance.currentUser?.uid;
+    
+    // Listen for auth changes
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      setState(() {
+        _currentUid = user?.uid;
+      });
+    });
   }
 
   @override
@@ -155,9 +63,9 @@ class _ActivityScreenState extends State<ActivityScreen>
           ),
         ),
         actions: [
-          if (_mockUid.isNotEmpty)
+          if (_currentUid != null)
             TextButton(
-              onPressed: () => _showClearDialog(context, _mockUid),
+              onPressed: () => _showClearDialog(context, _currentUid!),
               child: const Text(
                 'Clear all',
                 style: TextStyle(
@@ -167,20 +75,20 @@ class _ActivityScreenState extends State<ActivityScreen>
               ),
             ),
         ],
-        bottom: _mockUid.isEmpty
+        bottom: _currentUid == null
             ? null
             : PreferredSize(
                 preferredSize: const Size.fromHeight(44),
                 child: _buildTabBar(),
               ),
       ),
-      body: _mockUid.isEmpty
+      body: _currentUid == null
           ? _buildLoggedOutState()
           : TabBarView(
               controller: _tabController,
               children: [
                 _NotificationsTab(
-                  uid: _mockUid,
+                  uid: _currentUid!,
                   types: _interactionTypes,
                   emptyIcon: Icons.favorite_border_rounded,
                   emptyTitle: 'No interactions yet',
@@ -188,7 +96,7 @@ class _ActivityScreenState extends State<ActivityScreen>
                   onTap: _handleNotificationTap,
                 ),
                 _NotificationsTab(
-                  uid: _mockUid,
+                  uid: _currentUid!,
                   types: _bookingTypes,
                   emptyIcon: Icons.confirmation_number_outlined,
                   emptyTitle: 'No booking activity',
@@ -229,36 +137,45 @@ class _ActivityScreenState extends State<ActivityScreen>
     );
   }
 
-  void _handleNotificationTap(BuildContext context, String docId, Map<String, dynamic> data) {
-    // Intercept mock framework updates instead of calling live collection routing refs
-    MockFirestore.instance.updateDoc(docId, {'isRead': true});
+  Future<void> _handleNotificationTap(BuildContext context, String notificationId, Map<String, dynamic> data) async {
+    try {
+      // Mark notification as read in Firestore
+      await FirebaseFirestore.instance
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'isRead': true});
+    } catch (e) {
+      debugPrint('Error marking notification as read: $e');
+    }
 
     final type = data['type'];
     final String postId = data['postId'] ?? '';
     final String senderId = data['senderId'] ?? '';
+    final String bookingId = data['bookingId'] ?? '';
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Mock Route Navigate: Triggered action target for type ($type)')),
-    );
-
-    // Context GoRouter logic preserved safely below
+    // Navigate based on notification type
     switch (type) {
       case 'like':
       case 'comment':
       case 'tag':
-        if (postId.isNotEmpty) context.push('/post/$postId');
+        if (postId.isNotEmpty) {
+          context.push('/post/$postId');
+        }
         break;
       case 'follow':
-        if (senderId.isNotEmpty) context.push('/profile/$senderId');
+        if (senderId.isNotEmpty) {
+          context.push('/user/$senderId');
+        }
         break;
       case 'booking_request':
       case 'booking_confirmed':
       case 'booking_cancelled':
       case 'booking_reminder':
-        context.push('/tickets');
-        break;
-      case 'message':
-        if (senderId.isNotEmpty) context.push('/chat/$senderId');
+        if (bookingId.isNotEmpty) {
+          context.push('/booking/$bookingId');
+        } else {
+          context.push('/tickets');
+        }
         break;
       default:
         debugPrint('Unknown notification type: $type');
@@ -271,7 +188,7 @@ class _ActivityScreenState extends State<ActivityScreen>
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Clear Activity?'),
-        content: const Text('This will permanently remove all notifications from both tabs.'),
+        content: const Text('This will permanently remove all notifications. This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -280,8 +197,16 @@ class _ActivityScreenState extends State<ActivityScreen>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              MockFirestore.instance.clearAllForUser(uid);
+              await _clearAllNotifications(uid);
               HapticFeedback.mediumImpact();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('All notifications cleared'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
             },
             child: const Text(
               'Clear All',
@@ -291,6 +216,24 @@ class _ActivityScreenState extends State<ActivityScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _clearAllNotifications(String uid) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final notifications = await FirebaseFirestore.instance
+          .collection('notifications')
+          .where('recipientId', isEqualTo: uid)
+          .get();
+      
+      for (final doc in notifications.docs) {
+        batch.delete(doc.reference);
+      }
+      
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Error clearing notifications: $e');
+    }
   }
 
   Widget _buildLoggedOutState() {
@@ -303,6 +246,17 @@ class _ActivityScreenState extends State<ActivityScreen>
           const Text(
             'Log in to see activity',
             style: TextStyle(color: subtleText, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () => context.push('/login'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Sign In'),
           ),
         ],
       ),
@@ -327,38 +281,59 @@ class _NotificationsTab extends StatelessWidget {
   final String emptySubtitle;
   final void Function(BuildContext, String, Map<String, dynamic>) onTap;
 
-  static const Color primaryColor = Colors.deepPurpleAccent;
-  static const Color textColor = Color(0xFF1C1E21);
-  static const Color subtleText = Colors.black54;
+  static const Color primaryColor = Color(0xFF6C63FF);
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: MockFirestore.instance.streamNotifications(userId: uid, types: types),
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('notifications')
+          .where('recipientId', isEqualTo: uid)
+          .where('type', whereIn: types)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {},
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
         }
+        
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(strokeWidth: 2, color: primaryColor),
           );
         }
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+        
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return _buildEmptyState();
         }
 
         return ListView.separated(
-          itemCount: snapshot.data!.length,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: snapshot.data!.docs.length,
           separatorBuilder: (_, __) => const Divider(
             height: 1,
             indent: 80,
             color: Color(0xFFF0F2F5),
           ),
           itemBuilder: (context, index) {
-            final data = snapshot.data![index];
+            final doc = snapshot.data!.docs[index];
+            final data = doc.data() as Map<String, dynamic>;
             return _ActivityTile(
-              docId: data['id'],
+              docId: doc.id,
               data: data,
               onTap: onTap,
             );
@@ -380,14 +355,14 @@ class _NotificationsTab extends StatelessWidget {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: textColor,
+              color: Color(0xFF1C1E21),
             ),
           ),
           const SizedBox(height: 4),
           Text(
             emptySubtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: subtleText),
+            style: const TextStyle(color: Color(0xFF7A7E8B)),
           ),
         ],
       ),
@@ -406,10 +381,9 @@ class _ActivityTile extends StatelessWidget {
   final Map<String, dynamic> data;
   final void Function(BuildContext, String, Map<String, dynamic>) onTap;
 
-  static const Color primaryColor = Colors.deepPurpleAccent;
-  static const Color accentColor = Colors.purpleAccent;
+  static const Color primaryColor = Color(0xFF6C63FF);
   static const Color textColor = Color(0xFF1C1E21);
-  static const Color subtleText = Colors.black54;
+  static const Color subtleText = Color(0xFF7A7E8B);
 
   @override
   Widget build(BuildContext context) {
@@ -444,13 +418,13 @@ class _ActivityTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _formatTimeAgo(data['timestamp']),
+                    _formatTimeAgo(data['createdAt']),
                     style: const TextStyle(color: subtleText, fontSize: 12),
                   ),
                 ],
               ),
             ),
-            _buildTrailing(type),
+            _buildTrailing(type, data),
           ],
         ),
       ),
@@ -458,21 +432,30 @@ class _ActivityTile extends StatelessWidget {
   }
 
   (IconData, Color) _iconForType(String type) {
-    return switch (type) {
-      'like' => (Icons.favorite_rounded, Colors.redAccent),
-      'comment' => (Icons.chat_bubble_rounded, primaryColor),
-      'follow' => (Icons.person_add_alt_1_rounded, Colors.blue),
-      'booking_request' => (Icons.pending_actions_rounded, Colors.orange),
-      'booking_confirmed' => (Icons.confirmation_number_rounded, Colors.green),
-      'booking_cancelled' => (Icons.cancel_rounded, Colors.redAccent),
-      'booking_reminder' => (Icons.alarm_rounded, Colors.orange),
-      'message' => (Icons.mail_rounded, accentColor),
-      _ => (Icons.notifications_rounded, Colors.grey),
-    };
+    switch (type) {
+      case 'like':
+        return (Icons.favorite_rounded, Colors.redAccent);
+      case 'comment':
+        return (Icons.chat_bubble_rounded, primaryColor);
+      case 'follow':
+        return (Icons.person_add_alt_1_rounded, Colors.blue);
+      case 'booking_request':
+        return (Icons.pending_actions_rounded, Colors.orange);
+      case 'booking_confirmed':
+        return (Icons.confirmation_number_rounded, Colors.green);
+      case 'booking_cancelled':
+        return (Icons.cancel_rounded, Colors.redAccent);
+      case 'booking_reminder':
+        return (Icons.alarm_rounded, Colors.orange);
+      case 'tag':
+        return (Icons.alternate_email, primaryColor);
+      default:
+        return (Icons.notifications_rounded, Colors.grey);
+    }
   }
 
   Widget _buildAvatar(IconData icon, Color iconColor) {
-    final String profileUrl = data['senderProfile'] ?? '';
+    final String profileUrl = data['senderPhotoURL'] ?? data['senderProfile'] ?? '';
     return Stack(
       alignment: Alignment.bottomRight,
       children: [
@@ -480,52 +463,103 @@ class _ActivityTile extends StatelessWidget {
           radius: 26,
           backgroundColor: Colors.grey[200],
           backgroundImage: profileUrl.isNotEmpty ? NetworkImage(profileUrl) : null,
-          child: profileUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey) : null,
+          child: profileUrl.isEmpty 
+              ? const Icon(Icons.person, color: Colors.grey, size: 28) 
+              : null,
         ),
         Container(
           padding: const EdgeInsets.all(3),
-          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+          decoration: const BoxDecoration(
+            color: Colors.white, 
+            shape: BoxShape.circle,
+          ),
           child: Icon(icon, color: iconColor, size: 12),
         ),
       ],
     );
   }
 
-  Widget _buildTrailing(String type) {
-    if (data['postImage'] != null) {
+  Widget _buildTrailing(String type, Map<String, dynamic> data) {
+    // Show post image if available
+    final String postImage = data['postImage'] ?? data['imageUrl'] ?? '';
+    if (postImage.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          data['postImage'] as String,
+        child: CachedNetworkImage(
+          imageUrl: postImage,
           width: 44,
           height: 44,
           fit: BoxFit.cover,
+          placeholder: (context, url) => Container(
+            width: 44,
+            height: 44,
+            color: Colors.grey.shade200,
+            child: const Icon(Icons.image, size: 20, color: Colors.grey),
+          ),
+          errorWidget: (context, url, error) => Container(
+            width: 44,
+            height: 44,
+            color: Colors.grey.shade200,
+            child: const Icon(Icons.broken_image, size: 20, color: Colors.grey),
+          ),
         ),
       );
     }
-    if (type == 'follow') return _buildPill('Follow', primaryColor);
-    if (type == 'booking_request') return _buildPill('View', accentColor);
+    
+    // Show action buttons for specific types
+    if (type == 'follow') {
+      return _buildPill('Follow Back', primaryColor);
+    }
+    if (type == 'booking_request') {
+      return _buildPill('Respond', primaryColor);
+    }
+    if (type == 'booking_confirmed') {
+      return _buildPill('View Ticket', Colors.green);
+    }
+    
     return const SizedBox.shrink();
   }
 
   Widget _buildPill(String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
       child: Text(
         label,
-        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
 
   String _formatTimeAgo(dynamic timestamp) {
     if (timestamp == null) return 'Just now';
-    final DateTime dt = timestamp is DateTime ? timestamp : (timestamp as dynamic).toDate();
-    final diff = DateTime.now().difference(dt);
+    
+    DateTime dt;
+    if (timestamp is Timestamp) {
+      dt = timestamp.toDate();
+    } else if (timestamp is DateTime) {
+      dt = timestamp;
+    } else {
+      return 'Just now';
+    }
+    
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
-    return '${diff.inDays}d';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w';
+    if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}mo';
+    return '${(diff.inDays / 365).floor()}y';
   }
 }

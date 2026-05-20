@@ -46,6 +46,7 @@ dependencies:
   smooth_page_indicator: ^2.0.1
   firebase_app_check: ^0.4.3
   mockito: ^5.6.4
+  badges: ^3.2.0
 
 dev_dependencies:
   flutter_test:

@@ -24,7 +24,7 @@ import '../ui/profile/profile_settings.dart';
 import '../ui/settings/activity.dart';
 import '../ui/settings/help.dart';
 import '../ui/settings/language.dart';
-import '../ui/settings/notifications.dart'; // <-- Settings-only NotificationsScreen
+import '../ui/settings/notifications.dart';
 import '../ui/settings/privacy.dart';
 import '../ui/settings/security.dart';
 import '../ui/settings/theme.dart';
@@ -39,16 +39,11 @@ import '../ui/chat/chat_room_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
-final _shellNavigatorHomeKey =
-    GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
-final _shellNavigatorChatKey =
-    GlobalKey<NavigatorState>(debugLabel: 'chat');
-final _shellNavigatorExploreKey =
-    GlobalKey<NavigatorState>(debugLabel: 'explore');
-final _shellNavigatorSearchKey =
-    GlobalKey<NavigatorState>(debugLabel: 'search');
-final _shellNavigatorProfileKey =
-    GlobalKey<NavigatorState>(debugLabel: 'profile');
+final _shellNavigatorHomeKey = GlobalKey<NavigatorState>(debugLabel: 'homeFeed');
+final _shellNavigatorChatKey = GlobalKey<NavigatorState>(debugLabel: 'chat');
+final _shellNavigatorExploreKey = GlobalKey<NavigatorState>(debugLabel: 'explore');
+final _shellNavigatorSearchKey = GlobalKey<NavigatorState>(debugLabel: 'search');
+final _shellNavigatorProfileKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
 
 class AppRouter {
   GoRouter? _router;
@@ -111,6 +106,21 @@ class AppRouter {
           builder: (_, __) => const ForgotPasswordScreen(),
         ),
 
+        // ─────────────────── EDIT PROFILE (Top-level route) ───────────────
+        GoRoute(
+          path: '/edit',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (context, state) {
+            final uid = FirebaseAuth.instance.currentUser?.uid;
+            if (uid == null) {
+              return const Scaffold(
+                body: Center(child: Text('Not Logged In')),
+              );
+            }
+            return const EditProfileScreen();
+          },
+        ),
+
         // ─────────────────── MAIN SHELL ───────────────────────────────────
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -134,7 +144,6 @@ class AppRouter {
                         eventId: state.pathParameters['id']!,
                       ),
                       routes: [
-                        // Booking list for a specific event
                         GoRoute(
                           path: 'purchase-tickets',
                           name: 'purchaseTickets',
@@ -142,11 +151,9 @@ class AppRouter {
                             final eventId = state.pathParameters['id'];
                             if (eventId == null || eventId.isEmpty) {
                               return const Scaffold(
-                                body: Center(
-                                    child: Text('Invalid Event ID')),
+                                body: Center(child: Text('Invalid Event ID')),
                               );
                             }
-                            // isVendor defaults to false (customer view)
                             return const BookingListScreen(isVendor: false);
                           },
                         ),
@@ -197,8 +204,7 @@ class AppRouter {
                 GoRoute(
                   path: '/profile',
                   builder: (context, state) {
-                    final uid =
-                        FirebaseAuth.instance.currentUser?.uid;
+                    final uid = FirebaseAuth.instance.currentUser?.uid;
                     if (uid == null) {
                       return const Scaffold(
                         body: Center(child: Text('Not Logged In')),
@@ -206,22 +212,7 @@ class AppRouter {
                     }
                     return ProfileScreen(userId: uid);
                   },
-                  routes: [
-                    GoRoute(
-                      path: 'edit',
-                      builder: (context, state) {
-                        final uid =
-                            FirebaseAuth.instance.currentUser?.uid;
-                        if (uid == null) {
-                          return const Scaffold(
-                            body:
-                                Center(child: Text('Not Logged In')),
-                          );
-                        }
-                        return EditProfileScreen();
-                      },
-                    ),
-                  ],
+                  // Remove the nested edit route to avoid confusion
                 ),
               ],
             ),
@@ -264,19 +255,13 @@ class AppRouter {
         ),
 
         // ─────────────────── CHAT ROOM ────────────────────────────────────
-        // Must be outside the shell (parentNavigatorKey = _rootNavigatorKey)
-        // so it overlays the bottom nav bar.
-        // Route: /chat/room/:otherUserId  (chatId is derived inside the screen)
         GoRoute(
-          // Changed from /chat/room/:chatId/:otherUserId to avoid
-          // ambiguity with the shell's /chat branch.
           path: '/chat/:otherUserId',
           parentNavigatorKey: _rootNavigatorKey,
           pageBuilder: (context, state) {
             final otherUserId = state.pathParameters['otherUserId']!;
             final extra = state.extra as Map<String, dynamic>?;
-            final otherUserName =
-                extra?['otherUserName'] as String? ?? 'User';
+            final otherUserName = extra?['otherUserName'] as String? ?? 'User';
             final otherAvatar = extra?['otherAvatar'] as String?;
 
             return MaterialPage(
@@ -290,7 +275,7 @@ class AppRouter {
           },
         ),
 
-        // ─────────────────── VENDOR BOOKINGS (vendor nav) ─────────────────
+        // ─────────────────── VENDOR BOOKINGS ──────────────────────────────
         GoRoute(
           path: '/bookings/vendor',
           parentNavigatorKey: _rootNavigatorKey,
@@ -355,8 +340,6 @@ class AppRouter {
               builder: (_, __) => const ActivityScreen(),
             ),
             GoRoute(
-              // Uses the settings-specific NotificationsScreen,
-              // not the FCM feature one (those are named differently).
               path: 'notifications',
               builder: (_, __) => const NotificationsScreen(),
             ),

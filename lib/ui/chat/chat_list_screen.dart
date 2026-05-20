@@ -15,12 +15,16 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
   final String _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-
+  
   late AnimationController _fadeController;
   final Map<String, Future<Map<String, dynamic>?>> _profileCache = {};
+  
+  // Track online users count
+  Stream<QuerySnapshot>? _onlineUsersStream;
+  int _onlineCount = 0;
 
   Future<Map<String, dynamic>?> _getProfile(String uid) {
     return _profileCache.putIfAbsent(uid, () => _chatService.getUserProfile(uid));
@@ -29,14 +33,53 @@ class _ChatListScreenState extends State<ChatListScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     )..forward();
+    
+    // Initialize online users stream
+    _onlineUsersStream = FirebaseFirestore.instance
+        .collection('users')
+        .where('isOnline', isEqualTo: true)
+        .snapshots();
+        
+    // Set user as online when app starts
+    _setUserOnlineStatus(true);
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      _setUserOnlineStatus(true);
+    } else if (state == AppLifecycleState.paused || 
+               state == AppLifecycleState.detached) {
+      _setUserOnlineStatus(false);
+    }
+  }
+  
+  Future<void> _setUserOnlineStatus(bool isOnline) async {
+    if (_currentUid.isEmpty) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_currentUid)
+          .update({
+        'isOnline': isOnline,
+        'lastSeen': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error updating online status: $e');
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _setUserOnlineStatus(false);
     _fadeController.dispose();
     super.dispose();
   }
@@ -67,35 +110,40 @@ class _ChatListScreenState extends State<ChatListScreen>
 
           return FadeTransition(
             opacity: _fadeController,
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              itemCount: sessions.length,
-              itemBuilder: (context, index) {
-                final session = sessions[index];
-                final otherId = session.getOtherUserId(_currentUid);
-                final unread = session.unreadFor(_currentUid);
-                final isMe = session.lastMessageSenderId == _currentUid;
-
-                return _ChatTile(
-                  key: ValueKey(session.id),
-                  session: session,
-                  profileFuture: _getProfile(otherId),
-                  currentUid: _currentUid,
-                  otherId: otherId,
-                  unread: unread,
-                  isMe: isMe,
-                  index: index,
-                  onTap: (name, avatar) {
-                    HapticFeedback.lightImpact();
-                    _chatService.markAsRead(session.id);
-                    context.push(
-                      '/chat/room/${session.id}/$otherId',
-                      extra: {'peerName': name, 'peerAvatar': avatar},
-                    );
-                  },
-                  onDismiss: () => _chatService.deleteConversation(session.id),
-                );
+            child: RefreshIndicator(
+              onRefresh: () async {
+                setState(() {});
               },
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                itemCount: sessions.length,
+                itemBuilder: (context, index) {
+                  final session = sessions[index];
+                  final otherId = session.getOtherUserId(_currentUid);
+                  final unread = session.unreadFor(_currentUid);
+                  final isMe = session.lastMessageSenderId == _currentUid;
+
+                  return _ChatTile(
+                    key: ValueKey(session.id),
+                    session: session,
+                    profileFuture: _getProfile(otherId),
+                    currentUid: _currentUid,
+                    otherId: otherId,
+                    unread: unread,
+                    isMe: isMe,
+                    index: index,
+                    onTap: (name, avatar) {
+                      HapticFeedback.lightImpact();
+                      _chatService.markAsRead(session.id);
+                      context.push(
+                        '/chat/room/${session.id}/$otherId',
+                        extra: {'peerName': name, 'peerAvatar': avatar},
+                      );
+                    },
+                    onDismiss: () => _chatService.deleteConversation(session.id),
+                  );
+                },
+              ),
             ),
           );
         },
@@ -120,12 +168,13 @@ class _ChatListScreenState extends State<ChatListScreen>
       ),
       actions: [
         StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .where('isOnline', isEqualTo: true)
-              .snapshots(),
-          builder: (context, snap) {
-            final count = snap.data?.docs.length ?? 0;
+          stream: _onlineUsersStream,
+          builder: (context, snapshot) {
+            final count = snapshot.data?.docs.length ?? 0;
+            // Update count for animation
+            if (_onlineCount != count && mounted) {
+              setState(() => _onlineCount = count);
+            }
             return Padding(
               padding: const EdgeInsets.only(right: 16),
               child: Container(
@@ -138,11 +187,12 @@ class _ChatListScreenState extends State<ChatListScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
                       width: 7,
                       height: 7,
-                      decoration: const BoxDecoration(
-                        color: Colors.green,
+                      decoration: BoxDecoration(
+                        color: count > 0 ? Colors.green : Colors.grey,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -151,7 +201,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                       '$count online',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.green.shade700,
+                        color: count > 0 ? Colors.green.shade700 : Colors.grey.shade600,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -205,6 +255,19 @@ class _ChatListScreenState extends State<ChatListScreen>
             "Start chatting with someone",
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () => context.push('/discover'),
+            icon: const Icon(Icons.explore),
+            label: const Text('Find People to Chat With'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurpleAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -229,6 +292,11 @@ class _ChatListScreenState extends State<ChatListScreen>
               error,
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => setState(() {}),
+              child: const Text('Retry'),
             ),
           ],
         ),
@@ -271,6 +339,10 @@ class _ChatTileState extends State<_ChatTile>
   late Animation<Offset> _slideAnim;
   late Animation<double> _fadeAnim;
   final ChatService _chatService = ChatService();
+  
+  // FIX: Cache user data to prevent "Bad State" error
+  Map<String, dynamic>? _cachedUserData;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -290,6 +362,25 @@ class _ChatTileState extends State<_ChatTile>
     Future.delayed(Duration(milliseconds: widget.index * 50), () {
       if (mounted) _slideController.forward();
     });
+    
+    // Load user profile
+    _loadUserProfile();
+  }
+  
+  Future<void> _loadUserProfile() async {
+    try {
+      final userData = await widget.profileFuture;
+      if (mounted) {
+        setState(() {
+          _cachedUserData = userData;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -310,36 +401,88 @@ class _ChatTileState extends State<_ChatTile>
           background: _dismissBg(),
           confirmDismiss: (_) => _confirmDelete(context),
           onDismissed: (_) => widget.onDismiss(),
-          child: FutureBuilder<Map<String, dynamic>?>(
-            future: widget.profileFuture,
-            builder: (context, snap) {
-              final user = snap.data;
-              final name = user?['displayName'] ?? 'User';
-              final avatar = user?['photoURL'] as String?;
-
-              // FIX: Safe real-time online status listener
-              return StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(widget.otherId)
-                    .snapshots(),
-                builder: (context, userSnap) {
-                  // Existence check to prevent "Bad State" error
-                  if (!userSnap.hasData || !userSnap.data!.exists) {
-                    return _buildTile(name, avatar, false, false);
-                  }
-
-                  final userData = userSnap.data!.data() as Map<String, dynamic>?;
-                  final isOnline = userData?['isOnline'] as bool? ?? false;
-                  final isTyping = userData?['typingTo'] == widget.currentUid;
-
-                  return _buildTile(name, avatar, isOnline, isTyping);
-                },
-              );
-            },
-          ),
+          child: _buildContent(),
         ),
       ),
+    );
+  }
+  
+  Widget _buildContent() {
+    // Show loading state while fetching profile
+    if (_isLoading) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 120,
+                    height: 14,
+                    color: Colors.grey.shade200,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 180,
+                    height: 12,
+                    color: Colors.grey.shade200,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    final user = _cachedUserData;
+    final name = user?['displayName'] ?? 'User';
+    final avatar = user?['photoURL'] as String?;
+    
+    // FIX: Proper error handling for user document stream
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.otherId)
+          .snapshots()
+          .handleError((error) {
+            debugPrint('User stream error: $error');
+            return Stream.value(null);
+          }),
+      builder: (context, userSnap) {
+        // FIX: Prevent "Bad State" error by checking existence properly
+        Map<String, dynamic>? userData;
+        bool isOnline = false;
+        bool isTyping = false;
+        
+        if (userSnap.hasData && userSnap.data != null && userSnap.data!.exists) {
+          try {
+            userData = userSnap.data!.data() as Map<String, dynamic>?;
+            isOnline = userData?['isOnline'] as bool? ?? false;
+            isTyping = userData?['typingTo'] == widget.currentUid;
+          } catch (e) {
+            debugPrint('Error parsing user data: $e');
+          }
+        }
+
+        return _buildTile(name, avatar, isOnline, isTyping);
+      },
     );
   }
 
@@ -361,8 +504,10 @@ class _ChatTileState extends State<_ChatTile>
           ],
           border: widget.unread > 0
               ? Border.all(
-                  color: Colors.deepPurpleAccent.withOpacity(0.25), width: 1.5)
-              : Border.all(color: Colors.transparent),
+                  color: Colors.deepPurpleAccent.withOpacity(0.25), 
+                  width: 1.5,
+                )
+              : null,
         ),
         child: Row(
           children: [
@@ -375,19 +520,22 @@ class _ChatTileState extends State<_ChatTile>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        name,
-                        style: TextStyle(
-                          fontWeight: widget.unread > 0
-                              ? FontWeight.w800
-                              : FontWeight.w600,
-                          fontSize: 15,
-                          color: const Color(0xFF1A1A2E),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: TextStyle(
+                            fontWeight: widget.unread > 0
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            fontSize: 15,
+                            color: const Color(0xFF1A1A2E),
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
-                        _chatService.formatTimestamp(
-                            widget.session.lastMessageTime),
+                        _chatService.formatTimestamp(widget.session.lastMessageTime as Timestamp?),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: widget.unread > 0
@@ -405,7 +553,7 @@ class _ChatTileState extends State<_ChatTile>
                     children: [
                       Expanded(
                         child: isTyping
-                            ? _TypingIndicator()
+                            ? const _TypingIndicator()
                             : _buildPreview(),
                       ),
                       if (widget.unread > 0) ...[
@@ -440,9 +588,11 @@ class _ChatTileState extends State<_ChatTile>
           child: CircleAvatar(
             radius: 26,
             backgroundColor: Colors.deepPurple.shade50,
-            backgroundImage: avatar != null ? NetworkImage(avatar) : null,
-            child: avatar == null
-                ? const Icon(Icons.person, color: Colors.deepPurpleAccent)
+            backgroundImage: avatar != null && avatar.isNotEmpty 
+                ? NetworkImage(avatar) 
+                : null,
+            child: avatar == null || avatar.isEmpty
+                ? const Icon(Icons.person, color: Colors.deepPurpleAccent, size: 28)
                 : null,
           ),
         ),
@@ -466,8 +616,8 @@ class _ChatTileState extends State<_ChatTile>
 
   Widget _buildPreview() {
     final msg = widget.session.lastMessage;
-    final isImage = msg.contains('📷') || msg.contains('[image]');
-    final isAudio = msg.contains('🎵') || msg.contains('[audio]');
+    final isImage = msg.contains('📷') || msg.contains('[image]') || msg.contains('📸');
+    final isAudio = msg.contains('🎵') || msg.contains('[audio]') || msg.contains('🎤');
 
     return Row(
       children: [
@@ -477,7 +627,9 @@ class _ChatTileState extends State<_ChatTile>
             child: Icon(
               Icons.done_all_rounded,
               size: 14,
-              color: Colors.deepPurpleAccent.withOpacity(0.7),
+              color: widget.unread > 0 
+                  ? Colors.deepPurpleAccent.withOpacity(0.7)
+                  : Colors.grey.shade400,
             ),
           ),
         if (isImage)
@@ -490,9 +642,9 @@ class _ChatTileState extends State<_ChatTile>
             msg.isEmpty
                 ? "Start a conversation…"
                 : isImage
-                    ? "Photo"
+                    ? "📷 Photo"
                     : isAudio
-                        ? "Voice message"
+                        ? "🎵 Voice message"
                         : msg,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -516,7 +668,11 @@ class _ChatTileState extends State<_ChatTile>
       constraints: const BoxConstraints(minWidth: 20),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.deepPurpleAccent,
+        gradient: const LinearGradient(
+          colors: [Colors.deepPurpleAccent, Colors.purpleAccent],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
@@ -535,8 +691,13 @@ class _ChatTileState extends State<_ChatTile>
     return Container(
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.only(right: 20),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.red.shade400,
+        gradient: LinearGradient(
+          colors: [Colors.red.shade400, Colors.red.shade600],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       child: const Column(
@@ -564,7 +725,7 @@ class _ChatTileState extends State<_ChatTile>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text("Delete conversation?",
             style: TextStyle(fontWeight: FontWeight.w700)),
-        content: const Text("This can't be undone."),
+        content: const Text("This conversation will be permanently deleted."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -573,7 +734,7 @@ class _ChatTileState extends State<_ChatTile>
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text("Delete",
-                style: TextStyle(color: Colors.redAccent)),
+                style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -582,6 +743,8 @@ class _ChatTileState extends State<_ChatTile>
 }
 
 class _TypingIndicator extends StatefulWidget {
+  const _TypingIndicator();
+
   @override
   State<_TypingIndicator> createState() => _TypingIndicatorState();
 }
@@ -698,6 +861,7 @@ class _ShimmerTileState extends State<_ShimmerTile>
     return AnimatedBuilder(
       animation: _anim,
       builder: (_, __) {
+        final shimmerOffset = _anim.value;
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -707,7 +871,7 @@ class _ShimmerTileState extends State<_ShimmerTile>
           ),
           child: Row(
             children: [
-              _shimmerCircle(52),
+              _shimmerCircle(52, shimmerOffset),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
@@ -716,12 +880,12 @@ class _ShimmerTileState extends State<_ShimmerTile>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _shimmerBox(120, 14),
-                        _shimmerBox(40, 10),
+                        _shimmerBox(120, 14, shimmerOffset),
+                        _shimmerBox(40, 10, shimmerOffset),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    _shimmerBox(200, 12),
+                    _shimmerBox(200, 12, shimmerOffset),
                   ],
                 ),
               ),
@@ -732,23 +896,41 @@ class _ShimmerTileState extends State<_ShimmerTile>
     );
   }
 
-  Widget _shimmerBox(double width, double height) {
+  Widget _shimmerBox(double width, double height, double offset) {
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: Colors.grey.shade200,
+        gradient: LinearGradient(
+          colors: [
+            Colors.grey.shade200,
+            Colors.grey.shade100,
+            Colors.grey.shade200,
+          ],
+          stops: [offset - 0.2, offset, offset + 0.2],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
         borderRadius: BorderRadius.circular(6),
       ),
     );
   }
 
-  Widget _shimmerCircle(double size) {
+  Widget _shimmerCircle(double size, double offset) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: Colors.grey.shade200,
+        gradient: LinearGradient(
+          colors: [
+            Colors.grey.shade200,
+            Colors.grey.shade100,
+            Colors.grey.shade200,
+          ],
+          stops: [offset - 0.2, offset, offset + 0.2],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
         shape: BoxShape.circle,
       ),
     );
