@@ -1,316 +1,220 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:confetti/confetti.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:go_router/go_router.dart';
-
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../../providers/booking_provider.dart';
 import '../../services/booking_service.dart';
 
-class TicketPurchaseScreen extends StatefulWidget {
-  final String eventId;
-  final Map<String, dynamic>? event;
+// ─── Booking List (for both customer and vendor) ──────────────────────────────
 
-  const TicketPurchaseScreen({super.key, required this.eventId, this.event});
+class BookingListScreen extends StatefulWidget {
+  final bool isVendor;
+  const BookingListScreen({super.key, this.isVendor = false});
 
   @override
-  State<TicketPurchaseScreen> createState() => _TicketPurchaseScreenState();
+  State<BookingListScreen> createState() => _BookingListScreenState();
 }
 
-class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
-  int quantity = 1;
-  bool _isLoading = false;
-  late ConfettiController _confettiController;
-
-  static const Color primaryColor = Colors.deepPurpleAccent;
-  static const Color backgroundColor = Colors.white;
+class _BookingListScreenState extends State<BookingListScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tab;
+  final _statuses = [null, BookingStatus.pending, BookingStatus.accepted,
+      BookingStatus.completed, BookingStatus.rejected];
+  final _labels = ['All', 'Pending', 'Accepted', 'Completed', 'Rejected'];
 
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(
-      duration: const Duration(seconds: 3),
-    );
+    _tab = TabController(length: _statuses.length, vsync: this);
   }
 
   @override
   void dispose() {
-    _confettiController.dispose();
+    _tab.dispose();
     super.dispose();
-  }
-
-  double _parsePrice(dynamic value) {
-    if (value == null) return 0.0;
-    if (value is num) return value.toDouble();
-    return double.tryParse(value.toString()) ?? 0.0;
-  }
-
-  /// Step 1: Create an unpaid ticket in Firestore, then navigate to PaymentScreen.
-  /// PaymentScreen is responsible for marking the ticket as paid on success.
-  void _goToPayment(Map<String, dynamic> eventData) async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("User not logged in")));
-        setState(() => _isLoading = false);
-      }
-      return;
-    }
-
-    // Capture BookingService BEFORE any await — context may be stale after async gaps
-    final bookingService = Provider.of<BookingService>(context, listen: false);
-
-    try {
-      final price = _parsePrice(eventData['price']);
-      final total = price * quantity;
-
-      // 1. Create ticket reference with isPaid: false
-      final ticketRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('tickets')
-          .doc();
-
-      final ticketId = ticketRef.id;
-
-      // 2. Save unpaid ticket to Firestore
-      await ticketRef.set({
-        'ticketId': ticketId,
-        'eventId': widget.eventId,
-        'userId': user.uid,
-        'eventTitle': eventData['title'] ?? 'Untitled Event',
-        'eventImageUrl': eventData['imageUrl'] ?? '',
-        'eventDate': eventData['eventDate'],
-        'eventLocation': eventData['location'] ?? 'Unknown',
-        'location': eventData['location'] ?? 'Unknown',
-        'price': price,
-        'quantity': quantity,
-        'createdAt': FieldValue.serverTimestamp(),
-        'isValid': false,
-        'isPaid': false,
-      });
-
-      // 3. Fire-and-forget booking service sync
-      bookingService
-          .purchaseTicket(
-            eventId: widget.eventId,
-            ticketId: ticketId,
-            eventTitle: eventData['title'] ?? 'Untitled Event',
-            eventImageUrl: eventData['imageUrl'] ?? '',
-            eventDate:
-                (eventData['eventDate'] as Timestamp?)?.toDate().toString() ??
-                'TBD',
-            eventLocation: eventData['location'] ?? 'Unknown',
-            price: price,
-            quantity: quantity,
-          )
-          .catchError((e) => debugPrint('BookingService sync error: $e'));
-
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-
-      // 4. Navigate to PaymentScreen
-      context.push(
-        '/payment',
-        extra: {
-          'eventId': widget.eventId,
-          'ticketId': ticketId,
-          'totalAmount': total,
-          'quantity': quantity,
-        },
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error preparing order: $e"),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-  }
-
-  /// Called by PaymentScreen (via callback or from ticket screen) after
-  /// successful payment — plays confetti then navigates to the ticket.
-  void playSuccessConfetti(String ticketId) async {
-    _confettiController.play();
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    context.push('/ticket/$ticketId');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.topCenter,
-      children: [
-        Scaffold(
-          backgroundColor: backgroundColor,
-          appBar: AppBar(
-            backgroundColor: backgroundColor,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_ios_new,
-                color: Colors.black,
-                size: 20,
-              ),
-              onPressed: _isLoading ? null : () => context.pop(),
-            ),
-            title: const Text(
-              "Checkout",
-              style: TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          body: StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('events')
-                .doc(widget.eventId)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return const Center(child: Text("Something went wrong"));
-              }
-
-              if (!snapshot.hasData || !snapshot.data!.exists) {
-                return const Center(
-                  child: CircularProgressIndicator(color: primaryColor),
-                );
-              }
-
-              final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-
-              final price = _parsePrice(data['price']);
-              final totalPrice = price * quantity;
-
-              return Column(
-                children: [
-                  _buildEventSummary(data),
-                  const SizedBox(height: 10),
-                  _buildQuantitySelector(),
-                  const Spacer(),
-                  _buildPurchaseCard(totalPrice, data),
-                ],
-              );
-            },
-          ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.isVendor ? 'Booking Requests' : 'My Bookings'),
+        bottom: TabBar(
+          controller: _tab,
+          isScrollable: true,
+          tabs: _labels.map((l) => Tab(text: l)).toList(),
         ),
-
-        ConfettiWidget(
-          confettiController: _confettiController,
-          blastDirectionality: BlastDirectionality.explosive,
-          shouldLoop: false,
-          colors: const [primaryColor, Colors.orange, Colors.blue],
-          numberOfParticles: 25,
-          gravity: 0.1,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildEventSummary(Map<String, dynamic> data) {
-    return Container(
-      margin: const EdgeInsets.all(20),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  data['imageUrl'] ?? '',
-                  width: 70,
-                  height: 70,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: 70,
-                    height: 70,
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.image),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      data['title'] ?? 'Event',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      data['location'] ?? 'Location TBD',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 40),
-          _buildDetailRow("Standard Entry", "₦${data['price'] ?? 0}"),
-          const SizedBox(height: 12),
-          _buildDetailRow("Seat Type", "General Admission"),
-        ],
+      body: TabBarView(
+        controller: _tab,
+        children: _statuses.map((status) => _BookingTab(
+              status: status,
+              isVendor: widget.isVendor,
+            )).toList(),
       ),
     );
   }
+}
 
-  Widget _buildQuantitySelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade200),
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+class _BookingTab extends StatelessWidget {
+  final BookingStatus? status;
+  final bool isVendor;
+  const _BookingTab({this.status, required this.isVendor});
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<BookingProvider>();
+    final stream = isVendor
+        ? provider.vendorBookings(status: status)
+        : provider.myBookings(status: status);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: stream,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final docs = snap.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return const Center(
+              child: Text('No bookings here', style: TextStyle(color: Colors.grey)));
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: docs.length,
+          itemBuilder: (_, i) {
+            final booking = BookingModel.fromDoc(docs[i]);
+            return _BookingCard(booking: booking, isVendor: isVendor);
+          },
+        );
+      },
+    );
+  }
+}
+
+class _BookingCard extends StatelessWidget {
+  final BookingModel booking;
+  final bool isVendor;
+  const _BookingCard({required this.booking, required this.isVendor});
+
+  Color _statusColor(BookingStatus s) {
+    switch (s) {
+      case BookingStatus.pending: return Colors.orange;
+      case BookingStatus.accepted: return Colors.green;
+      case BookingStatus.rejected: return Colors.red;
+      case BookingStatus.completed: return Colors.blue;
+      case BookingStatus.cancelled: return Colors.grey;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.read<BookingProvider>();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              "Quantity",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
             Row(
               children: [
-                _qtyBtn(
-                  Icons.remove,
-                  () => setState(
-                    () => quantity = quantity > 1 ? quantity - 1 : 1,
-                  ),
+                Expanded(
+                  child: Text(booking.eventTitle,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 15),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _statusColor(booking.status).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _statusColor(booking.status)),
+                  ),
                   child: Text(
-                    "$quantity",
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    booking.status.name.toUpperCase(),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: _statusColor(booking.status),
+                        fontWeight: FontWeight.w600),
                   ),
                 ),
-                _qtyBtn(Icons.add, () => setState(() => quantity++)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isVendor ? 'From: ${booking.customerName}' : 'Vendor: ${booking.vendorName}',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  DateFormat('EEE, MMM d yyyy').format(booking.eventDate),
+                  style: const TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+              ],
+            ),
+            if (booking.eventDescription.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(booking.eventDescription,
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+            const SizedBox(height: 12),
+            // Action buttons
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (isVendor && booking.status == BookingStatus.pending) ...[
+                  OutlinedButton(
+                    onPressed: () => provider.rejectBooking(booking.id),
+                    style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red)),
+                    child: const Text('Reject'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => provider.acceptBooking(booking.id),
+                    child: const Text('Accept'),
+                  ),
+                ],
+                if (isVendor && booking.status == BookingStatus.accepted)
+                  ElevatedButton(
+                    onPressed: () => provider.markCompleted(booking.id),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue),
+                    child: const Text('Mark Completed'),
+                  ),
+                if (!isVendor && booking.canCancel)
+                  OutlinedButton(
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('Cancel Booking'),
+                          content: const Text(
+                              'Are you sure you want to cancel this booking?'),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('No')),
+                            TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Yes, Cancel')),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        provider.cancelBooking(booking.id);
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                    child: const Text('Cancel'),
+                  ),
               ],
             ),
           ],
@@ -318,95 +222,152 @@ class _TicketPurchaseScreenState extends State<TicketPurchaseScreen> {
       ),
     );
   }
+}
 
-  Widget _qtyBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: primaryColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, size: 20, color: primaryColor),
-      ),
-    );
+// ─── Create Booking Screen ────────────────────────────────────────────────────
+
+class CreateBookingScreen extends StatefulWidget {
+  final String vendorId;
+  final String vendorName;
+  final String customerName;
+
+  const CreateBookingScreen({
+    super.key,
+    required this.vendorId,
+    required this.vendorName,
+    required this.customerName,
+  });
+
+  @override
+  State<CreateBookingScreen> createState() => _CreateBookingScreenState();
+}
+
+class _CreateBookingScreenState extends State<CreateBookingScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _titleCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  DateTime? _eventDate;
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: TextStyle(color: Colors.grey[600])),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-      ],
+  Future<void> _pickDate() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
+    if (d != null) setState(() => _eventDate = d);
   }
 
-  Widget _buildPurchaseCard(double total, Map<String, dynamic> data) {
-    return Container(
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -5),
-          ),
-        ],
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_eventDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select an event date')));
+      return;
+    }
+
+    final provider = context.read<BookingProvider>();
+    final id = await provider.createBooking(
+      vendorId: widget.vendorId,
+      vendorName: widget.vendorName,
+      customerName: widget.customerName,
+      eventTitle: _titleCtrl.text.trim(),
+      eventDescription: _descCtrl.text.trim(),
+      eventDate: _eventDate!,
+    );
+
+    if (!mounted) return;
+    if (id != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Booking request sent! ✅')));
+      Navigator.pop(context, id);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(provider.error ?? 'Something went wrong')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<BookingProvider>();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Request Booking')),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  "Total Amount to be Paid",
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-                Text(
-                  "₦${total.toStringAsFixed(0)}",
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: primaryColor,
-                  ),
-                ),
-              ],
+            // Vendor info chip
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.storefront),
+                  const SizedBox(width: 10),
+                  Text(widget.vendorName,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ],
+              ),
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _titleCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Event Title *',
+                  border: OutlineInputBorder()),
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Title is required' : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _descCtrl,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                  labelText: 'Event Description',
+                  border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                    labelText: 'Event Date *',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today)),
+                child: Text(
+                  _eventDate != null
+                      ? DateFormat('EEEE, MMMM d, yyyy').format(_eventDate!)
+                      : 'Select date',
+                  style: TextStyle(
+                      color: _eventDate != null
+                          ? null
+                          : Theme.of(context).hintColor),
                 ),
-                onPressed: _isLoading ? null : () => _goToPayment(data),
-                child: _isLoading
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              height: 50,
+              child: ElevatedButton(
+                onPressed: provider.loading ? null : _submit,
+                child: provider.loading
                     ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : const Text(
-                        "Continue to Payment",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Send Booking Request',
+                        style: TextStyle(fontSize: 16)),
               ),
             ),
           ],

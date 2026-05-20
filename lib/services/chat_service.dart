@@ -1,198 +1,158 @@
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart';
-import '../models/chat/chat_message.dart';
-import '../../services/imgbb_service.dart';
 
-class ChatService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final ImgBBService _imgbbService = ImgBBService();
+class MessageModel {
+  final String id;
+  final String senderId;
+  final String text;
+  final DateTime timestamp;
+  final bool read;
 
-  String get currentUid => _auth.currentUser?.uid ?? '';
+  const MessageModel({
+    required this.id,
+    required this.senderId,
+    required this.text,
+    required this.timestamp,
+    this.read = false,
+  });
 
-  // ─────────────────────────────
-  // ID GENERATION (CONSISTENT)
-  // ─────────────────────────────
-
-  /// Generates a consistent ID for a 1-to-1 chat.
-  /// Always returns 'smallerUid_largerUid' regardless of who calls it.
-  String getChatId(String otherUserId) {
-    if (currentUid.isEmpty) return '';
-    List<String> ids = [currentUid, otherUserId];
-    ids.sort(); // Sorting ensures both users point to the same document
-    return ids.join('_');
+  factory MessageModel.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return MessageModel(
+      id: doc.id,
+      senderId: d['senderId'] as String,
+      text: d['text'] as String,
+      timestamp: (d['timestamp'] as Timestamp).toDate(),
+      read: d['read'] as bool? ?? false,
+    );
   }
 
-  // ─────────────────────────────
-  // CONVERSATIONS
-  // ─────────────────────────────
+  Map<String, dynamic> toMap() => {
+        'senderId': senderId,
+        'text': text,
+        'timestamp': Timestamp.fromDate(timestamp),
+        'read': read,
+      };
+}
 
-  Stream<QuerySnapshot> getConversationsStream() {
-    return _firestore
-        .collection('chats') // Updated from chat_sessions
-        .where('participants', arrayContains: currentUid)
-        .orderBy('lastMessageTime', descending: true)
+class ChatService {
+  final _firestore = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+
+  String get _currentUid => _auth.currentUser!.uid;
+
+  /// Creates a stable chat ID from two user IDs (sorted so it's always the same)
+  String chatId(String otherUid) {
+    final ids = [_currentUid, otherUid]..sort();
+    return '${ids[0]}_${ids[1]}';
+  }
+
+  CollectionReference _chats() => _firestore.collection('chats');
+
+  /// Ensure the chat document exists. Safe to call multiple times.
+  Future<void> initChat(String otherUid, String otherName) async {
+    final id = chatId(otherUid);
+    final ref = _chats().doc(id);
+    final snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set({
+        'participants': [_currentUid, otherUid],
+        'lastMessage': '',
+        'lastSenderId': '',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  /// Stream of all chats the current user is a participant in
+  Stream<QuerySnapshot> myChats() {
+    return _chats()
+        .where('participants', arrayContains: _currentUid)
+        .orderBy('updatedAt', descending: true)
         .snapshots();
   }
 
-  Future<void> deleteConversation(String chatId) async {
-    final messages = await _firestore
-        .collection('chats')
-        .doc(chatId)
+  /// Stream of messages in a given chat room
+  Stream<QuerySnapshot> messages(String otherUid) {
+    final id = chatId(otherUid);
+    return _chats()
+        .doc(id)
         .collection('messages')
-        .get();
+        .orderBy('timestamp', descending: false)
+        .snapshots();
+  }
+
+  /// Send a message
+  Future<void> sendMessage(String otherUid, String text) async {
+    final id = chatId(otherUid);
+    final chatRef = _chats().doc(id);
+    final messagesRef = chatRef.collection('messages');
 
     final batch = _firestore.batch();
-    for (final doc in messages.docs) {
-      batch.delete(doc.reference);
-    }
-    batch.delete(_firestore.collection('chats').doc(chatId));
+
+    final msgRef = messagesRef.doc();
+    batch.set(msgRef, {
+      'senderId': _currentUid,
+      'text': text.trim(),
+      'timestamp': FieldValue.serverTimestamp(),
+      'read': false,
+    });
+
+    batch.update(chatRef, {
+      'lastMessage': text.trim(),
+      'lastSenderId': _currentUid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
     await batch.commit();
   }
 
-  // ─────────────────────────────
-  // MESSAGES
-  // ─────────────────────────────
-
-  Stream<List<ChatMessage>> getMessagesStream(String chatId) {
-    debugPrint(">> ChatService: Listening to chats/$chatId/messages");
-    return _firestore
-        .collection('chats') // Updated from chat_sessions
-        .doc(chatId)
+  /// Mark all unread messages from the other user as read
+  Future<void> markAsRead(String otherUid) async {
+    final id = chatId(otherUid);
+    final unread = await _chats()
+        .doc(id)
         .collection('messages')
-        .orderBy('createdAt', descending: true)
+        .where('senderId', isEqualTo: otherUid)
+        .where('read', isEqualTo: false)
+        .get();
+
+    if (unread.docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    for (final doc in unread.docs) {
+      batch.update(doc.reference, {'read': true});
+    }
+    await batch.commit();
+  }
+
+  /// Set/clear typing indicator for current user in a chat
+  Future<void> setTyping(String otherUid, bool isTyping) async {
+    final id = chatId(otherUid);
+    await _chats().doc(id).collection('typing').doc(_currentUid).set({
+      'isTyping': isTyping,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Stream of whether the OTHER user is typing
+  Stream<bool> isOtherTyping(String otherUid) {
+    final id = chatId(otherUid);
+    return _chats()
+        .doc(id)
+        .collection('typing')
+        .doc(otherUid)
         .snapshots()
-        .map((snapshot) {
-          debugPrint(">> ChatService: Received ${snapshot.docs.length} docs from Firestore");
-          return snapshot.docs
-            .map((doc) => ChatMessage.fromFirestore(doc))
-            .toList();
-        });
+        .map((snap) => snap.data()?['isTyping'] as bool? ?? false);
   }
 
-  Future<void> sendMessage({
-    required String chatId, 
-    required String messageText,
-    required String otherUserId,
-    File? imageFile,
-  }) async {
-    if (currentUid.isEmpty) return;
-
-    String imageUrl = '';
-
-    // Upload image if present
-    if (imageFile != null) {
-      imageUrl = await ImgBBService.uploadImage(imageFile) ?? '';
-    }
-
-    // Don't send if both are empty
-    if (messageText.trim().isEmpty && imageUrl.isEmpty) return;
-
-    final String finalMessage =
-        imageUrl.isNotEmpty && messageText.isEmpty ? '📷 Photo' : messageText;
-
-    final now = FieldValue.serverTimestamp();
-
-    // Update or Create the Chat Parent Doc
-    await _firestore.collection('chats').doc(chatId).set({
-      'participants': [currentUid, otherUserId]..sort(),
-      'lastMessage': finalMessage,
-      'lastMessageSenderId': currentUid,
-      'lastMessageTime': now,
-      'unreadCounts.$otherUserId': FieldValue.increment(1),
-    }, SetOptions(merge: true));
-
-    // Add Message to Subcollection
-    await _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .add({
-      'chatId': chatId,
-      'senderId': currentUid,
-      'receiverId': otherUserId,
-      'message': messageText.trim(),
-      'imageUrl': imageUrl,
-      'type': imageFile != null && messageText.isEmpty
-          ? 'image'
-          : imageFile != null
-              ? 'image_text'
-              : 'text',
-      'createdAt': now,
-      'isRead': false,
-    });
-
-    await setTypingStatus(otherUserId: otherUserId, isTyping: false);
-  }
-
-  // ─────────────────────────────
-  // READ RECEIPTS
-  // ─────────────────────────────
-
-  Future<void> markAsRead(String chatId) async {
-    if (currentUid.isEmpty) return;
-    try {
-      await _firestore.collection('chats').doc(chatId).update({
-        'unreadCounts.$currentUid': 0,
-      });
-    } catch (e) {
-      debugPrint(">> Error marking as read: $e");
-    }
-  }
-
-  // ─────────────────────────────
-  // TYPING STATUS
-  // ─────────────────────────────
-
-  Future<void> setTypingStatus({
-    required String otherUserId,
-    required bool isTyping,
-  }) async {
-    if (currentUid.isEmpty) return;
-    await _firestore.collection('users').doc(currentUid).update({
-      'typingTo': isTyping ? otherUserId : null,
-    });
-  }
-
-  // ─────────────────────────────
-  // ONLINE PRESENCE
-  // ─────────────────────────────
-
-  Future<void> setOnlineStatus(bool isOnline) async {
-    if (currentUid.isEmpty) return;
-    await _firestore.collection('users').doc(currentUid).update({
-      'isOnline': isOnline,
-      'lastSeen': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ─────────────────────────────
-  // USER PROFILE
-  // ─────────────────────────────
-
-  Future<Map<String, dynamic>?> getUserProfile(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    return doc.data();
-  }
-
-  // ─────────────────────────────
-  // TIMESTAMP FORMATTING
-  // ─────────────────────────────
-
-  String formatTimestamp(DateTime? dateTime) {
-    if (dateTime == null) return '';
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final msgDay = DateTime(dateTime.year, dateTime.month, dateTime.day);
-    final diff = today.difference(msgDay).inDays;
-
-    if (diff == 0) return DateFormat.jm().format(dateTime);
-    if (diff == 1) return 'Yesterday';
-    if (diff < 7) return DateFormat.E().format(dateTime);
-    return DateFormat('MM/dd/yy').format(dateTime);
+  /// Count of unread messages across all chats (for badge)
+  Stream<int> unreadCount() {
+    return _firestore
+        .collectionGroup('messages')
+        .where('read', isEqualTo: false)
+        .where('senderId', isNotEqualTo: _currentUid)
+        .snapshots()
+        .map((s) => s.docs.length);
   }
 }

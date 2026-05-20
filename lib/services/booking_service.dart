@@ -1,127 +1,145 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 
-class BookingService extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+enum BookingStatus { pending, accepted, rejected, completed, cancelled }
 
-  bool _isLoading = false;
-  bool get isLoading => _isLoading;
+extension BookingStatusX on BookingStatus {
+  String get value => name;
+  static BookingStatus from(String s) =>
+      BookingStatus.values.firstWhere((e) => e.name == s);
+}
 
-  // ---------------------------------------------------------------------------
-  // 1. Sync ticket to the top-level `bookings` collection.
-  //    Called fire-and-forget from TicketPurchaseScreen AFTER the ticket has
-  //    already been written to users/{uid}/tickets. This method does NOT
-  //    duplicate that write — it only syncs a lightweight booking record used
-  //    for admin queries and gate scanning.
-  // ---------------------------------------------------------------------------
-  Future<void> purchaseTicket({
-    required String eventId,
-    required String ticketId,       // pass the ID already created in the screen
+class BookingModel {
+  final String id;
+  final String customerId;
+  final String vendorId;
+  final String vendorName;
+  final String customerName;
+  final String eventTitle;
+  final String eventDescription;
+  final DateTime eventDate;
+  final BookingStatus status;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  const BookingModel({
+    required this.id,
+    required this.customerId,
+    required this.vendorId,
+    required this.vendorName,
+    required this.customerName,
+    required this.eventTitle,
+    required this.eventDescription,
+    required this.eventDate,
+    required this.status,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory BookingModel.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return BookingModel(
+      id: doc.id,
+      customerId: d['customerId'] as String,
+      vendorId: d['vendorId'] as String,
+      vendorName: d['vendorName'] as String? ?? '',
+      customerName: d['customerName'] as String? ?? '',
+      eventTitle: d['eventTitle'] as String,
+      eventDescription: d['eventDescription'] as String? ?? '',
+      eventDate: (d['eventDate'] as Timestamp).toDate(),
+      status: BookingStatusX.from(d['status'] as String),
+      createdAt: (d['createdAt'] as Timestamp).toDate(),
+      updatedAt: d['updatedAt'] != null
+          ? (d['updatedAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+
+  bool get canReview => status == BookingStatus.completed;
+  bool get canCancel => status == BookingStatus.pending;
+}
+
+class BookingService {
+  final _db = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+
+  String get _uid => _auth.currentUser!.uid;
+
+  CollectionReference get _bookings => _db.collection('bookings');
+
+  // ─── Create ─────────────────────────────────────────────────────────────
+
+  Future<String> createBooking({
+    required String vendorId,
+    required String vendorName,
+    required String customerName,
     required String eventTitle,
-    required String eventImageUrl,
-    required String eventDate,
-    required String eventLocation,
-    required double price,
-    required int quantity,
+    required String eventDescription,
+    required DateTime eventDate,
   }) async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) throw Exception("User must be logged in to book.");
-
-    try {
-      final double totalAmount = price * quantity;
-
-      await _firestore.collection('bookings').doc(ticketId).set({
-        'userId': uid,
-        'eventId': eventId,
-        'ticketId': ticketId,
-        'eventTitle': eventTitle,
-        'eventImageUrl': eventImageUrl,
-        'eventDate': eventDate,
-        'eventLocation': eventLocation,
-        'totalAmount': totalAmount,
-        'quantity': quantity,
-        'bookingStatus': 'pending',       // becomes 'confirmed' after payment
-        'qrCodeData': 'eventra_verify_$ticketId',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint("BookingService sync error: $e");
-      rethrow;
-    }
+    final ref = _bookings.doc();
+    await ref.set({
+      'customerId': _uid,
+      'vendorId': vendorId,
+      'vendorName': vendorName,
+      'customerName': customerName,
+      'eventTitle': eventTitle,
+      'eventDescription': eventDescription,
+      'eventDate': Timestamp.fromDate(eventDate),
+      'status': BookingStatus.pending.value,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return ref.id;
   }
 
-  // ---------------------------------------------------------------------------
-  // 2. Called by PaymentScreen after successful payment — marks the booking
-  //    record confirmed and updates the user's ticket in one batch.
-  // ---------------------------------------------------------------------------
-  Future<void> confirmPayment({
-    required String ticketId,
-    required String paymentMethod,
-  }) async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) throw Exception("User must be logged in.");
+  // ─── Status transitions ──────────────────────────────────────────────────
 
-    _setLoading(true);
-
-    try {
-      final batch = _firestore.batch();
-
-      // Mark booking confirmed
-      final bookingRef = _firestore.collection('bookings').doc(ticketId);
-      batch.update(bookingRef, {
-        'bookingStatus': 'confirmed',
-        'paymentMethod': paymentMethod,
-        'paidAt': FieldValue.serverTimestamp(),
-      });
-
-      // Mark user ticket valid
-      final ticketRef = _firestore
-          .collection('users')
-          .doc(uid)
-          .collection('tickets')
-          .doc(ticketId);
-      batch.update(ticketRef, {
-        'isPaid': true,
-        'isValid': true,
-        'paymentMethod': paymentMethod,
-        'paidAt': FieldValue.serverTimestamp(),
-      });
-
-      await batch.commit();
-    } catch (e) {
-      debugPrint("BookingService confirmPayment error: $e");
-      rethrow;
-    } finally {
-      _setLoading(false);
-    }
+  Future<void> _updateStatus(String bookingId, BookingStatus status) async {
+    await _bookings.doc(bookingId).update({
+      'status': status.value,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
-  // ---------------------------------------------------------------------------
-  // 3. Real-time stream of the current user's confirmed tickets
-  // ---------------------------------------------------------------------------
-  Stream<QuerySnapshot> getUserTicketsStream() {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) return const Stream.empty();
+  Future<void> acceptBooking(String bookingId) =>
+      _updateStatus(bookingId, BookingStatus.accepted);
 
-    return _firestore
-        .collection('bookings')
-        .where('userId', isEqualTo: uid)
-        .where('bookingStatus', isEqualTo: 'confirmed')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+  Future<void> rejectBooking(String bookingId) =>
+      _updateStatus(bookingId, BookingStatus.rejected);
+
+  Future<void> cancelBooking(String bookingId) =>
+      _updateStatus(bookingId, BookingStatus.cancelled);
+
+  Future<void> markCompleted(String bookingId) =>
+      _updateStatus(bookingId, BookingStatus.completed);
+
+  // ─── Queries ─────────────────────────────────────────────────────────────
+
+  /// Customer: all their bookings
+  Stream<QuerySnapshot> myBookings({BookingStatus? status}) {
+    Query q = _bookings
+        .where('customerId', isEqualTo: _uid)
+        .orderBy('createdAt', descending: true);
+    if (status != null) q = q.where('status', isEqualTo: status.value);
+    return q.snapshots();
   }
 
-  // ---------------------------------------------------------------------------
-  // 4. Fetch a specific booking record
-  // ---------------------------------------------------------------------------
-  Future<DocumentSnapshot> getTicketDetails(String ticketId) {
-    return _firestore.collection('bookings').doc(ticketId).get();
+  /// Vendor: all bookings assigned to them
+  Stream<QuerySnapshot> vendorBookings({BookingStatus? status}) {
+    Query q = _bookings
+        .where('vendorId', isEqualTo: _uid)
+        .orderBy('createdAt', descending: true);
+    if (status != null) q = q.where('status', isEqualTo: status.value);
+    return q.snapshots();
   }
 
-  void _setLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
+  Future<BookingModel?> getBooking(String bookingId) async {
+    final doc = await _bookings.doc(bookingId).get();
+    if (!doc.exists) return null;
+    return BookingModel.fromDoc(doc);
   }
+
+  Stream<DocumentSnapshot> bookingStream(String bookingId) =>
+      _bookings.doc(bookingId).snapshots();
 }
