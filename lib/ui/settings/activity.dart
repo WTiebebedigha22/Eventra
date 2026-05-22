@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class ActivityScreen extends StatefulWidget {
-  const ActivityScreen({super.key});
+  const ActivityScreen({super.key, required bool isVendor});
 
   @override
   State<ActivityScreen> createState() => _ActivityScreenState();

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../app/app_theme.dart';
 
@@ -35,9 +36,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   late TabController _tabController;
   int _currentTabIndex = 0;
   
-  // Track if user is vendor
   bool _isVendor = false;
-  bool _isLoadingVendorStatus = true;
+
+  static const Color primaryColor = Color(0xFF6C63FF);
 
   @override
   void initState() {
@@ -46,14 +47,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     isMe = widget.userId == currentUid;
     
     _tabController = TabController(
-      length: 1, // Will be updated after vendor check
+      length: isMe ? 3 : 1,
       vsync: this,
     );
     
     _tabController.addListener(() {
-      setState(() {
-        _currentTabIndex = _tabController.index;
-      });
+      if (mounted) {
+        setState(() {
+          _currentTabIndex = _tabController.index;
+        });
+      }
     });
 
     _userStream = _firestore
@@ -61,7 +64,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         .doc(widget.userId)
         .snapshots();
 
-    // FIXED: Changed from collectionGroup to direct collection query
     _postsStream = _firestore
         .collection('posts')
         .where('userId', isEqualTo: widget.userId)
@@ -69,21 +71,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         .snapshots();
 
     if (isMe) {
-      // FIXED: Changed to direct collection queries instead of collectionGroup
       _bookingsStream = _firestore
           .collection('bookings')
           .where('customerId', isEqualTo: widget.userId)
           .orderBy('createdAt', descending: true)
           .snapshots();
 
-      // Saved/bookmarked items
       _savedStream = _firestore
           .collection('users')
           .doc(widget.userId)
           .collection('bookmarks')
           .snapshots();
           
-      // Reviews written by user
       _reviewsStream = _firestore
           .collection('reviews')
           .where('customerId', isEqualTo: widget.userId)
@@ -93,7 +92,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       _checkFollowStatus();
     }
     
-    // Check vendor status
     _checkVendorStatus();
   }
   
@@ -103,21 +101,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       if (mounted) {
         setState(() {
           _isVendor = userDoc.data()?['isVendor'] ?? false;
-          _isLoadingVendorStatus = false;
-          // Update tab controller length after vendor status is known
-          final tabCount = isMe ? (_isVendor ? 4 : 3) : 1;
-          _tabController = TabController(
-            length: tabCount,
-            vsync: this,
-          );
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingVendorStatus = false;
-        });
-      }
+      debugPrint("Error checking vendor status: $e");
     }
   }
 
@@ -198,9 +185,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         });
       }
       debugPrint("Error toggling follow: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -289,14 +278,30 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           .set({
         'blockedAt': FieldValue.serverTimestamp(),
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User blocked')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User blocked')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error blocking user: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error blocking user: $e')),
+        );
+      }
     }
+  }
+
+  void _navigateToChat(String displayName, String? photoURL) {
+    final chatId = _getChatId(currentUid, widget.userId);
+    // FIXED: Use pushReplacement to avoid Hero key conflicts
+    context.pushReplacement(
+      '/chat/$chatId',
+      extra: {
+        'otherUserName': displayName,
+        'otherAvatar': photoURL,
+      },
+    );
   }
 
   @override
@@ -345,114 +350,128 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           final String bio = userData['bio'] ?? '';
           final bool isVendor = userData['isVendor'] ?? false;
 
-          // Update tab controller length based on vendor status
           final tabCount = isMe ? (isVendor ? 4 : 3) : 1;
           if (_tabController.length != tabCount) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _tabController.dispose();
-              _tabController = TabController(length: tabCount, vsync: this);
-              setState(() {});
-            });
+            _tabController.dispose();
+            _tabController = TabController(length: tabCount, vsync: this);
           }
 
-          return NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) => [
-              SliverAppBar(
-                backgroundColor: AppColors.bgPrimary,
-                elevation: 0,
-                pinned: true,
-                centerTitle: true,
-                automaticallyImplyLeading: !isMe,
-                leading: !isMe
-                    ? IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 20),
-                        onPressed: () => context.pop(),
-                      )
-                    : null,
-                title: Text(
-                  isMe ? "My Profile" : "@$username",
-                  style: AppTextStyles.headlineSmall,
+          return Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            appBar: _buildAppBar(username),
+            body: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(
+                  child: _buildProfileHeader(photoURL, displayName, username, bio, isVendor, userData),
                 ),
-                actions: [
-                  IconButton(
-                    icon: Icon(
-                      isMe ? Icons.settings_outlined : Icons.more_horiz,
-                      color: AppColors.textPrimary,
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _SliverAppBarDelegate(
+                    TabBar(
+                      controller: _tabController,
+                      indicatorColor: AppColors.accentPurple,
+                      indicatorWeight: 2.5,
+                      labelColor: AppColors.textPrimary,
+                      unselectedLabelColor: AppColors.textHint,
+                      dividerColor: AppColors.borderDefault,
+                      tabs: _buildTabs(isMe, isVendor),
                     ),
-                    onPressed: isMe ? () => context.push('/settings') : _showMoreOptions,
-                  ),
-                ],
-              ),
-              SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 12),
-                    _buildAvatar(photoURL),
-                    const SizedBox(height: 14),
-                    Text(displayName, style: AppTextStyles.headlineMedium),
-                    if (isVendor)
-                      Container(
-                        margin: const EdgeInsets.only(top: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentPurple.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          "Vendor",
-                          style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentPurple),
-                        ),
-                      ),
-                    if (!isMe && username.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text("@$username", style: AppTextStyles.bodyMedium),
-                      ),
-                    if (bio.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(40, 14, 40, 0),
-                        child: Text(
-                          bio,
-                          textAlign: TextAlign.center,
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textSecondary,
-                            height: 1.5,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 24),
-                    _buildStatsRow(userData),
-                    const SizedBox(height: 24),
-                    _buildActionButtons(userData, displayName, photoURL),
-                    const SizedBox(height: 22),
-                  ],
-                ),
-              ),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _SliverAppBarDelegate(
-                  TabBar(
-                    controller: _tabController,
-                    indicatorColor: AppColors.accentPurple,
-                    indicatorWeight: 2.5,
-                    labelColor: AppColors.textPrimary,
-                    unselectedLabelColor: AppColors.textHint,
-                    dividerColor: AppColors.borderDefault,
-                    tabs: _buildTabs(isMe, isVendor),
                   ),
                 ),
+              ],
+              body: TabBarView(
+                controller: _tabController,
+                children: _buildTabContent(isMe, isVendor),
               ),
-            ],
-            body: TabBarView(
-              controller: _tabController,
-              children: _buildTabContent(isMe, isVendor),
             ),
           );
         },
       ),
     );
   }
-  
+
+  PreferredSizeWidget _buildAppBar(String username) {
+    return AppBar(
+      backgroundColor: AppColors.bgPrimary,
+      elevation: 0,
+      centerTitle: true,
+      automaticallyImplyLeading: !isMe,
+      leading: !isMe
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 20),
+              onPressed: () => context.pop(),
+            )
+          : null,
+      title: Text(
+        isMe ? "Profile" : "@$username",
+        style: AppTextStyles.headlineSmall,
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(
+            isMe ? Icons.settings_outlined : Icons.more_horiz,
+            color: AppColors.textPrimary,
+          ),
+          onPressed: isMe ? () => context.push('/settings') : _showMoreOptions,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProfileHeader(
+    String? photoURL,
+    String displayName,
+    String username,
+    String bio,
+    bool isVendor,
+    Map<String, dynamic> userData,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          _buildAvatar(photoURL),
+          const SizedBox(height: 14),
+          Text(displayName, style: AppTextStyles.headlineMedium),
+          if (isVendor)
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.accentPurple.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                "Vendor",
+                style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentPurple),
+              ),
+            ),
+          if (!isMe && username.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text("@$username", style: AppTextStyles.bodyMedium),
+            ),
+          if (bio.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              child: Text(
+                bio,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          const SizedBox(height: 24),
+          _buildStatsRow(userData),
+          const SizedBox(height: 24),
+          _buildActionButtons(userData, displayName, photoURL),
+        ],
+      ),
+    );
+  }
+
   List<Tab> _buildTabs(bool isMe, bool isVendor) {
     if (!isMe) {
       return const [Tab(icon: Icon(Icons.grid_on_rounded), text: 'Posts')];
@@ -503,7 +522,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           child: CircleAvatar(
             radius: 48,
             backgroundColor: AppColors.bgCard,
-            backgroundImage: (photoURL != null && photoURL.isNotEmpty) ? NetworkImage(photoURL) : null,
+            backgroundImage: (photoURL != null && photoURL.isNotEmpty) 
+                ? CachedNetworkImageProvider(photoURL) 
+                : null,
             child: (photoURL == null || photoURL.isEmpty)
                 ? const Icon(Icons.person, size: 40, color: AppColors.textHint)
                 : null,
@@ -567,6 +588,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  // FIXED: Updated action buttons with pushReplacement for chat navigation
   Widget _buildActionButtons(Map<String, dynamic> userData, String displayName, String? photoURL) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -588,14 +610,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               if (isMe) {
                 _showMoreOptions();
               } else {
-                final chatId = _getChatId(currentUid, widget.userId);
-                context.push(
-                  '/chat/room/$chatId/${widget.userId}',
-                  extra: {
-                    'peerName': displayName,
-                    'peerAvatar': photoURL,
-                  },
-                );
+                // FIXED: Use the dedicated navigation method with pushReplacement
+                _navigateToChat(displayName, photoURL);
               }
             },
           ),
@@ -646,7 +662,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // FIXED: Posts Grid - Using direct collection query
   Widget _buildPostsGrid() {
     return StreamBuilder<QuerySnapshot>(
       stream: _postsStream,
@@ -666,8 +681,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         }
 
         return GridView.builder(
-          padding: EdgeInsets.zero,
-          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.all(2),
+          physics: const BouncingScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
             childAspectRatio: 0.8,
@@ -690,7 +705,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // FIXED: Bookings Grid - Using direct collection query
   Widget _buildBookingsGrid() {
     if (_bookingsStream == null) {
       return _buildEmptyWidget("No bookings yet", Icons.book_online_outlined);
@@ -711,7 +725,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         
         if (docs.isEmpty) {
           return _buildEmptyWidget("No bookings yet", Icons.book_online_outlined,
-              actionText: "Browse Events", onAction: () => context.push('/events'));
+              actionText: "Browse Events", onAction: () => context.push('/explore'));
         }
 
         return ListView.builder(
@@ -724,16 +738,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: ListTile(
                 leading: data['eventImageUrl'] != null
                     ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          data['eventImageUrl'],
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: data['eventImageUrl'],
                           width: 60,
                           height: 60,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.event, size: 40),
+                          placeholder: (context, url) => Container(
+                            width: 60,
+                            height: 60,
+                            color: Colors.grey.shade200,
+                            child: const Icon(Icons.event, size: 30),
+                          ),
+                          errorWidget: (context, url, error) => const Icon(Icons.event, size: 40),
                         ),
                       )
                     : const Icon(Icons.event, size: 40),
@@ -756,7 +778,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ),
                   ],
                 ),
-                trailing: Text('\$${data['price'] ?? 0}'),
+                trailing: Text('\$${data['price'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.bold)),
                 onTap: () => context.push('/booking/${docs[index].id}', extra: data),
               ),
             );
@@ -766,7 +788,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // FIXED: Reviews Grid - Using direct collection query
   Widget _buildReviewsGrid() {
     if (_reviewsStream == null) {
       return _buildEmptyWidget("No reviews yet", Icons.reviews_outlined);
@@ -798,6 +819,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -833,7 +856,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // Saved/Bookmarked items
   Widget _buildSavedGrid() {
     if (_savedStream == null) {
       return _buildEmptyWidget("No saved items", Icons.bookmark_outline_rounded);
@@ -857,8 +879,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         }
 
         return GridView.builder(
-          padding: EdgeInsets.zero,
-          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.all(2),
+          physics: const BouncingScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
             childAspectRatio: 0.8,
@@ -891,25 +913,30 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Container(color: AppColors.bgCard),
-          if (mediaUrl.isNotEmpty)
-            Image.network(
-              mediaUrl,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) {
-                if (progress == null) return child;
-                return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-              },
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.broken_image_outlined,
-                color: AppColors.textHint,
-                size: 32,
+      child: Container(
+        color: AppColors.bgCard,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (mediaUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: mediaUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: Colors.grey.shade200,
+                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: Colors.grey.shade200,
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    color: AppColors.textHint,
+                    size: 32,
+                  ),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

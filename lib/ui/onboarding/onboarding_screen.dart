@@ -28,8 +28,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       }
     });
 
-    // 🔁 Auto-slide every 3 seconds
-    _autoSlideTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _autoSlideTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!_pageController.hasClients) return;
 
       final nextPage = _currentPage.round() + 1;
@@ -175,7 +174,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Text(
             description,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black54, fontSize: 18),
+            style: const TextStyle(color: Colors.white70, fontSize: 18),
           ),
           const SizedBox(height: 150),
         ],

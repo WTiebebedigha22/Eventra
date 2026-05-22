@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:rxdart/rxdart.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
@@ -16,7 +15,6 @@ class MasonryExploreScreen extends StatefulWidget {
 class _MasonryExploreScreenState extends State<MasonryExploreScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  late Stream<List<Map<String, dynamic>>> _masonryStream;
   
   final ScrollController _scrollController = ScrollController();
   bool _isSearching = false;
@@ -24,14 +22,12 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
   String _searchQuery = '';
   
   static const Color primaryColor = Color(0xFF6C63FF);
-  static const Color secondaryColor = Color(0xFF3F3D56);
   static const Color backgroundColor = Color(0xFFF8F9FA);
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _masonryStream = _getMasonryFeed();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -48,48 +44,6 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
     setState(() {
       _searchQuery = _searchController.text.toLowerCase();
     });
-  }
-
-  Stream<List<Map<String, dynamic>>> _getMasonryFeed() {
-    final posts = FirebaseFirestore.instance
-        .collection('posts')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
-    
-    final events = FirebaseFirestore.instance
-        .collection('events')
-        .orderBy('date', descending: true)
-        .snapshots();
-
-    return CombineLatestStream.combine2(posts, events, (pSnap, eSnap) {
-      final pList = pSnap.docs
-          .map((d) => {
-                ...d.data(),
-                'id': d.id,
-                'type': 'post',
-                'createdAt': d['createdAt'] ?? DateTime.now(),
-              })
-          .toList();
-      
-      final eList = eSnap.docs
-          .map((d) => {
-                ...d.data(),
-                'id': d.id,
-                'type': 'event',
-                'createdAt': d['date'] ?? DateTime.now(),
-              })
-          .toList();
-
-      final combined = [...pList, ...eList];
-      
-      combined.sort((a, b) {
-        final tA = a['createdAt'] as DateTime;
-        final tB = b['createdAt'] as DateTime;
-        return tB.compareTo(tA);
-      });
-      
-      return combined;
-    }).asBroadcastStream();
   }
 
   @override
@@ -212,86 +166,135 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
       child: TabBarView(
         controller: _tabController,
         children: [
-          _buildMasonryGrid('all'),
-          _buildMasonryGrid('event'),
-          _buildMasonryGrid('post'),
+          _buildAllContent(),
+          _buildEventsGrid(),
+          _buildPostsGrid(),
         ],
       ),
     );
   }
 
-  Widget _buildMasonryGrid(String filter) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _masonryStream,
+  // TAB 1: ALL CONTENT (Posts + Events combined)
+  Widget _buildAllContent() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, postsSnapshot) {
+        if (postsSnapshot.hasError) {
+          return _buildErrorWidget(postsSnapshot.error);
+        }
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('events')
+              .orderBy('eventDate', descending: true)
+              .snapshots(),
+          builder: (context, eventsSnapshot) {
+            if (eventsSnapshot.hasError) {
+              return _buildErrorWidget(eventsSnapshot.error);
+            }
+
+            if (postsSnapshot.connectionState == ConnectionState.waiting ||
+                eventsSnapshot.connectionState == ConnectionState.waiting) {
+              return _buildShimmerGrid();
+            }
+
+            final List<Map<String, dynamic>> items = [];
+            
+            // Add posts
+            postsSnapshot.data?.docs.forEach((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              items.add({
+                ...data,
+                'id': doc.id,
+                'type': 'post',
+                'timestamp': data['createdAt'] ?? DateTime.now(),
+              });
+            });
+            
+            // Add events
+            eventsSnapshot.data?.docs.forEach((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              items.add({
+                ...data,
+                'id': doc.id,
+                'type': 'event',
+                'timestamp': data['eventDate'] ?? data['createdAt'] ?? DateTime.now(),
+              });
+            });
+            
+            // Sort by timestamp (newest first)
+            items.sort((a, b) {
+              final tA = a['timestamp'] as DateTime;
+              final tB = b['timestamp'] as DateTime;
+              return tB.compareTo(tA);
+            });
+            
+            // Apply search filter
+            var filteredItems = items;
+            if (_searchQuery.isNotEmpty) {
+              filteredItems = items.where((item) {
+                final title = (item['title'] ?? item['description'] ?? '').toLowerCase();
+                final location = (item['location'] ?? '').toLowerCase();
+                return title.contains(_searchQuery) || location.contains(_searchQuery);
+              }).toList();
+            }
+            
+            if (filteredItems.isEmpty) {
+              return _buildEmptyState(_searchQuery.isNotEmpty ? 'No results found' : 'No content yet');
+            }
+            
+            return MasonryGridView.count(
+              crossAxisCount: 2,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              padding: const EdgeInsets.all(16),
+              physics: const BouncingScrollPhysics(),
+              itemCount: filteredItems.length,
+              itemBuilder: (context, index) {
+                return _buildMasonryTile(filteredItems[index]);
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // TAB 2: EVENTS ONLY
+  Widget _buildEventsGrid() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .orderBy('eventDate', descending: true)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
-                const SizedBox(height: 16),
-                Text(
-                  "Something went wrong",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  snapshot.error.toString(),
-                  style: TextStyle(color: Colors.grey.shade600),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => setState(() {}),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text("Retry"),
-                ),
-              ],
-            ),
-          );
+          return _buildErrorWidget(snapshot.error);
         }
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildShimmerGrid();
         }
 
-        final data = snapshot.data ?? [];
+        final docs = snapshot.data?.docs ?? [];
         
-        if (data.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.inbox_outlined, size: 80, color: Colors.grey.shade300),
-                const SizedBox(height: 16),
-                Text(
-                  "No items found",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "Check back later for new content",
-                  style: TextStyle(color: Colors.grey.shade500),
-                ),
-              ],
-            ),
-          );
+        if (docs.isEmpty) {
+          return _buildEmptyState('No events found');
         }
-
-        var items = filter == 'all'
-            ? data
-            : data.where((i) => i['type'] == filter).toList();
-
+        
+        var items = docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return {
+            ...data,
+            'id': doc.id,
+            'type': 'event',
+            'timestamp': data['eventDate'] ?? data['createdAt'] ?? DateTime.now(),
+          };
+        }).toList();
+        
         // Apply search filter
         if (_searchQuery.isNotEmpty) {
           items = items.where((item) {
@@ -300,23 +303,11 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
             return title.contains(_searchQuery) || location.contains(_searchQuery);
           }).toList();
         }
-
+        
         if (items.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
-                const SizedBox(height: 16),
-                Text(
-                  "No results for '$_searchQuery'",
-                  style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          );
+          return _buildEmptyState(_searchQuery.isNotEmpty ? 'No matching events' : 'No events yet');
         }
-
+        
         return MasonryGridView.count(
           crossAxisCount: 2,
           mainAxisSpacing: 12,
@@ -325,38 +316,79 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
           physics: const BouncingScrollPhysics(),
           itemCount: items.length,
           itemBuilder: (context, index) {
-            final item = items[index];
-            return _buildMasonryTile(item);
+            return _buildMasonryTile(items[index]);
           },
         );
       },
     );
   }
 
-  Widget _buildShimmerGrid() {
-    return MasonryGridView.count(
-      crossAxisCount: 2,
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      padding: const EdgeInsets.all(16),
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: 6,
-      itemBuilder: (context, index) {
-        return _ShimmerTile(
-          height: 150 + (index % 3) * 50,
+  // TAB 3: POSTS ONLY
+  Widget _buildPostsGrid() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildErrorWidget(snapshot.error);
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildShimmerGrid();
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        
+        if (docs.isEmpty) {
+          return _buildEmptyState('No posts found');
+        }
+        
+        var items = docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return {
+            ...data,
+            'id': doc.id,
+            'type': 'post',
+            'timestamp': data['createdAt'] ?? DateTime.now(),
+          };
+        }).toList();
+        
+        // Apply search filter
+        if (_searchQuery.isNotEmpty) {
+          items = items.where((item) {
+            final title = (item['title'] ?? item['description'] ?? '').toLowerCase();
+            return title.contains(_searchQuery);
+          }).toList();
+        }
+        
+        if (items.isEmpty) {
+          return _buildEmptyState(_searchQuery.isNotEmpty ? 'No matching posts' : 'No posts yet');
+        }
+        
+        return MasonryGridView.count(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          padding: const EdgeInsets.all(16),
+          physics: const BouncingScrollPhysics(),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            return _buildMasonryTile(items[index]);
+          },
         );
       },
     );
   }
 
+  // FIXED: Removed Hero widget to prevent duplicate key error
   Widget _buildMasonryTile(Map<String, dynamic> item) {
     final String imageUrl = item['imageUrl'] ?? item['mediaUrl'] ?? '';
     final bool isEvent = item['type'] == 'event';
     final String title = item['title'] ?? item['description'] ?? '';
     final String? location = item['location'];
     final dynamic price = item['price'];
-    final int? likesCount = item['likesCount'];
-    final int? commentsCount = item['commentsCount'];
 
     return GestureDetector(
       onTap: () => _navigateToDetail(item),
@@ -375,37 +407,34 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image Section
+            // Image Section - NO HERO WIDGET
             ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               child: Stack(
                 children: [
-                  Hero(
-                    tag: '${item['type']}_${item['id']}',
-                    child: CachedNetworkImage(
-                      imageUrl: imageUrl.isNotEmpty ? imageUrl : '',
+                  CachedNetworkImage(
+                    imageUrl: imageUrl.isNotEmpty ? imageUrl : '',
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
                       height: 180,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        height: 180,
-                        color: Colors.grey.shade100,
-                        child: const Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+                      color: Colors.grey.shade100,
+                      child: const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                      errorWidget: (context, url, error) => Container(
-                        height: 180,
-                        color: primaryColor.withOpacity(0.1),
-                        child: const Icon(
-                          Icons.broken_image,
-                          color: primaryColor,
-                          size: 40,
-                        ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      height: 180,
+                      color: primaryColor.withOpacity(0.1),
+                      child: const Icon(
+                        Icons.broken_image,
+                        color: primaryColor,
+                        size: 40,
                       ),
                     ),
                   ),
-                  // Badge
+                  // Type Badge
                   Positioned(
                     top: 8,
                     right: 8,
@@ -440,8 +469,8 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
                       ),
                     ),
                   ),
-                  // Price Badge
-                  if (price != null && price > 0)
+                  // Price Badge (Events only)
+                  if (price != null && price > 0 && isEvent)
                     Positioned(
                       bottom: 8,
                       left: 8,
@@ -501,19 +530,6 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
                       ],
                     ),
                   ],
-                  if (likesCount != null || commentsCount != null) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (likesCount != null)
-                          _buildStatChip(Icons.favorite, likesCount, Colors.red.shade400),
-                        if (commentsCount != null) ...[
-                          const SizedBox(width: 8),
-                          _buildStatChip(Icons.comment, commentsCount, primaryColor),
-                        ],
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -523,39 +539,87 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
     );
   }
 
-  Widget _buildStatChip(IconData icon, int count, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildShimmerGrid() {
+    return MasonryGridView.count(
+      crossAxisCount: 2,
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      padding: const EdgeInsets.all(16),
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 6,
+      itemBuilder: (context, index) {
+        return Container(
+          height: 150 + (index % 3) * 50,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(16),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 10, color: color),
-          const SizedBox(width: 2),
+          Icon(Icons.inbox_outlined, size: 80, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
           Text(
-            _formatCount(count),
+            message,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: color,
+              color: Colors.grey.shade600,
             ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            'Check back later for new content',
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+          if (_searchQuery.isNotEmpty)
+            TextButton(
+              onPressed: () => _searchController.clear(),
+              child: const Text('Clear search'),
+            ),
         ],
       ),
     );
   }
 
-  String _formatCount(int count) {
-    if (count >= 1000000) {
-      return '${(count / 1000000).toStringAsFixed(1)}M';
-    }
-    if (count >= 1000) {
-      return '${(count / 1000).toStringAsFixed(1)}K';
-    }
-    return count.toString();
+  Widget _buildErrorWidget(Object? error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+          const SizedBox(height: 16),
+          const Text(
+            "Unable to load content",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            error?.toString() ?? 'Unknown error occurred',
+            style: TextStyle(color: Colors.grey.shade600),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => setState(() {}),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text("Retry"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showFilterDialog() {
@@ -575,36 +639,24 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            _buildFilterOption('Sort by newest', true),
-            _buildFilterOption('Sort by popular', false),
-            _buildFilterOption('Near me', false),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text('Apply'),
-              ),
+            ListTile(
+              leading: const Icon(Icons.access_time),
+              title: const Text('Latest'),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.trending_up),
+              title: const Text('Popular'),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_on),
+              title: const Text('Near me'),
+              onTap: () => Navigator.pop(context),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildFilterOption(String title, bool isSelected) {
-    return RadioListTile<bool>(
-      value: true,
-      groupValue: isSelected,
-      onChanged: (_) {},
-      title: Text(title),
-      activeColor: primaryColor,
     );
   }
 
@@ -650,89 +702,4 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(_SliverTabBarDelegate old) => false;
-}
-
-// FIXED: Shimmer Tile with proper animation controller
-class _ShimmerTile extends StatefulWidget {
-  final double height;
-  const _ShimmerTile({required this.height});
-
-  @override
-  State<_ShimmerTile> createState() => _ShimmerTileState();
-}
-
-class _ShimmerTileState extends State<_ShimmerTile> with SingleTickerProviderStateMixin {
-  late AnimationController _shimmerController;
-
-  @override
-  void initState() {
-    super.initState();
-    // FIXED: Added explicit duration to AnimationController
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500), // Explicit duration
-    )..repeat(); // repeat() now works because duration is set
-  }
-
-  @override
-  void dispose() {
-    _shimmerController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _shimmerController,
-      builder: (context, child) {
-        return Container(
-          height: widget.height,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ShimmerLoading(
-            animationValue: _shimmerController.value,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class ShimmerLoading extends StatelessWidget {
-  final double animationValue;
-  final Widget child;
-
-  const ShimmerLoading({
-    super.key,
-    required this.animationValue,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (bounds) {
-        return LinearGradient(
-          colors: const [
-            Color(0xFFEBEBF4),
-            Color(0xFFF4F4F8),
-            Color(0xFFEBEBF4),
-          ],
-          stops: const [0.1, 0.3, 0.4],
-          begin: Alignment(-1.0 + animationValue * 2, -0.3),
-          end: Alignment(1.0 + animationValue * 2, 0.3),
-        ).createShader(bounds);
-      },
-      blendMode: BlendMode.srcATop,
-      child: child,
-    );
-  }
 }

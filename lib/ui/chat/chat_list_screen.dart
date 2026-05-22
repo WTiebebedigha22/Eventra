@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../models/chat/chat_session.dart';
 import '../../services/chat_service.dart';
@@ -17,42 +19,56 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
-  final String _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  String _currentUid = '';
   
   late AnimationController _fadeController;
-  final Map<String, Future<Map<String, dynamic>?>> _profileCache = {};
+  final Map<String, Map<String, dynamic>> _profileCache = {};
   
-  // Track online users count
   Stream<QuerySnapshot>? _onlineUsersStream;
   int _onlineCount = 0;
+  bool _isInitialized = false;
 
-  Future<Map<String, dynamic>?> _getProfile(String uid) {
-    return _profileCache.putIfAbsent(uid, () => _chatService.getUserProfile(uid));
-  }
+  static const Color primaryColor = Color(0xFF6C63FF);
+  static const Color backgroundColor = Color(0xFFF8F9FA);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
+    _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     )..forward();
     
-    // Initialize online users stream
     _onlineUsersStream = FirebaseFirestore.instance
         .collection('users')
         .where('isOnline', isEqualTo: true)
         .snapshots();
         
-    // Set user as online when app starts
-    _setUserOnlineStatus(true);
+    if (_currentUid.isNotEmpty) {
+      _setUserOnlineStatus(true);
+      _isInitialized = true;
+    }
+    
+    // Listen to auth changes
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null && _currentUid != user.uid) {
+        _setUserOnlineStatus(false);
+        _currentUid = user.uid;
+        _setUserOnlineStatus(true);
+        setState(() {});
+      }
+    });
   }
   
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    if (!_isInitialized) return;
+    
     if (state == AppLifecycleState.resumed) {
       _setUserOnlineStatus(true);
     } else if (state == AppLifecycleState.paused || 
@@ -79,15 +95,85 @@ class _ChatListScreenState extends State<ChatListScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _setUserOnlineStatus(false);
+    if (_currentUid.isNotEmpty) {
+      _setUserOnlineStatus(false);
+    }
     _fadeController.dispose();
     super.dispose();
   }
 
+  // FIXED: Better profile fetching with caching
+  Future<Map<String, dynamic>?> _getProfile(String uid) async {
+    if (_profileCache.containsKey(uid)) {
+      return _profileCache[uid];
+    }
+    
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (doc.exists) {
+        final userData = doc.data();
+        _profileCache[uid] = userData!;
+        return userData;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting profile for $uid: $e');
+      return null;
+    }
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return '';
+    
+    DateTime date;
+    if (timestamp is Timestamp) {
+      date = timestamp.toDate();
+    } else if (timestamp is DateTime) {
+      date = timestamp;
+    } else {
+      return '';
+    }
+    
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w';
+    return DateFormat('MMM d').format(date);
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_currentUid.isEmpty) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        appBar: _buildAppBar(),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_outline, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              const Text('Please log in to view messages'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => context.push('/login'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                ),
+                child: const Text('Sign In'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F5FB),
+      backgroundColor: backgroundColor,
       appBar: _buildAppBar(),
       body: StreamBuilder<QuerySnapshot>(
         stream: _chatService.getConversationsStream(),
@@ -100,11 +186,13 @@ class _ChatListScreenState extends State<ChatListScreen>
             return _buildError(snapshot.error.toString());
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          final docs = snapshot.data?.docs ?? [];
+          
+          if (docs.isEmpty) {
             return _buildEmptyState();
           }
 
-          final sessions = snapshot.data!.docs
+          final sessions = docs
               .map((d) => ChatSession.fromFirestore(d))
               .toList();
 
@@ -126,9 +214,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                   return _ChatTile(
                     key: ValueKey(session.id),
                     session: session,
-                    profileFuture: _getProfile(otherId),
+                    userId: otherId,
                     currentUid: _currentUid,
-                    otherId: otherId,
                     unread: unread,
                     isMe: isMe,
                     index: index,
@@ -136,11 +223,12 @@ class _ChatListScreenState extends State<ChatListScreen>
                       HapticFeedback.lightImpact();
                       _chatService.markAsRead(session.id);
                       context.push(
-                        '/chat/room/${session.id}/$otherId',
-                        extra: {'peerName': name, 'peerAvatar': avatar},
+                        '/chat/${session.id}',
+                        extra: {'otherUserName': name, 'otherAvatar': avatar},
                       );
                     },
                     onDismiss: () => _chatService.deleteConversation(session.id),
+                    formatTimestamp: _formatTimestamp,
                   );
                 },
               ),
@@ -153,7 +241,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xFFF6F5FB),
+      backgroundColor: backgroundColor,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       titleSpacing: 20,
@@ -161,56 +249,56 @@ class _ChatListScreenState extends State<ChatListScreen>
         "Messages",
         style: TextStyle(
           fontWeight: FontWeight.w800,
-          fontSize: 26,
+          fontSize: 28,
           color: Color(0xFF1A1A2E),
           letterSpacing: -0.5,
         ),
       ),
       actions: [
-        StreamBuilder<QuerySnapshot>(
-          stream: _onlineUsersStream,
-          builder: (context, snapshot) {
-            final count = snapshot.data?.docs.length ?? 0;
-            // Update count for animation
-            if (_onlineCount != count && mounted) {
-              setState(() => _onlineCount = count);
-            }
-            return Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: count > 0 ? Colors.green : Colors.grey,
-                        shape: BoxShape.circle,
+        if (_currentUid.isNotEmpty)
+          StreamBuilder<QuerySnapshot>(
+            stream: _onlineUsersStream,
+            builder: (context, snapshot) {
+              final count = snapshot.data?.docs.length ?? 0;
+              if (_onlineCount != count && mounted) {
+                setState(() => _onlineCount = count);
+              }
+              return Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: count > 0 ? Colors.green : Colors.grey,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '$count online',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: count > 0 ? Colors.green.shade700 : Colors.grey.shade600,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(width: 6),
+                      Text(
+                        '$count online',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: count > 0 ? Colors.green.shade700 : Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
       ],
     );
   }
@@ -219,7 +307,45 @@ class _ChatListScreenState extends State<ChatListScreen>
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       itemCount: 6,
-      itemBuilder: (_, index) => _ShimmerTile(delay: index * 80),
+      itemBuilder: (_, index) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: const BoxDecoration(
+                color: Colors.grey,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 120,
+                    height: 14,
+                    color: Colors.grey.shade200,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 180,
+                    height: 12,
+                    color: Colors.grey.shade200,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -232,13 +358,13 @@ class _ChatListScreenState extends State<ChatListScreen>
             width: 90,
             height: 90,
             decoration: BoxDecoration(
-              color: Colors.deepPurpleAccent.withOpacity(0.08),
+              color: primaryColor.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.chat_bubble_outline_rounded,
               size: 40,
-              color: Colors.deepPurpleAccent,
+              color: primaryColor,
             ),
           ),
           const SizedBox(height: 20),
@@ -257,11 +383,11 @@ class _ChatListScreenState extends State<ChatListScreen>
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () => context.push('/discover'),
+            onPressed: () => context.push('/explore'),
             icon: const Icon(Icons.explore),
             label: const Text('Find People to Chat With'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepPurpleAccent,
+              backgroundColor: primaryColor,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -296,6 +422,9 @@ class _ChatListScreenState extends State<ChatListScreen>
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () => setState(() {}),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+              ),
               child: const Text('Retry'),
             ),
           ],
@@ -305,28 +434,29 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 }
 
+// FIXED: Simplified ChatTile that fetches user data directly
 class _ChatTile extends StatefulWidget {
   final ChatSession session;
-  final Future<Map<String, dynamic>?> profileFuture;
+  final String userId;
   final String currentUid;
-  final String otherId;
   final int unread;
   final bool isMe;
   final int index;
   final void Function(String name, String? avatar) onTap;
   final VoidCallback onDismiss;
+  final String Function(dynamic) formatTimestamp;
 
   const _ChatTile({
     super.key,
     required this.session,
-    required this.profileFuture,
+    required this.userId,
     required this.currentUid,
-    required this.otherId,
     required this.unread,
     required this.isMe,
     required this.index,
     required this.onTap,
     required this.onDismiss,
+    required this.formatTimestamp,
   });
 
   @override
@@ -340,9 +470,11 @@ class _ChatTileState extends State<_ChatTile>
   late Animation<double> _fadeAnim;
   final ChatService _chatService = ChatService();
   
-  // FIX: Cache user data to prevent "Bad State" error
-  Map<String, dynamic>? _cachedUserData;
+  Map<String, dynamic>? _userData;
   bool _isLoading = true;
+  String? _error;
+
+  static const Color primaryColor = Color(0xFF6C63FF);
 
   @override
   void initState() {
@@ -363,23 +495,33 @@ class _ChatTileState extends State<_ChatTile>
       if (mounted) _slideController.forward();
     });
     
-    // Load user profile
-    _loadUserProfile();
+    _fetchUserData();
   }
   
-  Future<void> _loadUserProfile() async {
+  Future<void> _fetchUserData() async {
     try {
-      final userData = await widget.profileFuture;
-      if (mounted) {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get();
+      
+      if (doc.exists && mounted) {
         setState(() {
-          _cachedUserData = userData;
+          _userData = doc.data();
           _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _error = 'User not found';
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+      debugPrint('Error fetching user data: $e');
     }
   }
 
@@ -408,74 +550,35 @@ class _ChatTileState extends State<_ChatTile>
   }
   
   Widget _buildContent() {
-    // Show loading state while fetching profile
     if (_isLoading) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 120,
-                    height: 14,
-                    color: Colors.grey.shade200,
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 180,
-                    height: 12,
-                    color: Colors.grey.shade200,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
+      return _buildSkeletonTile();
     }
     
-    final user = _cachedUserData;
-    final name = user?['displayName'] ?? 'User';
-    final avatar = user?['photoURL'] as String?;
+    if (_error != null) {
+      return _buildErrorTile();
+    }
     
-    // FIX: Proper error handling for user document stream
+    final name = _userData?['displayName'] ?? 
+                 _userData?['username'] ?? 
+                 _userData?['email']?.split('@').first ?? 
+                 'User';
+    final avatar = _userData?['photoURL'] as String?;
+    
+    // Real-time online status
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
           .collection('users')
-          .doc(widget.otherId)
-          .snapshots()
-          .handleError((error) {
-            debugPrint('User stream error: $error');
-            return Stream.value(null);
-          }),
+          .doc(widget.userId)
+          .snapshots(),
       builder: (context, userSnap) {
-        // FIX: Prevent "Bad State" error by checking existence properly
-        Map<String, dynamic>? userData;
         bool isOnline = false;
         bool isTyping = false;
         
         if (userSnap.hasData && userSnap.data != null && userSnap.data!.exists) {
           try {
-            userData = userSnap.data!.data() as Map<String, dynamic>?;
-            isOnline = userData?['isOnline'] as bool? ?? false;
-            isTyping = userData?['typingTo'] == widget.currentUid;
+            final data = userSnap.data!.data() as Map<String, dynamic>?;
+            isOnline = data?['isOnline'] as bool? ?? false;
+            isTyping = data?['typingTo'] == widget.currentUid;
           } catch (e) {
             debugPrint('Error parsing user data: $e');
           }
@@ -483,6 +586,86 @@ class _ChatTileState extends State<_ChatTile>
 
         return _buildTile(name, avatar, isOnline, isTyping);
       },
+    );
+  }
+
+  Widget _buildSkeletonTile() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 120,
+                  height: 14,
+                  color: Colors.grey.shade200,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 180,
+                  height: 12,
+                  color: Colors.grey.shade200,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorTile() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 26,
+            backgroundColor: Colors.red,
+            child: Icon(Icons.error, color: Colors.white),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Failed to load user',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap to retry',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -503,10 +686,7 @@ class _ChatTileState extends State<_ChatTile>
             ),
           ],
           border: widget.unread > 0
-              ? Border.all(
-                  color: Colors.deepPurpleAccent.withOpacity(0.25), 
-                  width: 1.5,
-                )
+              ? Border.all(color: primaryColor.withOpacity(0.3), width: 1.5)
               : null,
         ),
         child: Row(
@@ -524,9 +704,7 @@ class _ChatTileState extends State<_ChatTile>
                         child: Text(
                           name,
                           style: TextStyle(
-                            fontWeight: widget.unread > 0
-                                ? FontWeight.w800
-                                : FontWeight.w600,
+                            fontWeight: widget.unread > 0 ? FontWeight.w800 : FontWeight.w600,
                             fontSize: 15,
                             color: const Color(0xFF1A1A2E),
                           ),
@@ -535,15 +713,11 @@ class _ChatTileState extends State<_ChatTile>
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        _chatService.formatTimestamp(widget.session.lastMessageTime as Timestamp?),
+                        widget.formatTimestamp(widget.session.lastMessageTime),
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: widget.unread > 0
-                              ? FontWeight.w700
-                              : FontWeight.normal,
-                          color: widget.unread > 0
-                              ? Colors.deepPurpleAccent
-                              : Colors.grey[400],
+                          fontWeight: widget.unread > 0 ? FontWeight.w700 : FontWeight.normal,
+                          color: widget.unread > 0 ? primaryColor : Colors.grey[400],
                         ),
                       ),
                     ],
@@ -579,7 +753,7 @@ class _ChatTileState extends State<_ChatTile>
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.deepPurpleAccent.withOpacity(0.15),
+                color: primaryColor.withOpacity(0.15),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -587,22 +761,22 @@ class _ChatTileState extends State<_ChatTile>
           ),
           child: CircleAvatar(
             radius: 26,
-            backgroundColor: Colors.deepPurple.shade50,
+            backgroundColor: primaryColor.withOpacity(0.1),
             backgroundImage: avatar != null && avatar.isNotEmpty 
-                ? NetworkImage(avatar) 
+                ? CachedNetworkImageProvider(avatar) 
                 : null,
             child: avatar == null || avatar.isEmpty
-                ? const Icon(Icons.person, color: Colors.deepPurpleAccent, size: 28)
+                ? Icon(Icons.person, color: primaryColor, size: 28)
                 : null,
           ),
         ),
         if (isOnline)
           Positioned(
-            bottom: 1,
-            right: 1,
+            bottom: 2,
+            right: 2,
             child: Container(
-              height: 13,
-              width: 13,
+              height: 12,
+              width: 12,
               decoration: BoxDecoration(
                 color: const Color(0xFF22C55E),
                 shape: BoxShape.circle,
@@ -627,9 +801,7 @@ class _ChatTileState extends State<_ChatTile>
             child: Icon(
               Icons.done_all_rounded,
               size: 14,
-              color: widget.unread > 0 
-                  ? Colors.deepPurpleAccent.withOpacity(0.7)
-                  : Colors.grey.shade400,
+              color: widget.unread > 0 ? primaryColor.withOpacity(0.7) : Colors.grey.shade400,
             ),
           ),
         if (isImage)
@@ -650,12 +822,8 @@ class _ChatTileState extends State<_ChatTile>
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13,
-              color: widget.unread > 0
-                  ? const Color(0xFF1A1A2E)
-                  : Colors.grey[500],
-              fontWeight: widget.unread > 0
-                  ? FontWeight.w500
-                  : FontWeight.normal,
+              color: widget.unread > 0 ? const Color(0xFF1A1A2E) : Colors.grey[500],
+              fontWeight: widget.unread > 0 ? FontWeight.w500 : FontWeight.normal,
             ),
           ),
         ),
@@ -664,19 +832,20 @@ class _ChatTileState extends State<_ChatTile>
   }
 
   Widget _buildBadge() {
+    final count = widget.unread > 99 ? '99+' : '${widget.unread}';
     return Container(
       constraints: const BoxConstraints(minWidth: 20),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Colors.deepPurpleAccent, Colors.purpleAccent],
+          colors: [primaryColor, Color(0xFF4A42D4)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
-        widget.unread > 99 ? '99+' : '${widget.unread}',
+        count,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 10,
@@ -693,8 +862,8 @@ class _ChatTileState extends State<_ChatTile>
       padding: const EdgeInsets.only(right: 20),
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.red.shade400, Colors.red.shade600],
+        gradient: const LinearGradient(
+          colors: [Colors.redAccent, Colors.red],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
@@ -705,14 +874,7 @@ class _ChatTileState extends State<_ChatTile>
         children: [
           Icon(Icons.delete_rounded, color: Colors.white, size: 24),
           SizedBox(height: 4),
-          Text(
-            'Delete',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text('Delete', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -723,8 +885,7 @@ class _ChatTileState extends State<_ChatTile>
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Delete conversation?",
-            style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text("Delete conversation?"),
         content: const Text("This conversation will be permanently deleted."),
         actions: [
           TextButton(
@@ -733,8 +894,7 @@ class _ChatTileState extends State<_ChatTile>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete",
-                style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
+            child: const Text("Delete", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -754,27 +914,22 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   late List<AnimationController> _controllers;
   late List<Animation<double>> _anims;
 
+  static const Color primaryColor = Color(0xFF6C63FF);
+
   @override
   void initState() {
     super.initState();
-    _controllers = List.generate(
-      3,
-      (i) => AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 400),
-      ),
-    );
-    _anims = _controllers
-        .map((c) => Tween<double>(begin: 0, end: -5).animate(
-            CurvedAnimation(parent: c, curve: Curves.easeInOut),
-          ))
-        .toList();
+    _controllers = List.generate(3, (i) => AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    ));
+    _anims = _controllers.map((c) => Tween<double>(begin: 0, end: -6).animate(
+      CurvedAnimation(parent: c, curve: Curves.easeInOut),
+    )).toList();
 
     for (int i = 0; i < 3; i++) {
       Future.delayed(Duration(milliseconds: i * 150), () {
-        if (mounted) {
-          _controllers[i].repeat(reverse: true);
-        }
+        if (mounted) _controllers[i].repeat(reverse: true);
       });
     }
   }
@@ -795,7 +950,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
           "typing",
           style: TextStyle(
             fontSize: 13,
-            color: Colors.deepPurpleAccent.withOpacity(0.8),
+            color: primaryColor.withOpacity(0.8),
             fontStyle: FontStyle.italic,
           ),
         ),
@@ -810,7 +965,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
                 height: 4,
                 margin: const EdgeInsets.symmetric(horizontal: 1.5),
                 decoration: const BoxDecoration(
-                  color: Colors.deepPurpleAccent,
+                  color: primaryColor,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -818,121 +973,6 @@ class _TypingIndicatorState extends State<_TypingIndicator>
           );
         }),
       ],
-    );
-  }
-}
-
-class _ShimmerTile extends StatefulWidget {
-  final int delay;
-  const _ShimmerTile({required this.delay});
-
-  @override
-  State<_ShimmerTile> createState() => _ShimmerTileState();
-}
-
-class _ShimmerTileState extends State<_ShimmerTile>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    _anim = Tween<double>(begin: -1, end: 2).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    Future.delayed(Duration(milliseconds: widget.delay), () {
-      if (mounted) _controller.repeat();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (_, __) {
-        final shimmerOffset = _anim.value;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Row(
-            children: [
-              _shimmerCircle(52, shimmerOffset),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _shimmerBox(120, 14, shimmerOffset),
-                        _shimmerBox(40, 10, shimmerOffset),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    _shimmerBox(200, 12, shimmerOffset),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _shimmerBox(double width, double height, double offset) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.grey.shade200,
-            Colors.grey.shade100,
-            Colors.grey.shade200,
-          ],
-          stops: [offset - 0.2, offset, offset + 0.2],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(6),
-      ),
-    );
-  }
-
-  Widget _shimmerCircle(double size, double offset) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.grey.shade200,
-            Colors.grey.shade100,
-            Colors.grey.shade200,
-          ],
-          stops: [offset - 0.2, offset, offset + 0.2],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        shape: BoxShape.circle,
-      ),
     );
   }
 }

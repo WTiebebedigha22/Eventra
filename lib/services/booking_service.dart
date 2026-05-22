@@ -142,4 +142,6 @@ class BookingService {
 
   Stream<DocumentSnapshot> bookingStream(String bookingId) =>
       _bookings.doc(bookingId).snapshots();
+
+  purchaseTicket({required String eventId, required eventTitle, required eventImageUrl, required String eventDate, required eventLocation, required double price, required int quantity}) {}
 }

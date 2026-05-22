@@ -614,7 +614,7 @@ class GradientButton extends StatelessWidget {
     this.onPressed,
     this.colors = AppColors.purpleGradient,
     this.height = 54,
-    this.width,
+    this.width, required IconData icon,
   });
 
   @override

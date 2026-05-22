@@ -178,7 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 24),
         const Text('Welcome Back', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: textColor)),
         const SizedBox(height: 8),
-        const Text('Sign in to continue your journey', style: TextStyle(fontSize: 15, color: subtleText)),
+        const Text('Login to proceed to your account', style: TextStyle(fontSize: 15, color: subtleText)),
       ],
     );
   }
@@ -203,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const Text("Don't have an account?", style: TextStyle(color: subtleText)),
         TextButton(
           onPressed: () => context.push('/register'),
-          child: const Text('Sign Up', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+          child: const Text('Create one here', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
         ),
       ],
     );

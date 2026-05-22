@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -282,20 +284,79 @@ class ChatService {
     }
   }
 
+  // FIXED: getUnreadCount without collectionGroup query
   /// Count of unread messages across all chats (for badge)
   Stream<int> getUnreadCount() {
     if (_currentUid == null) return Stream.value(0);
     
-    return _firestore
-        .collectionGroup('messages')
-        .where('read', isEqualTo: false)
-        .where('senderId', isNotEqualTo: _currentUid)
+    final controller = StreamController<int>.broadcast();
+    
+    // Listen to all chats the user is part of
+    _chats()
+        .where('participants', arrayContains: _currentUid)
         .snapshots()
-        .map((snapshot) => snapshot.docs.length)
-        .handleError((error) {
-          print('Error getting unread count: $error');
-          return 0;
+        .listen((chatsSnapshot) async {
+          int totalUnread = 0;
+          
+          for (final chatDoc in chatsSnapshot.docs) {
+            final chatId = chatDoc.id;
+            
+            // For each chat, count unread messages where user is not the sender
+            try {
+              final unreadSnapshot = await _chats()
+                  .doc(chatId)
+                  .collection('messages')
+                  .where('read', isEqualTo: false)
+                  .where('senderId', isNotEqualTo: _currentUid)
+                  .count()
+                  .get();
+              
+              totalUnread += unreadSnapshot.count!;
+            } catch (e) {
+              print('Error counting unread for chat $chatId: $e');
+            }
+          }
+          
+          if (!controller.isClosed) {
+            controller.add(totalUnread);
+          }
+        }, onError: (error) {
+          if (!controller.isClosed) {
+            controller.addError(error);
+          }
         });
+    
+    return controller.stream.handleError((error) {
+      print('Error getting unread count: $error');
+      return 0;
+    });
+  }
+
+  // Alternative: Simpler Future-based unread count
+  Future<int> getUnreadCountOnce() async {
+    if (_currentUid == null) return 0;
+    
+    final chatsSnapshot = await _chats()
+        .where('participants', arrayContains: _currentUid)
+        .get();
+    
+    int totalUnread = 0;
+    
+    for (final chatDoc in chatsSnapshot.docs) {
+      final chatId = chatDoc.id;
+      
+      final unreadSnapshot = await _chats()
+          .doc(chatId)
+          .collection('messages')
+          .where('read', isEqualTo: false)
+          .where('senderId', isNotEqualTo: _currentUid)
+          .count()
+          .get();
+      
+      totalUnread += unreadSnapshot.count!;
+    }
+    
+    return totalUnread;
   }
 
   /// Delete entire conversation
@@ -360,10 +421,18 @@ class ChatService {
   }
 
   /// Format timestamp for display
-  String formatTimestamp(Timestamp? timestamp) {
+  String formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return '';
     
-    final DateTime date = timestamp.toDate();
+    DateTime date;
+    if (timestamp is Timestamp) {
+      date = timestamp.toDate();
+    } else if (timestamp is DateTime) {
+      date = timestamp;
+    } else {
+      return '';
+    }
+    
     final DateTime now = DateTime.now();
     final difference = now.difference(date);
     

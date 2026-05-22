@@ -53,6 +53,7 @@ class AppRouter {
       navigatorKey: _rootNavigatorKey,
       initialLocation: '/splash',
       refreshListenable: auth,
+      debugLogDiagnostics: true, // Add this for debugging
 
       redirect: (context, state) {
         final loggedIn = auth.isLoggedIn;
@@ -87,28 +88,34 @@ class AppRouter {
         // ─────────────────── AUTH ─────────────────────────────────────────
         GoRoute(
           path: '/splash',
+          name: 'splash',
           builder: (_, __) => const SplashScreen(),
         ),
         GoRoute(
           path: '/onboarding',
+          name: 'onboarding',
           builder: (_, __) => const OnboardingScreen(),
         ),
         GoRoute(
           path: '/login',
+          name: 'login',
           builder: (_, __) => const LoginScreen(),
         ),
         GoRoute(
           path: '/register',
+          name: 'register',
           builder: (_, __) => const RegisterScreen(),
         ),
         GoRoute(
           path: '/forgot-password',
+          name: 'forgot-password',
           builder: (_, __) => const ForgotPasswordScreen(),
         ),
 
         // ─────────────────── EDIT PROFILE (Top-level route) ───────────────
         GoRoute(
           path: '/edit',
+          name: 'edit-profile',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -136,17 +143,19 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/home',
+                  name: 'home',
                   builder: (_, __) => const EventListScreen(),
                   routes: [
                     GoRoute(
                       path: 'event/:id',
+                      name: 'event-detail',
                       builder: (_, state) => EventDetailScreen(
                         eventId: state.pathParameters['id']!,
                       ),
                       routes: [
                         GoRoute(
                           path: 'purchase-tickets',
-                          name: 'purchaseTickets',
+                          name: 'purchase-tickets',
                           builder: (context, state) {
                             final eventId = state.pathParameters['id'];
                             if (eventId == null || eventId.isEmpty) {
@@ -154,7 +163,7 @@ class AppRouter {
                                 body: Center(child: Text('Invalid Event ID')),
                               );
                             }
-                            return const BookingListScreen(isVendor: false);
+                            return TicketPurchaseScreen(eventId: eventId);
                           },
                         ),
                       ],
@@ -170,7 +179,25 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/chat',
+                  name: 'chat',
                   builder: (_, __) => const ChatListScreen(),
+                  routes: [
+                    GoRoute(
+                      path: ':otherUserId',
+                      name: 'chat-room',
+                      builder: (context, state) {
+                        final otherUserId = state.pathParameters['otherUserId']!;
+                        final extra = state.extra as Map<String, dynamic>?;
+                        final otherUserName = extra?['otherUserName'] as String? ?? 'User';
+                        final otherAvatar = extra?['otherAvatar'] as String?;
+                        return ChatRoomScreen(
+                          otherUid: otherUserId,
+                          otherName: otherUserName,
+                          otherAvatar: otherAvatar,
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -181,6 +208,7 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/explore',
+                  name: 'explore',
                   builder: (_, __) => const MasonryExploreScreen(),
                 ),
               ],
@@ -192,6 +220,7 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/search',
+                  name: 'search',
                   builder: (_, __) => const SearchScreen(),
                 ),
               ],
@@ -203,6 +232,7 @@ class AppRouter {
               routes: [
                 GoRoute(
                   path: '/profile',
+                  name: 'profile',
                   builder: (context, state) {
                     final uid = FirebaseAuth.instance.currentUser?.uid;
                     if (uid == null) {
@@ -212,7 +242,6 @@ class AppRouter {
                     }
                     return ProfileScreen(userId: uid);
                   },
-                  // Remove the nested edit route to avoid confusion
                 ),
               ],
             ),
@@ -222,6 +251,7 @@ class AppRouter {
         // ─────────────────── PAYMENT ──────────────────────────────────────
         GoRoute(
           path: '/payment',
+          name: 'payment',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final extra = state.extra as Map<String, dynamic>?;
@@ -235,6 +265,10 @@ class AppRouter {
               ticketId: extra['ticketId'] as String,
               totalAmount: (extra['totalAmount'] as num).toDouble(),
               quantity: extra['quantity'] as int,
+              eventTitle: extra['eventTitle'] as String?,
+              seats: extra['seats'] as List<String>?,
+              eventDate: extra['eventDate'] as String?,
+              venue: extra['venue'] as String?,
             );
           },
         ),
@@ -242,10 +276,11 @@ class AppRouter {
         // ─────────────────── TICKET QR ────────────────────────────────────
         GoRoute(
           path: '/ticket/:ticketId',
+          name: 'ticket',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final ticketId = state.pathParameters['ticketId'];
-            if (ticketId == null) {
+            if (ticketId == null || ticketId.isEmpty) {
               return const Scaffold(
                 body: Center(child: Text('Invalid ticket ID')),
               );
@@ -254,41 +289,22 @@ class AppRouter {
           },
         ),
 
-        // ─────────────────── CHAT ROOM ────────────────────────────────────
-        GoRoute(
-          path: '/chat/:otherUserId',
-          parentNavigatorKey: _rootNavigatorKey,
-          pageBuilder: (context, state) {
-            final otherUserId = state.pathParameters['otherUserId']!;
-            final extra = state.extra as Map<String, dynamic>?;
-            final otherUserName = extra?['otherUserName'] as String? ?? 'User';
-            final otherAvatar = extra?['otherAvatar'] as String?;
-
-            return MaterialPage(
-              key: ValueKey('chat_room_$otherUserId'),
-              child: ChatRoomScreen(
-                otherUid: otherUserId,
-                otherName: otherUserName,
-                otherAvatar: otherAvatar,
-              ),
-            );
-          },
-        ),
-
         // ─────────────────── VENDOR BOOKINGS ──────────────────────────────
         GoRoute(
           path: '/bookings/vendor',
+          name: 'vendor-bookings',
           parentNavigatorKey: _rootNavigatorKey,
-          builder: (_, __) => const BookingListScreen(isVendor: true),
+          builder: (_, __) => const ActivityScreen(isVendor: true),
         ),
 
         // ─────────────────── OTHER USER PROFILE ───────────────────────────
         GoRoute(
           path: '/user/:userId',
+          name: 'user-profile',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final userId = state.pathParameters['userId'];
-            if (userId == null) {
+            if (userId == null || userId.isEmpty) {
               return const Scaffold(
                 body: Center(child: Text('Invalid user')),
               );
@@ -300,10 +316,11 @@ class AppRouter {
         // ─────────────────── POST DETAIL ──────────────────────────────────
         GoRoute(
           path: '/post/:id',
+          name: 'post-detail',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) {
             final id = state.pathParameters['id'];
-            if (id == null) {
+            if (id == null || id.isEmpty) {
               return const Scaffold(
                 body: Center(child: Text('Invalid post')),
               );
@@ -315,11 +332,13 @@ class AppRouter {
         // ─────────────────── CREATE POST ──────────────────────────────────
         GoRoute(
           path: '/create-post',
+          name: 'create-post',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (_, __) => const CreatePostScreen(),
           routes: [
             GoRoute(
               path: 'tag-people',
+              name: 'tag-people',
               builder: (_, __) => const TagPeopleScreen(),
             ),
           ],
@@ -328,40 +347,70 @@ class AppRouter {
         // ─────────────────── SETTINGS ─────────────────────────────────────
         GoRoute(
           path: '/settings',
+          name: 'settings',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (_, __) => const ProfileSettingsScreen(),
           routes: [
             GoRoute(
               path: 'security',
+              name: 'security',
               builder: (_, __) => const SecurityScreen(),
             ),
             GoRoute(
               path: 'activity',
-              builder: (_, __) => const ActivityScreen(),
+              name: 'activity',
+              builder: (_, __) => const ActivityScreen(isVendor: false),
             ),
             GoRoute(
               path: 'notifications',
+              name: 'settings-notifications',
               builder: (_, __) => const NotificationsScreen(),
             ),
             GoRoute(
               path: 'theme',
+              name: 'theme',
               builder: (_, __) => const ThemeScreen(),
             ),
             GoRoute(
               path: 'language',
+              name: 'language',
               builder: (_, __) => const LanguageScreen(),
             ),
             GoRoute(
               path: 'help',
+              name: 'help',
               builder: (_, __) => const HelpScreen(),
             ),
             GoRoute(
               path: 'privacy',
+              name: 'privacy',
               builder: (_, __) => const PrivacyPolicyScreen(),
             ),
           ],
         ),
       ],
+      
+      // Add error handling
+      errorBuilder: (context, state) => Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Page not found: ${state.uri.path}'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => context.go('/home'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6C63FF),
+                ),
+                child: const Text('Go Home'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
 
     return _router!;

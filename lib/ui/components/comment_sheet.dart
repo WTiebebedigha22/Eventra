@@ -1,3 +1,5 @@
+//improve this
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,7 +30,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
   String? _replyingToCommentId;
   String? _replyingToUserName;
 
-  static const Color primaryColor = Color(0xFF3E5992);
+  static const Color primaryColor = Colors.deepPurpleAccent;
   static const Color backgroundColor = Colors.white;
   static const Color inputBg = Color(0xFFF8F9FA);
 

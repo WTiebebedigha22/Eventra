@@ -21,11 +21,11 @@ class CreatePostScreen extends StatefulWidget {
   State<CreatePostScreen> createState() => _CreatePostScreenState();
 }
 
-class _CreatePostScreenState extends State<CreatePostScreen> {
+class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerProviderStateMixin {
   // --- Controllers & State ---
   final TextEditingController _contentController = TextEditingController();
   final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _priceController = TextEditingController(); // New: Price Controller
+  final TextEditingController _priceController = TextEditingController();
 
   final List<File> _selectedMediaList = [];
   String? _location;
@@ -34,6 +34,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   
   // 0 = Post, 1 = Event
   int _selectedType = 0; 
+  
+  // Animation
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   // --- Category Logic ---
   String _selectedCategory = 'General'; 
@@ -43,10 +48,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   ];
 
   // --- Theme Colors ---
-  static const Color primaryColor = Colors.deepPurple;
+  static const Color primaryColor = Color(0xFF6C63FF);
+  static const Color primaryLight = Color(0xFF8B85FF);
   static const Color backgroundColor = Colors.white;
   static const Color textColor = Color(0xFF1C1E21);
-  static const Color subtleText = Colors.black54;
+  static const Color subtleText = Color(0xFF7A7E8B);
+  static const Color successColor = Color(0xFF4CAF50);
+  static const Color errorColor = Color(0xFFE53935);
 
   @override
   void initState() {
@@ -54,6 +62,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _contentController.addListener(_onTextChanged);
     _titleController.addListener(_onTextChanged);
     _priceController.addListener(_onTextChanged);
+    
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    
+    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+    
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+    
+    _animationController.forward();
   }
 
   void _onTextChanged() => setState(() {});
@@ -63,6 +86,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _contentController.dispose();
     _titleController.dispose();
     _priceController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -72,7 +96,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (_selectedType == 1) {
       return _titleController.text.trim().isNotEmpty && 
              _contentController.text.trim().isNotEmpty && 
-             _priceController.text.trim().isNotEmpty && // Ensure price is set
+             _priceController.text.trim().isNotEmpty &&
              _eventDate != null;
     }
     return _contentController.text.trim().isNotEmpty || _selectedMediaList.isNotEmpty;
@@ -80,31 +104,43 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   // --- Media & Interaction Logic ---
   Future<void> _pickMultiMedia() async {
-    final picker = ImagePicker();
-    final List<XFile> pickedList = await picker.pickMultiImage(imageQuality: 80);
-    if (pickedList.isNotEmpty) {
-      HapticFeedback.lightImpact();
-      setState(() {
-        _selectedMediaList.addAll(pickedList.map((x) => File(x.path)));
-      });
+    try {
+      final picker = ImagePicker();
+      final List<XFile> pickedList = await picker.pickMultiImage(imageQuality: 80);
+      if (pickedList.isNotEmpty) {
+        HapticFeedback.lightImpact();
+        setState(() {
+          _selectedMediaList.addAll(pickedList.map((x) => File(x.path)));
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Error picking images: $e');
     }
   }
 
   Future<void> _pickVideo() async {
-    final picker = ImagePicker();
-    final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
-    if (video != null) {
-      HapticFeedback.mediumImpact();
-      setState(() => _selectedMediaList.add(File(video.path)));
+    try {
+      final picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
+      if (video != null) {
+        HapticFeedback.mediumImpact();
+        setState(() => _selectedMediaList.add(File(video.path)));
+      }
+    } catch (e) {
+      _showSnackBar('Error picking video: $e');
     }
   }
 
   Future<void> _takePhoto() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
-    if (picked != null) {
-      HapticFeedback.mediumImpact();
-      setState(() => _selectedMediaList.add(File(picked.path)));
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+      if (picked != null) {
+        HapticFeedback.mediumImpact();
+        setState(() => _selectedMediaList.add(File(picked.path)));
+      }
+    } catch (e) {
+      _showSnackBar('Error taking photo: $e');
     }
   }
 
@@ -113,13 +149,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       context,
       MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
     );
-    if (result != null) setState(() => _location = result);
+    if (result != null && result.isNotEmpty) {
+      setState(() => _location = result);
+    }
   }
   
   Future<void> _pickEventDate() async {
     final date = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       builder: (context, child) => Theme(
@@ -129,13 +167,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         child: child!,
       ),
     );
-    if (date != null) setState(() => _eventDate = date);
+    if (date != null) {
+      HapticFeedback.lightImpact();
+      setState(() => _eventDate = date);
+    }
   }
 
   // --- Submission Logic ---
   Future<void> _submit() async {
     if (!_isPostButtonEnabled) return;
+    
     final auth = context.read<AuthProvider>();
+    if (auth.userId == null || auth.userId!.isEmpty) {
+      _showSnackBar('Please log in to continue');
+      return;
+    }
     
     FocusScope.of(context).unfocus();
     setState(() => _isPosting = true);
@@ -143,7 +189,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       List<String> mediaUrls = [];
       for (var file in _selectedMediaList) {
-        if (!file.path.toLowerCase().endsWith('.mp4')) {
+        if (!file.path.toLowerCase().endsWith('.mp4') && 
+            !file.path.toLowerCase().endsWith('.mov')) {
           String? url = await ImgBBService.uploadImage(file);
           if (url != null) mediaUrls.add(url);
         }
@@ -152,55 +199,65 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       if (_selectedType == 1) {
         await _createEventInFirebase(auth, mediaUrls.isNotEmpty ? mediaUrls.first : null);
       } else {
-        await _createPostInProvider(auth, mediaUrls);
+        await _createPostInFirebase(auth, mediaUrls);
       }
 
-      if (mounted) context.go('/home'); 
-
+      if (mounted) {
+        _showSnackBar(
+          _selectedType == 1 ? 'Event created successfully! 🎉' : 'Post shared successfully! ✨', 
+          isError: false
+        );
+        context.go('/home');
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent)
-        );
+        _showSnackBar('Error: ${e.toString().replaceAll('Exception: ', '')}');
       }
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
   }
 
-  Future<void> _createPostInProvider(AuthProvider auth, List<String> urls) async {
-    final postProvider = context.read<PostProvider>();
-    final newPost = Post(
-      id: '', 
-      creatorId: auth.userId,
-      username: auth.fullName.isEmpty ? 'User' : auth.fullName,
-      userProfileUrl: auth.photoURL,
-      content: _contentController.text.trim(),
-      mediaUrl: urls.isNotEmpty ? urls.first : null,
-      timestamp: DateTime.now(),
-      likes: [],
-      location: _location,
-      category: 'General',
-    );
-    await postProvider.uploadPost(newPost);
+  // FIXED: Create post directly in Firestore
+  Future<void> _createPostInFirebase(AuthProvider auth, List<String> urls) async {
+    final postData = {
+      'creatorId': auth.userId,
+      'username': auth.fullName.isEmpty ? 'User' : auth.fullName,
+      'userProfileUrl': auth.photoURL ?? '',
+      'content': _contentController.text.trim(),
+      'mediaUrl': urls.isNotEmpty ? urls.first : null,
+      'timestamp': FieldValue.serverTimestamp(),
+      'likes': [],
+      'comments': [],
+      'location': _location,
+      'category': _selectedCategory,
+      'type': 'post',
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    
+    await FirebaseFirestore.instance.collection('posts').add(postData);
   }
 
   Future<void> _createEventInFirebase(AuthProvider auth, String? mediaUrl) async {
-    await FirebaseFirestore.instance.collection('events').add({
+    final eventData = {
       'creatorId': auth.userId,
       'username': auth.fullName.isEmpty ? 'User' : auth.fullName,
-      'userProfileUrl': auth.photoURL,
+      'userProfileUrl': auth.photoURL ?? '',
       'title': _titleController.text.trim(),
       'description': _contentController.text.trim(),
-      'price': _priceController.text.trim(), // Save Price
+      'price': double.tryParse(_priceController.text.trim()) ?? 0,
       'imageUrl': mediaUrl,
-      'location': _location,
+      'location': _location ?? '',
       'eventDate': Timestamp.fromDate(_eventDate!),
       'createdAt': FieldValue.serverTimestamp(),
       'category': _selectedCategory,
       'likes': [],
+      'comments': [],
       'type': 'event',
-    });
+      'isActive': true,
+    };
+    
+    await FirebaseFirestore.instance.collection('events').add(eventData);
   }
 
   @override
@@ -215,85 +272,65 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.close_rounded, color: textColor),
-          onPressed: () => context.pop(),
+          onPressed: () => _showDiscardDialog(),
         ),
         title: _buildTypeSelector(),
         centerTitle: true,
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: ElevatedButton(
-              onPressed: _isPostButtonEnabled ? _submit : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                disabledBackgroundColor: primaryColor.withOpacity(0.5),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              child: ElevatedButton(
+                onPressed: _isPostButtonEnabled ? _submit : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  disabledBackgroundColor: primaryColor.withValues(alpha: 0.5),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                ),
+                child: _isPosting 
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(isEvent ? 'Create' : 'Post', style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
-              child: _isPosting 
-                ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text(isEvent ? 'Create' : 'Post', style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                _buildUserHeader(auth),
-                const SizedBox(height: 24),
-                
-                if (isEvent) ...[
-                  const Text("Category", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: subtleText)),
-                  const SizedBox(height: 12),
-                  _buildCategoryPicker(),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _titleController,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
-                    decoration: const InputDecoration(
-                      hintText: "Event Name",
-                      hintStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                  
-                  // NEW: Price Field for Events
-                  Row(
-                    children: [
-                      const Icon(Icons.confirmation_num_outlined, color: primaryColor, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: _priceController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.green),
-                          decoration: const InputDecoration(
-                            hintText: "Ticket Price (₦)",
-                            hintStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.normal),
-                            border: InputBorder.none,
-                            prefixText: "₦ ",
-                            prefixStyle: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 18),
-                          ),
-                        ),
-                      ),
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    _buildUserHeader(auth),
+                    const SizedBox(height: 24),
+                    
+                    if (isEvent) ...[
+                      _buildCategoryPicker(),
+                      const SizedBox(height: 16),
+                      _buildEventTitleField(),
+                      const SizedBox(height: 12),
+                      _buildPriceField(),
+                      _buildDateTimePicker(),
+                      const Divider(height: 32),
                     ],
-                  ),
-                  const Divider(height: 32),
-                ],
 
-                _buildComposer(isEvent),
-              ],
-            ),
+                    _buildComposer(isEvent),
+                  ],
+                ),
+              ),
+              _buildToolbar(),
+            ],
           ),
-          _buildToolbar(),
-        ],
+        ),
       ),
     );
   }
@@ -302,7 +339,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Widget _buildTypeSelector() {
     return Container(
-      decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(25)),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(30),
+      ),
       padding: const EdgeInsets.all(4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -317,21 +357,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _typeButton(String text, int index) {
     final isSelected = _selectedType == index;
     return GestureDetector(
-      onTap: () => setState(() => _selectedType = index),
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() => _selectedType = index);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)] : [],
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)] : [],
         ),
         child: Text(
           text,
           style: TextStyle(
             color: isSelected ? primaryColor : subtleText,
             fontWeight: FontWeight.bold,
-            fontSize: 13,
+            fontSize: 14,
           ),
         ),
       ),
@@ -339,27 +382,126 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Widget _buildCategoryPicker() {
-    return SizedBox(
-      height: 38,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _categories.length,
-        itemBuilder: (context, index) {
-          final cat = _categories[index];
-          final isSelected = _selectedCategory == cat;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(cat),
-              selected: isSelected,
-              onSelected: (val) => setState(() => _selectedCategory = cat),
-              selectedColor: primaryColor,
-              backgroundColor: Colors.grey[50],
-              labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontSize: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Category",
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: subtleText),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 38,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _categories.length,
+            physics: const BouncingScrollPhysics(),
+            itemBuilder: (context, index) {
+              final cat = _categories[index];
+              final isSelected = _selectedCategory == cat;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(cat),
+                  selected: isSelected,
+                  onSelected: (val) => setState(() => _selectedCategory = cat),
+                  selectedColor: primaryColor,
+                  backgroundColor: Colors.grey.withValues(alpha: 0.1),
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : textColor,
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEventTitleField() {
+    return TextField(
+      controller: _titleController,
+      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
+      decoration: InputDecoration(
+        hintText: "Event Name",
+        hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.5), fontWeight: FontWeight.bold),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+      ),
+      maxLength: 100,
+      buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+    );
+  }
+
+  Widget _buildPriceField() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: successColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.confirmation_number_outlined, color: successColor, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _priceController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: successColor),
+              decoration: InputDecoration(
+                hintText: "Ticket Price",
+                hintStyle: TextStyle(color: successColor.withValues(alpha: 0.5), fontWeight: FontWeight.normal),
+                border: InputBorder.none,
+                prefixText: "₦ ",
+                prefixStyle: const TextStyle(color: successColor, fontWeight: FontWeight.bold, fontSize: 18),
+              ),
             ),
-          );
-        },
+          ),
+          if (_priceController.text.isNotEmpty)
+            GestureDetector(
+              onTap: () => _priceController.clear(),
+              child: Icon(Icons.close, size: 18, color: successColor.withValues(alpha: 0.5)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateTimePicker() {
+    return GestureDetector(
+      onTap: _pickEventDate,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_outlined, color: primaryColor, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _eventDate != null
+                    ? DateFormat('EEEE, MMMM d, yyyy').format(_eventDate!)
+                    : 'Select Event Date',
+                style: TextStyle(
+                  color: _eventDate != null ? textColor : subtleText,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_drop_down, color: subtleText),
+          ],
+        ),
       ),
     );
   }
@@ -367,18 +509,36 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildUserHeader(AuthProvider auth) {
     return Row(
       children: [
-        CircleAvatar(
-          radius: 22,
-          backgroundImage: auth.photoURL != null ? NetworkImage(auth.photoURL!) : null,
-          child: auth.photoURL == null ? const Icon(Icons.person, color: primaryColor) : null,
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: primaryColor.withValues(alpha: 0.3), width: 1.5),
+          ),
+          child: CircleAvatar(
+            radius: 22,
+            backgroundImage: auth.photoURL != null && auth.photoURL!.isNotEmpty 
+                ? NetworkImage(auth.photoURL!) 
+                : null,
+            child: auth.photoURL == null || auth.photoURL!.isEmpty
+                ? const Icon(Icons.person, color: primaryColor) 
+                : null,
+          ),
         ),
         const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(auth.fullName.isEmpty ? 'User' : auth.fullName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            Text(_selectedType == 1 ? "Creating an Event" : "Sharing a Post", style: const TextStyle(fontSize: 12, color: primaryColor)),
-          ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                auth.fullName.isEmpty ? 'User' : auth.fullName,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              Text(
+                _selectedType == 1 ? "Creating an Event" : "Sharing a Post",
+                style: TextStyle(fontSize: 12, color: primaryColor),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -391,43 +551,53 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         TextField(
           controller: _contentController,
           maxLines: null,
-          style: const TextStyle(fontSize: 18, color: textColor, height: 1.5),
+          style: const TextStyle(fontSize: 16, color: textColor, height: 1.5),
           decoration: InputDecoration(
             hintText: isEvent ? "Tell us more about the event..." : "What's on your mind?",
-            hintStyle: TextStyle(color: Colors.grey[400]),
+            hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.5)),
             border: InputBorder.none,
           ),
         ),
         
-        if (_selectedMediaList.isNotEmpty)
-          Container(
-            height: 120,
-            margin: const EdgeInsets.symmetric(vertical: 20),
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _selectedMediaList.length,
-              itemBuilder: (context, index) => _buildMediaPreviewItem(index),
-            ),
-          ),
+        if (_selectedMediaList.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _buildMediaPreview(),
+        ],
 
         const SizedBox(height: 16),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-            if (_location != null) _buildBadge(Icons.location_on_rounded, _location!, () => setState(() => _location = null)),
-            if (_eventDate != null) _buildBadge(Icons.calendar_today_rounded, DateFormat('EEE, MMM d').format(_eventDate!), () => setState(() => _eventDate = null)),
-            if (isEvent && _eventDate == null) _buildActionPrompt("Add Date", Icons.event, _pickEventDate),
-            if (_location == null) _buildActionPrompt("Add Location", Icons.place, _pickLocation),
+            if (_location != null) 
+              _buildBadge(Icons.location_on_rounded, _location!, () => setState(() => _location = null)),
+            if (_eventDate != null) 
+              _buildBadge(Icons.calendar_today_rounded, DateFormat('EEE, MMM d').format(_eventDate!), () => setState(() => _eventDate = null)),
+            if (isEvent && _eventDate == null) 
+              _buildActionPrompt("Add Date", Icons.event, _pickEventDate),
+            if (_location == null) 
+              _buildActionPrompt("Add Location", Icons.place, _pickLocation),
           ],
         ),
       ],
     );
   }
 
+  Widget _buildMediaPreview() {
+    return SizedBox(
+      height: 120,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _selectedMediaList.length,
+        itemBuilder: (context, index) => _buildMediaPreviewItem(index),
+      ),
+    );
+  }
+
   Widget _buildMediaPreviewItem(int index) {
     final file = _selectedMediaList[index];
-    final bool isVideo = file.path.toLowerCase().endsWith('.mp4') || file.path.toLowerCase().endsWith('.mov');
+    final bool isVideo = file.path.toLowerCase().endsWith('.mp4') || 
+                         file.path.toLowerCase().endsWith('.mov');
 
     return Container(
       width: 100,
@@ -438,14 +608,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: isVideo 
-              ? Container(color: Colors.black87, child: const Icon(Icons.play_circle_fill, color: Colors.white, size: 40))
+              ? Container(
+                  color: Colors.black87,
+                  child: const Center(
+                    child: Icon(Icons.play_circle_fill, color: Colors.white, size: 40),
+                  ),
+                )
               : Image.file(file, fit: BoxFit.cover),
           ),
           Positioned(
             top: 5, right: 5,
             child: GestureDetector(
               onTap: () => setState(() => _selectedMediaList.removeAt(index)),
-              child: const CircleAvatar(radius: 10, backgroundColor: Colors.black54, child: Icon(Icons.close, size: 14, color: Colors.white)),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 14, color: Colors.white),
+              ),
             ),
           ),
         ],
@@ -456,7 +637,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildBadge(IconData icon, String label, VoidCallback onRemove) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(
+        color: primaryColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -464,7 +648,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           const SizedBox(width: 6),
           Text(label, style: const TextStyle(color: primaryColor, fontSize: 12, fontWeight: FontWeight.bold)),
           const SizedBox(width: 6),
-          GestureDetector(onTap: onRemove, child: const Icon(Icons.cancel, size: 16, color: primaryColor)),
+          GestureDetector(
+            onTap: onRemove,
+            child: Icon(Icons.cancel, size: 16, color: primaryColor),
+          ),
         ],
       ),
     );
@@ -475,13 +662,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(border: Border.all(color: Colors.grey[300]!), borderRadius: BorderRadius.circular(20)),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(20),
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 14, color: subtleText),
             const SizedBox(width: 6),
-            Text(label, style: const TextStyle(color: subtleText, fontSize: 12)),
+            Text(label, style: TextStyle(color: subtleText, fontSize: 12)),
           ],
         ),
       ),
@@ -491,38 +681,98 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildToolbar() {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).viewInsets.bottom > 0 ? 8 : MediaQuery.of(context).padding.bottom + 12),
-      decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.2), width: 0.5))),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.2), width: 0.5)),
+      ),
       child: Row(
         children: [
-          _modernToolbarIcon(icon: Icons.image_rounded, onTap: _pickMultiMedia, label: "Photos"),
+          _buildToolbarIcon(icon: Icons.image_rounded, onTap: _pickMultiMedia, label: "Photos"),
           const SizedBox(width: 12),
-          _modernToolbarIcon(icon: Icons.videocam_rounded, onTap: _pickVideo, label: "Video"),
+          _buildToolbarIcon(icon: Icons.videocam_rounded, onTap: _pickVideo, label: "Video"),
           const SizedBox(width: 12),
-          _modernToolbarIcon(icon: Icons.location_on_rounded, onTap: _pickLocation, label: "Place"),
+          _buildToolbarIcon(icon: Icons.location_on_rounded, onTap: _pickLocation, label: "Place"),
           const Spacer(),
           Container(
-            decoration: BoxDecoration(color: Colors.grey[100], shape: BoxShape.circle),
-            child: IconButton(onPressed: _takePhoto, icon: const Icon(Icons.camera_alt_rounded, color: primaryColor)),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              onPressed: _takePhoto,
+              icon: const Icon(Icons.camera_alt_rounded, color: primaryColor),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _modernToolbarIcon({required IconData icon, required VoidCallback onTap, required String label}) {
+  Widget _buildToolbarIcon({required IconData icon, required VoidCallback onTap, required String label}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: primaryColor.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+          color: primaryColor.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Row(
           children: [
             Icon(icon, color: primaryColor, size: 20),
             const SizedBox(width: 6),
-            Text(label, style: const TextStyle(color: primaryColor, fontWeight: FontWeight.w600, fontSize: 12)),
+            Text(label, style: TextStyle(color: primaryColor, fontWeight: FontWeight.w600, fontSize: 12)),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showDiscardDialog() {
+    if (_contentController.text.isNotEmpty || 
+        _titleController.text.isNotEmpty || 
+        _selectedMediaList.isNotEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Discard changes?'),
+          content: const Text('You have unsaved changes. Are you sure you want to leave?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                context.pop();
+              },
+              child: const Text('Discard', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      context.pop();
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(isError ? Icons.error_outline : Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: isError ? errorColor : successColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
