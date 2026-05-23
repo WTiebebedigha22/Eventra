@@ -8,7 +8,9 @@ import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class ActivityScreen extends StatefulWidget {
-  const ActivityScreen({super.key, required bool isVendor});
+  final bool isVendor;
+  
+  const ActivityScreen({super.key, this.isVendor = false});
 
   @override
   State<ActivityScreen> createState() => _ActivityScreenState();
@@ -19,24 +21,38 @@ class _ActivityScreenState extends State<ActivityScreen>
   static const Color primaryColor = Color(0xFF6C63FF);
   static const Color textColor = Color(0xFF1C1E21);
   static const Color subtleText = Color(0xFF7A7E8B);
+  static const Color backgroundColor = Colors.white;
+  static const Color dividerColor = Color(0xFFF0F2F5);
 
   static const List<String> _interactionTypes = ['like', 'comment', 'follow', 'tag'];
   static const List<String> _bookingTypes = ['booking_request', 'booking_confirmed', 'booking_cancelled', 'booking_reminder'];
 
   late TabController _tabController;
   String? _currentUid;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _currentUid = FirebaseAuth.instance.currentUser?.uid;
+    _checkAuthState();
+  }
+
+  Future<void> _checkAuthState() async {
+    setState(() => _isLoading = true);
+    final user = FirebaseAuth.instance.currentUser;
+    setState(() {
+      _currentUid = user?.uid;
+      _isLoading = false;
+    });
     
     // Listen for auth changes
     FirebaseAuth.instance.authStateChanges().listen((user) {
-      setState(() {
-        _currentUid = user?.uid;
-      });
+      if (mounted) {
+        setState(() {
+          _currentUid = user?.uid;
+        });
+      }
     });
   }
 
@@ -48,10 +64,17 @@ class _ActivityScreenState extends State<ActivityScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: backgroundColor,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: backgroundColor,
         elevation: 0,
         centerTitle: false,
         title: const Text(
@@ -84,27 +107,42 @@ class _ActivityScreenState extends State<ActivityScreen>
       ),
       body: _currentUid == null
           ? _buildLoggedOutState()
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _NotificationsTab(
-                  uid: _currentUid!,
-                  types: _interactionTypes,
-                  emptyIcon: Icons.favorite_border_rounded,
-                  emptyTitle: 'No interactions yet',
-                  emptySubtitle: 'Likes, comments and follows will appear here.',
-                  onTap: _handleNotificationTap,
+          : widget.isVendor
+              ? _buildVendorActivity()
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _NotificationsTab(
+                      uid: _currentUid!,
+                      types: _interactionTypes,
+                      emptyIcon: Icons.favorite_border_rounded,
+                      emptyTitle: 'No interactions yet',
+                      emptySubtitle: 'Likes, comments and follows will appear here.',
+                      onTap: _handleNotificationTap,
+                    ),
+                    _NotificationsTab(
+                      uid: _currentUid!,
+                      types: _bookingTypes,
+                      emptyIcon: Icons.confirmation_number_outlined,
+                      emptyTitle: 'No booking activity',
+                      emptySubtitle: 'Booking requests and confirmations will appear here.',
+                      onTap: _handleNotificationTap,
+                    ),
+                  ],
                 ),
-                _NotificationsTab(
-                  uid: _currentUid!,
-                  types: _bookingTypes,
-                  emptyIcon: Icons.confirmation_number_outlined,
-                  emptyTitle: 'No booking activity',
-                  emptySubtitle: 'Booking requests and confirmations will appear here.',
-                  onTap: _handleNotificationTap,
-                ),
-              ],
-            ),
+    );
+  }
+
+  Widget _buildVendorActivity() {
+    final vendorTypes = ['booking_request', 'booking_confirmed', 'booking_cancelled', 'review'];
+    
+    return _NotificationsTab(
+      uid: _currentUid!,
+      types: vendorTypes,
+      emptyIcon: Icons.storefront_outlined,
+      emptyTitle: 'No vendor activity',
+      emptySubtitle: 'Booking requests and reviews will appear here.',
+      onTap: _handleVendorNotificationTap,
     );
   }
 
@@ -139,7 +177,6 @@ class _ActivityScreenState extends State<ActivityScreen>
 
   Future<void> _handleNotificationTap(BuildContext context, String notificationId, Map<String, dynamic> data) async {
     try {
-      // Mark notification as read in Firestore
       await FirebaseFirestore.instance
           .collection('notifications')
           .doc(notificationId)
@@ -153,7 +190,6 @@ class _ActivityScreenState extends State<ActivityScreen>
     final String senderId = data['senderId'] ?? '';
     final String bookingId = data['bookingId'] ?? '';
 
-    // Navigate based on notification type
     switch (type) {
       case 'like':
       case 'comment':
@@ -182,6 +218,35 @@ class _ActivityScreenState extends State<ActivityScreen>
     }
   }
 
+  Future<void> _handleVendorNotificationTap(BuildContext context, String notificationId, Map<String, dynamic> data) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'isRead': true});
+    } catch (e) {
+      debugPrint('Error marking notification as read: $e');
+    }
+
+    final type = data['type'];
+    final String bookingId = data['bookingId'] ?? '';
+
+    switch (type) {
+      case 'booking_request':
+      case 'booking_confirmed':
+      case 'booking_cancelled':
+        if (bookingId.isNotEmpty) {
+          context.push('/booking/$bookingId');
+        }
+        break;
+      case 'review':
+        context.push('/reviews');
+        break;
+      default:
+        debugPrint('Unknown notification type: $type');
+    }
+  }
+
   void _showClearDialog(BuildContext context, String uid) {
     showDialog(
       context: context,
@@ -204,6 +269,7 @@ class _ActivityScreenState extends State<ActivityScreen>
                   const SnackBar(
                     content: Text('All notifications cleared'),
                     backgroundColor: Colors.green,
+                    duration: Duration(seconds: 2),
                   ),
                 );
               }
@@ -220,16 +286,15 @@ class _ActivityScreenState extends State<ActivityScreen>
 
   Future<void> _clearAllNotifications(String uid) async {
     try {
-      final batch = FirebaseFirestore.instance.batch();
       final notifications = await FirebaseFirestore.instance
           .collection('notifications')
           .where('recipientId', isEqualTo: uid)
           .get();
       
+      final batch = FirebaseFirestore.instance.batch();
       for (final doc in notifications.docs) {
         batch.delete(doc.reference);
       }
-      
       await batch.commit();
     } catch (e) {
       debugPrint('Error clearing notifications: $e');
@@ -282,6 +347,7 @@ class _NotificationsTab extends StatelessWidget {
   final void Function(BuildContext, String, Map<String, dynamic>) onTap;
 
   static const Color primaryColor = Color(0xFF6C63FF);
+  static const Color backgroundColor = Colors.white;
 
   @override
   Widget build(BuildContext context) {
@@ -304,6 +370,9 @@ class _NotificationsTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: () {},
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                  ),
                   child: const Text('Retry'),
                 ),
               ],
@@ -324,10 +393,10 @@ class _NotificationsTab extends StatelessWidget {
         return ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: snapshot.data!.docs.length,
-          separatorBuilder: (_, __) => const Divider(
+          separatorBuilder: (_, __) => Divider(
             height: 1,
             indent: 80,
-            color: Color(0xFFF0F2F5),
+            color: Colors.grey.shade200,
           ),
           itemBuilder: (context, index) {
             final doc = snapshot.data!.docs[index];
@@ -362,7 +431,7 @@ class _NotificationsTab extends StatelessWidget {
           Text(
             emptySubtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF7A7E8B)),
+            style: const TextStyle(color: Color(0xFF7A7E8B), fontSize: 13),
           ),
         ],
       ),
@@ -388,8 +457,10 @@ class _ActivityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String type = data['type'] ?? 'general';
-    final bool isRead = data['isRead'] ?? false;
-    final (IconData icon, Color iconColor) = _iconForType(type);
+    // FIXED: Handle null isRead value - default to false
+    final bool isRead = data['isRead'] == true;
+    final iconData = _getIconForType(type);
+    final iconColor = _getIconColor(type);
 
     return InkWell(
       onTap: () => onTap(context, docId, data),
@@ -398,7 +469,7 @@ class _ActivityTile extends StatelessWidget {
         color: isRead ? Colors.transparent : primaryColor.withOpacity(0.04),
         child: Row(
           children: [
-            _buildAvatar(icon, iconColor),
+            _buildAvatar(iconData, iconColor),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -409,10 +480,10 @@ class _ActivityTile extends StatelessWidget {
                       style: const TextStyle(color: textColor, fontSize: 14, height: 1.3),
                       children: [
                         TextSpan(
-                          text: data['senderName'] ?? 'System',
+                          text: data['senderName'] ?? data['username'] ?? 'System',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        TextSpan(text: ' ${data['message'] ?? 'sent a notification.'}'),
+                        TextSpan(text: ' ${data['message'] ?? _getDefaultMessage(type)}'),
                       ],
                     ),
                   ),
@@ -431,26 +502,78 @@ class _ActivityTile extends StatelessWidget {
     );
   }
 
-  (IconData, Color) _iconForType(String type) {
+  IconData _getIconForType(String type) {
     switch (type) {
       case 'like':
-        return (Icons.favorite_rounded, Colors.redAccent);
+        return Icons.favorite_rounded;
       case 'comment':
-        return (Icons.chat_bubble_rounded, primaryColor);
+        return Icons.chat_bubble_rounded;
       case 'follow':
-        return (Icons.person_add_alt_1_rounded, Colors.blue);
+        return Icons.person_add_alt_1_rounded;
       case 'booking_request':
-        return (Icons.pending_actions_rounded, Colors.orange);
+        return Icons.pending_actions_rounded;
       case 'booking_confirmed':
-        return (Icons.confirmation_number_rounded, Colors.green);
+        return Icons.confirmation_number_rounded;
       case 'booking_cancelled':
-        return (Icons.cancel_rounded, Colors.redAccent);
+        return Icons.cancel_rounded;
       case 'booking_reminder':
-        return (Icons.alarm_rounded, Colors.orange);
+        return Icons.alarm_rounded;
       case 'tag':
-        return (Icons.alternate_email, primaryColor);
+        return Icons.alternate_email;
+      case 'review':
+        return Icons.star_rounded;
       default:
-        return (Icons.notifications_rounded, Colors.grey);
+        return Icons.notifications_rounded;
+    }
+  }
+
+  Color _getIconColor(String type) {
+    switch (type) {
+      case 'like':
+        return Colors.redAccent;
+      case 'comment':
+        return primaryColor;
+      case 'follow':
+        return Colors.blue;
+      case 'booking_request':
+        return Colors.orange;
+      case 'booking_confirmed':
+        return Colors.green;
+      case 'booking_cancelled':
+        return Colors.redAccent;
+      case 'booking_reminder':
+        return Colors.orange;
+      case 'tag':
+        return primaryColor;
+      case 'review':
+        return Colors.amber;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getDefaultMessage(String type) {
+    switch (type) {
+      case 'like':
+        return 'liked your post';
+      case 'comment':
+        return 'commented on your post';
+      case 'follow':
+        return 'started following you';
+      case 'booking_request':
+        return 'requested a booking';
+      case 'booking_confirmed':
+        return 'confirmed your booking';
+      case 'booking_cancelled':
+        return 'cancelled your booking';
+      case 'booking_reminder':
+        return 'reminder: upcoming event';
+      case 'tag':
+        return 'tagged you in a post';
+      case 'review':
+        return 'left a review';
+      default:
+        return 'sent a notification';
     }
   }
 
@@ -462,9 +585,11 @@ class _ActivityTile extends StatelessWidget {
         CircleAvatar(
           radius: 26,
           backgroundColor: Colors.grey[200],
-          backgroundImage: profileUrl.isNotEmpty ? NetworkImage(profileUrl) : null,
+          backgroundImage: profileUrl.isNotEmpty 
+              ? CachedNetworkImageProvider(profileUrl) 
+              : null,
           child: profileUrl.isEmpty 
-              ? const Icon(Icons.person, color: Colors.grey, size: 28) 
+              ? Icon(Icons.person, color: Colors.grey[400], size: 28) 
               : null,
         ),
         Container(
@@ -480,7 +605,6 @@ class _ActivityTile extends StatelessWidget {
   }
 
   Widget _buildTrailing(String type, Map<String, dynamic> data) {
-    // Show post image if available
     final String postImage = data['postImage'] ?? data['imageUrl'] ?? '';
     if (postImage.isNotEmpty) {
       return ClipRRect(
@@ -506,7 +630,6 @@ class _ActivityTile extends StatelessWidget {
       );
     }
     
-    // Show action buttons for specific types
     if (type == 'follow') {
       return _buildPill('Follow Back', primaryColor);
     }
@@ -515,6 +638,9 @@ class _ActivityTile extends StatelessWidget {
     }
     if (type == 'booking_confirmed') {
       return _buildPill('View Ticket', Colors.green);
+    }
+    if (type == 'review') {
+      return _buildPill('View Review', Colors.amber);
     }
     
     return const SizedBox.shrink();

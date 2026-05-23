@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 
 import 'likes.dart';
 import 'comment_sheet.dart';
+import '../../utils/image_helper.dart';
 
 class EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
@@ -214,17 +215,11 @@ class EventCard extends StatelessWidget {
       return _VideoPlayerWidget(url: _mediaUrl);
     }
 
-    return CachedNetworkImage(
+    return ImageHelper.buildPostImage(
       imageUrl: _mediaUrl,
+      height: double.infinity,
+      width: double.infinity,
       fit: BoxFit.cover,
-      placeholder: (context, url) => Container(
-        color: Colors.grey[900],
-        child: const Center(child: CircularProgressIndicator(color: Colors.white)),
-      ),
-      errorWidget: (context, url, error) => Container(
-        color: Colors.grey[900],
-        child: const Icon(Icons.broken_image, color: Colors.white24, size: 64),
-      ),
     );
   }
 
@@ -315,7 +310,7 @@ class EventCard extends StatelessWidget {
     return count.toString();
   }
 
-  /// ─── USER HEADER ───
+  /// ─── USER HEADER (UPDATED with ImgBB support) ───
   Widget _buildUserHeader(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>?>(
       future: _getCreatorData(),
@@ -332,15 +327,9 @@ class EventCard extends StatelessWidget {
           },
           child: Row(
             children: [
-              CircleAvatar(
+              ImageHelper.buildProfileImage(
+                imageUrl: photoUrl,
                 radius: 14,
-                backgroundImage: photoUrl != null && photoUrl.isNotEmpty
-                    ? CachedNetworkImageProvider(photoUrl)
-                    : null,
-                backgroundColor: Colors.white24,
-                child: photoUrl == null || photoUrl.isEmpty
-                    ? const Icon(Icons.person, size: 12, color: Colors.white)
-                    : null,
               ),
               const SizedBox(width: 10),
               Text(

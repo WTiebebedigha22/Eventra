@@ -1,4 +1,4 @@
-import 'dart:ui'; // Required for ImageFilter
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,6 +6,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../components/comment_sheet.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -22,6 +25,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
   
   String _activeCollection = 'posts';
   VideoPlayerController? _videoController;
+  bool _isSaved = false;
+
+  static const Color primaryColor = Color(0xFF6C63FF);
+  static const Color accentColor = Color(0xFFFF6B6B);
 
   @override
   void initState() {
@@ -39,14 +46,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
     final String id = widget.postId.trim();
     try {
       DocumentSnapshot doc = await FirebaseFirestore.instance.collection('posts').doc(id).get();
-      if (!doc.exists) {
-        doc = await FirebaseFirestore.instance.collection('events').doc(id).get();
-        if (doc.exists) setState(() => _activeCollection = 'events');
-      }
-
       if (doc.exists && doc.data() != null) {
         final data = doc.data() as Map<String, dynamic>;
         _initializeMedia(data);
+        _checkIfSaved();
         return data;
       }
     } catch (e) {
@@ -55,8 +58,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
     return null;
   }
 
+  Future<void> _checkIfSaved() async {
+    if (currentUserId == null) return;
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUserId)
+        .collection('bookmarks')
+        .doc(widget.postId)
+        .get();
+    if (mounted) {
+      setState(() => _isSaved = doc.exists);
+    }
+  }
+
   void _initializeMedia(Map<String, dynamic> data) {
-    final String mediaUrl = data['imageUrl'] ?? data['mediaUrl'] ?? '';
+    final String mediaUrl = data['mediaUrl'] ?? data['imageUrl'] ?? '';
     final bool isVideo = data['isVideo'] == true || 
                          mediaUrl.toLowerCase().contains('.mp4') || 
                          mediaUrl.toLowerCase().contains('.mov');
@@ -81,22 +97,53 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
         future: _postFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2));
+            return const Center(child: CircularProgressIndicator(color: primaryColor, strokeWidth: 2));
           }
-          if (!snapshot.hasData) return const Center(child: Text("Content no longer available", style: TextStyle(color: Colors.white)));
-          
-          return _buildImmersiveBody(snapshot.data!);
+          if (!snapshot.hasData) {
+            return _buildErrorWidget();
+          }
+          return _buildPostBody(snapshot.data!);
         },
       ),
     );
   }
 
-  Widget _buildImmersiveBody(Map<String, dynamic> data) {
-    final String media = data['imageUrl'] ?? data['mediaUrl'] ?? '';
-    final String creatorId = data['userId'] ?? data['creatorId'] ?? '';
+  Widget _buildErrorWidget() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.grey.shade600),
+            const SizedBox(height: 16),
+            const Text(
+              "Post no longer available",
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => context.pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text("Go Back"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPostBody(Map<String, dynamic> data) {
+    final String media = data['mediaUrl'] ?? data['imageUrl'] ?? '';
+    final String creatorId = data['creatorId'] ?? data['userId'] ?? '';
     final List likes = List.from(data['likes'] ?? []);
     final bool isLiked = likes.contains(currentUserId);
-    final String price = data['price'] ?? "Contact for Price";
+    final int commentCount = data['commentCount'] ?? 0;
+    final DateTime timestamp = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final String formattedDate = DateFormat('MMMM d, yyyy • h:mm a').format(timestamp);
 
     return Stack(
       children: [
@@ -109,130 +156,195 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
                     child: VideoPlayer(_videoController!),
                   ),
                 )
-              : Image.network(media, fit: BoxFit.cover),
+              : media.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: media,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(color: Colors.grey[900]),
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.grey[900],
+                        child: const Icon(Icons.image_not_supported, size: 64, color: Colors.grey),
+                      ),
+                    )
+                  : Container(
+                      color: Colors.grey[900],
+                      child: const Icon(Icons.article, size: 64, color: Colors.grey),
+                    ),
         ),
 
-        // 2. BACK BUTTON (Floating)
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 10,
-          left: 16,
-          child: ClipOval(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                color: Colors.white.withOpacity(0.1),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-                  onPressed: () => context.pop(),
-                ),
+        // Gradient Overlay
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.2),
+                  Colors.black.withOpacity(0.6),
+                  Colors.black.withOpacity(0.9),
+                ],
+                stops: const [0.0, 0.2, 0.5, 1.0],
               ),
             ),
           ),
         ),
 
-        // 3. RIGHT SIDE FLOATING ACTIONS
+        // 2. BACK BUTTON
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 10,
+          left: 16,
+          child: _buildGlassButton(
+            icon: Icons.arrow_back_ios_new,
+            onPressed: () => context.pop(),
+          ),
+        ),
+
+        // 3. RIGHT SIDE ACTION BUTTONS
         Positioned(
           right: 16,
-          top: MediaQuery.of(context).size.height * 0.3,
+          top: MediaQuery.of(context).padding.top + 10,
+          child: _buildGlassButton(
+            icon: _isSaved ? Icons.bookmark : Icons.bookmark_border,
+            onPressed: () => _toggleSave(data),
+          ),
+        ),
+
+        Positioned(
+          right: 16,
+          top: MediaQuery.of(context).size.height * 0.35,
           child: Column(
             children: [
-              _buildModernSideAction(
+              _buildActionButton(
                 icon: isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                color: isLiked ? Colors.redAccent : Colors.white,
-                label: "${likes.length}",
+                label: _formatCount(likes.length),
+                color: isLiked ? accentColor : Colors.white,
                 onTap: () => _toggleLike(data),
               ),
               const SizedBox(height: 24),
-              _buildModernSideAction(
+              _buildActionButton(
                 icon: Icons.chat_bubble_outline_rounded,
-                label: "Ask",
-                onTap: () {},
+                label: _formatCount(commentCount),
+                onTap: () => _showComments(),
               ),
               const SizedBox(height: 24),
-              _buildModernSideAction(
+              _buildActionButton(
                 icon: Icons.share_outlined,
-                label: "Send",
-                onTap: () => Share.share("Check this out on Ventra!"),
-              ),
-              const SizedBox(height: 24),
-              _buildModernSideAction(
-                icon: Icons.bookmark_border_rounded,
-                label: "Save",
-                onTap: () {},
+                label: "Share",
+                onTap: () => _sharePost(data),
               ),
             ],
           ),
         ),
 
-        // 4. BOTTOM INFO PANEL (Frosted Glass Style)
+        // 4. BOTTOM INFO PANEL
         Positioned(
           bottom: 0,
           left: 0,
           right: 0,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black.withOpacity(0.8), Colors.black],
-              ),
-            ),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Username & Badge
                 _buildUserHeader(creatorId),
                 const SizedBox(height: 12),
                 
-                // Title and Price Row
+                // Timestamp
                 Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        data['title'] ?? 'Product Details',
-                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                      ),
-                    ),
+                    Icon(Icons.access_time, size: 14, color: Colors.white.withOpacity(0.6)),
+                    const SizedBox(width: 6),
                     Text(
-                      price,
-                      style: const TextStyle(color: Colors.deepPurpleAccent, fontSize: 22, fontWeight: FontWeight.w900),
+                      formattedDate,
+                      style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
                 
-                // Description
+                const SizedBox(height: 16),
+                
+                // Content
                 Text(
-                  data['description'] ?? data['content'] ?? '',
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14, height: 1.5),
-                ),
-                
-                const SizedBox(height: 25),
-                
-                // Primary Action Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {},
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurpleAccent,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                      elevation: 0,
-                    ),
-                    child: const Text("CONTACT SELLER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
+                  data['content'] ?? '',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    height: 1.5,
                   ),
                 ),
+                
+                const SizedBox(height: 20),
+                
+                // Category Chip
+                if (data['category'] != null && data['category'].isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      data['category'],
+                      style: TextStyle(color: primaryColor, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                
+                const SizedBox(height: 20),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildGlassButton({required IconData icon, required VoidCallback onPressed}) {
+    return ClipOval(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.15),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+          ),
+          child: IconButton(
+            icon: Icon(icon, color: Colors.white, size: 22),
+            onPressed: onPressed,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color color = Colors.white,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.4),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
     );
   }
 
@@ -245,23 +357,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
           onTap: () => context.push('/user/$creatorId'),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(2),
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundImage: u?['photoURL'] != null ? NetworkImage(u!['photoURL']) : null,
-                  backgroundColor: Colors.grey[800],
-                ),
+              CircleAvatar(
+                radius: 20,
+                backgroundImage: u?['photoURL'] != null && u!['photoURL'].isNotEmpty
+                    ? CachedNetworkImageProvider(u['photoURL'])
+                    : null,
+                backgroundColor: Colors.grey[800],
+                child: u?['photoURL'] == null
+                    ? const Icon(Icons.person, size: 20, color: Colors.white)
+                    : null,
               ),
-              const SizedBox(width: 10),
-              Text("@${u?['username'] ?? 'user'}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
-                child: const Text("Follow", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-              )
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    u?['displayName'] ?? u?['username'] ?? 'User',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  Text(
+                    "@${u?['username'] ?? 'user'}",
+                    style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                  ),
+                ],
+              ),
             ],
           ),
         );
@@ -269,46 +388,67 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildModernSideAction({required IconData icon, required String label, required VoidCallback onTap, Color color = Colors.white}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(50),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-              child: Container(
-                height: 50,
-                width: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
-                ),
-                child: Icon(icon, color: color, size: 26),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w400)),
-        ],
+  void _showComments() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (_, controller) => CommentsScreen(
+          postId: widget.postId,
+          collection: 'posts',
+        ),
       ),
     );
   }
 
+  Future<void> _toggleSave(Map<String, dynamic> data) async {
+    if (currentUserId == null) return;
+    
+    HapticFeedback.lightImpact();
+    final ref = FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUserId)
+        .collection('bookmarks')
+        .doc(widget.postId);
+
+    if (_isSaved) {
+      await ref.delete();
+      setState(() => _isSaved = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Removed from saved'), duration: Duration(seconds: 1)),
+      );
+    } else {
+      await ref.set({
+        'id': widget.postId,
+        'title': data['content']?.substring(0, data['content'].length > 50 ? 50 : data['content'].length) ?? 'Post',
+        'imageUrl': data['mediaUrl'] ?? data['imageUrl'],
+        'type': 'post',
+        'savedAt': FieldValue.serverTimestamp(),
+      });
+      setState(() => _isSaved = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved to bookmarks'), duration: Duration(seconds: 1)),
+      );
+    }
+  }
+
   void _toggleLike(Map<String, dynamic> data) async {
     if (currentUserId == null) return;
-    final docRef = FirebaseFirestore.instance.collection(_activeCollection).doc(widget.postId.trim());
+    
+    final docRef = FirebaseFirestore.instance.collection('posts').doc(widget.postId.trim());
     List likes = List.from(data['likes'] ?? []);
     bool wasLiked = likes.contains(currentUserId);
 
+    HapticFeedback.lightImpact();
     setState(() {
       if (wasLiked) {
         likes.remove(currentUserId);
       } else {
         likes.add(currentUserId);
-        HapticFeedback.lightImpact();
       }
       data['likes'] = likes;
     });
@@ -322,5 +462,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> with SingleTickerPr
     } catch (e) {
       _loadData();
     }
+  }
+
+  void _sharePost(Map<String, dynamic> data) {
+    Share.share(
+      '📝 Check out this post on Eventra!\n\n'
+      '"${data['content'] ?? ''}"\n\n'
+      'Posted by ${data['username'] ?? 'a user'}',
+    );
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
+    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
+    return count.toString();
   }
 }

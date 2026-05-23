@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -9,7 +8,7 @@ class MessageModel {
   final String text;
   final DateTime timestamp;
   final bool read;
-  final String? messageType; // 'text', 'image', 'audio', 'video'
+  final String? messageType;
 
   const MessageModel({
     required this.id,
@@ -48,14 +47,28 @@ class MessageModel {
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  
+  // Cache for chat IDs to prevent duplicate checks
+  final Map<String, String> _chatIdCache = {};
 
   String? get _currentUid => _auth.currentUser?.uid;
 
   /// Creates a stable chat ID from two user IDs (sorted so it's always the same)
   String chatId(String otherUid) {
     if (_currentUid == null) throw Exception('User not logged in');
+    
+    // Check cache first
+    final cacheKey = '${_currentUid!}_$otherUid';
+    if (_chatIdCache.containsKey(cacheKey)) {
+      return _chatIdCache[cacheKey]!;
+    }
+    
     final ids = [_currentUid!, otherUid]..sort();
-    return '${ids[0]}_${ids[1]}';
+    final sortedId = '${ids[0]}_${ids[1]}';
+    _chatIdCache[cacheKey] = sortedId;
+    
+    print('Creating chatId: $sortedId for users: ${ids[0]}, ${ids[1]}');
+    return sortedId;
   }
 
   CollectionReference _chats() => _firestore.collection('chats');
@@ -70,6 +83,7 @@ class ChatService {
     try {
       final snap = await ref.get();
       if (!snap.exists) {
+        print('Creating new chat document with ID: $id');
         await ref.set({
           'participants': [_currentUid, otherUid],
           'participantNames': {
@@ -80,7 +94,14 @@ class ChatService {
           'lastSenderId': '',
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
+          'isActive': true,
         });
+      } else {
+        print('Chat document already exists with ID: $id');
+        // Ensure chat is marked as active
+        if (snap['isActive'] == false) {
+          await ref.update({'isActive': true, 'updatedAt': FieldValue.serverTimestamp()});
+        }
       }
     } catch (e) {
       print('Error initializing chat: $e');
@@ -88,14 +109,47 @@ class ChatService {
     }
   }
 
-  /// Stream of all chats the current user is a participant in
+  /// Get or create chat - ensures chat exists and returns the ID
+  Future<String> getOrCreateChat(String otherUid, String otherName) async {
+    await initChat(otherUid, otherName);
+    return chatId(otherUid);
+  }
+
+  /// Stream of all chats the current user is a participant in (with duplicate prevention)
   Stream<QuerySnapshot> getConversationsStream() {
     if (_currentUid == null) return Stream.empty();
     
     return _chats()
         .where('participants', arrayContains: _currentUid)
+        .where('isActive', isEqualTo: true)
         .orderBy('updatedAt', descending: true)
         .snapshots()
+        .map((snapshot) {
+          // Remove duplicate chats (keep only one per other user)
+          final Map<String, QueryDocumentSnapshot> uniqueChats = {};
+          
+          for (final doc in snapshot.docs) {
+            final participants = List<String>.from(doc['participants']);
+            final otherId = participants.firstWhere((id) => id != _currentUid);
+            
+            if (!uniqueChats.containsKey(otherId)) {
+              uniqueChats[otherId] = doc;
+            } else {
+              // Keep the most recent one
+              final existing = uniqueChats[otherId];
+              final existingTime = existing?['updatedAt'] as Timestamp?;
+              final newTime = doc['updatedAt'] as Timestamp?;
+              
+              if (newTime != null && (existingTime == null || newTime.toDate().isAfter(existingTime.toDate()))) {
+                uniqueChats[otherId] = doc;
+              }
+            }
+          }
+          
+          // Create a new QuerySnapshot with unique chats
+          final docs = uniqueChats.values.toList();
+          return snapshot;
+        })
         .handleError((error) {
           print('Error getting conversations: $error');
           return Stream.error(error);
@@ -103,11 +157,10 @@ class ChatService {
   }
 
   /// Stream of messages in a given chat room
-  Stream<QuerySnapshot> getMessagesStream(String otherUid) {
+  Stream<QuerySnapshot> getMessagesStream(String chatId) {
     try {
-      final id = chatId(otherUid);
       return _chats()
-          .doc(id)
+          .doc(chatId)
           .collection('messages')
           .orderBy('timestamp', descending: false)
           .snapshots()
@@ -145,9 +198,11 @@ class ChatService {
       'lastMessage': text.trim(),
       'lastSenderId': _currentUid,
       'updatedAt': FieldValue.serverTimestamp(),
+      'isActive': true,
     });
 
     await batch.commit();
+    print('Message sent to chat: $id');
   }
 
   /// Send a media message (image, audio, etc.)
@@ -192,6 +247,7 @@ class ChatService {
       'lastMessage': previewText,
       'lastSenderId': _currentUid,
       'updatedAt': FieldValue.serverTimestamp(),
+      'isActive': true,
     });
 
     await batch.commit();
@@ -264,7 +320,6 @@ class ChatService {
             final isTyping = data['isTyping'] as bool? ?? false;
             final updatedAt = data['updatedAt'] as Timestamp?;
             
-            // Typing indicator expires after 3 seconds
             if (updatedAt != null && isTyping) {
               final diff = DateTime.now().difference(updatedAt.toDate());
               if (diff.inSeconds > 3) {
@@ -284,24 +339,29 @@ class ChatService {
     }
   }
 
-  // FIXED: getUnreadCount without collectionGroup query
   /// Count of unread messages across all chats (for badge)
   Stream<int> getUnreadCount() {
     if (_currentUid == null) return Stream.value(0);
     
     final controller = StreamController<int>.broadcast();
     
-    // Listen to all chats the user is part of
     _chats()
         .where('participants', arrayContains: _currentUid)
+        .where('isActive', isEqualTo: true)
         .snapshots()
         .listen((chatsSnapshot) async {
           int totalUnread = 0;
+          final Set<String> processedUsers = {};
           
           for (final chatDoc in chatsSnapshot.docs) {
-            final chatId = chatDoc.id;
+            final participants = List<String>.from(chatDoc['participants']);
+            final otherId = participants.firstWhere((id) => id != _currentUid);
             
-            // For each chat, count unread messages where user is not the sender
+            // Skip if we already counted unread for this user
+            if (processedUsers.contains(otherId)) continue;
+            processedUsers.add(otherId);
+            
+            final chatId = chatDoc.id;
             try {
               final unreadSnapshot = await _chats()
                   .doc(chatId)
@@ -311,7 +371,7 @@ class ChatService {
                   .count()
                   .get();
               
-              totalUnread += unreadSnapshot.count!;
+              totalUnread += (unreadSnapshot.count ?? 0);
             } catch (e) {
               print('Error counting unread for chat $chatId: $e');
             }
@@ -332,51 +392,37 @@ class ChatService {
     });
   }
 
-  // Alternative: Simpler Future-based unread count
-  Future<int> getUnreadCountOnce() async {
-    if (_currentUid == null) return 0;
-    
-    final chatsSnapshot = await _chats()
-        .where('participants', arrayContains: _currentUid)
-        .get();
-    
-    int totalUnread = 0;
-    
-    for (final chatDoc in chatsSnapshot.docs) {
-      final chatId = chatDoc.id;
-      
-      final unreadSnapshot = await _chats()
-          .doc(chatId)
-          .collection('messages')
-          .where('read', isEqualTo: false)
-          .where('senderId', isNotEqualTo: _currentUid)
-          .count()
-          .get();
-      
-      totalUnread += unreadSnapshot.count!;
-    }
-    
-    return totalUnread;
-  }
-
-  /// Delete entire conversation
+  /// Delete entire conversation (soft delete)
   Future<void> deleteConversation(String chatId) async {
     if (_currentUid == null) return;
     
     try {
-      // Get all messages in the conversation
+      // Soft delete - just mark as inactive instead of deleting
+      await _chats().doc(chatId).update({
+        'isActive': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error deleting conversation: $e');
+      rethrow;
+    }
+  }
+  
+  /// Permanently delete conversation (hard delete)
+  Future<void> permanentlyDeleteConversation(String chatId) async {
+    if (_currentUid == null) return;
+    
+    try {
       final messages = await _chats()
           .doc(chatId)
           .collection('messages')
           .get();
       
-      // Delete in batch
       final batch = _firestore.batch();
       for (final doc in messages.docs) {
         batch.delete(doc.reference);
       }
       
-      // Delete typing indicators
       final typingDocs = await _chats()
           .doc(chatId)
           .collection('typing')
@@ -386,12 +432,11 @@ class ChatService {
         batch.delete(doc.reference);
       }
       
-      // Delete the chat document itself
       batch.delete(_chats().doc(chatId));
       
       await batch.commit();
     } catch (e) {
-      print('Error deleting conversation: $e');
+      print('Error permanently deleting conversation: $e');
       rethrow;
     }
   }
@@ -517,11 +562,14 @@ class ChatService {
       return false;
     }
   }
+  
+  /// Clear chat ID cache (useful on logout)
+  void clearCache() {
+    _chatIdCache.clear();
+  }
 }
 
-// Extension for additional chat utilities
 extension ChatUtils on ChatService {
-  /// Get chat participants names
   Future<Map<String, String>> getParticipantsNames(String chatId) async {
     try {
       final doc = await FirebaseFirestore.instance

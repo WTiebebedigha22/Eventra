@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:rxdart/rxdart.dart';
 // Internal Imports
 import '../../providers/post_provider.dart';
 import '../components/event_card.dart';
+import '../post/tag_people.dart';
 
 class EventListScreen extends StatefulWidget {
   const EventListScreen({super.key});
@@ -44,11 +46,29 @@ class _EventListScreenState extends State<EventListScreen> with SingleTickerProv
     );
     _animationController.forward();
 
+    // Fetch both events and posts
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PostProvider>().fetchPosts(isRefresh: true);
+      _fetchAllContent();
     });
     
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _fetchAllContent() async {
+    final provider = context.read<PostProvider>();
+    await provider.fetchPosts(isRefresh: true);
+    await _fetchEvents();
+  }
+
+  Future<void> _fetchEvents() async {
+    // Fetch events from Firestore
+    final eventsSnapshot = await FirebaseFirestore.instance
+        .collection('events')
+        .orderBy('createdAt', descending: true)
+        .get();
+    
+    final provider = context.read<PostProvider>();
+    // You'll need to add events to your provider or handle them separately
   }
 
   void _onScroll() {
@@ -74,28 +94,20 @@ class _EventListScreenState extends State<EventListScreen> with SingleTickerProv
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: Consumer<PostProvider>(
-        builder: (context, provider, child) {
-          final filteredPosts = _activeFilter == 'All' 
-              ? provider.posts 
-              : provider.posts.where((p) => p.category == _activeFilter).toList();
-
-          return RefreshIndicator(
-            color: Colors.white,
-            backgroundColor: primaryColor,
-            onRefresh: () => provider.fetchPosts(isRefresh: true),
-            child: CustomScrollView(
-              controller: _scrollController,
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                _buildAppBar(),
-                _buildSearchBar(),
-                _buildCategoryFilter(),
-                _buildContent(provider, filteredPosts),
-              ],
-            ),
-          );
-        },
+      body: RefreshIndicator(
+        color: Colors.white,
+        backgroundColor: primaryColor,
+        onRefresh: () => _fetchAllContent(),
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            _buildAppBar(),
+            _buildSearchBar(),
+            _buildCategoryFilter(),
+            _buildContent(),
+          ],
+        ),
       ),
     );
   }
@@ -201,57 +213,151 @@ class _EventListScreenState extends State<EventListScreen> with SingleTickerProv
     );
   }
 
-  Widget _buildContent(PostProvider provider, List<dynamic> filteredPosts) {
-    if (provider.isLoading && provider.posts.isEmpty) {
-      return SliverFillRemaining(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: _buildSkeletonLoader(),
-        ),
-      );
-    }
-    
-    if (filteredPosts.isEmpty) {
-      return SliverFillRemaining(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: _buildEmptyState(),
-        ),
-      );
-    }
+  Widget _buildContent() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _getCombinedFeed(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SliverFillRemaining(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: _buildSkeletonLoader(),
+            ),
+          );
+        }
 
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            if (index < filteredPosts.length) {
-              final post = filteredPosts[index];
-              return FadeTransition(
-                opacity: _fadeAnimation,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: EventCard(event: post.toMap()..['id'] = post.id),
-                ),
-              );
-            } else if (provider.hasMore) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(
-                  child: SizedBox(
-                    height: 32,
-                    width: 32,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+        if (snapshot.hasError) {
+          return SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                  const SizedBox(height: 16),
+                  const Text("Unable to load content"),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => _fetchAllContent(),
+                    child: const Text("Retry"),
                   ),
-                ),
-              );
-            } else {
-              return const SizedBox.shrink();
-            }
-          },
-          childCount: filteredPosts.length + (provider.hasMore ? 1 : 0),
-        ),
-      ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        
+        if (items.isEmpty) {
+          return SliverFillRemaining(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: _buildEmptyState(),
+            ),
+          );
+        }
+
+        // Filter by category
+        var filteredItems = items;
+        if (_activeFilter != 'All') {
+          filteredItems = items.where((item) {
+            final category = item['category'] ?? '';
+            return category == _activeFilter;
+          }).toList();
+        }
+
+        if (filteredItems.isEmpty) {
+          return SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
+                  Text(
+                    "No $_activeFilter events found",
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final item = filteredItems[index];
+                return FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: EventCard(event: item),
+                  ),
+                );
+              },
+              childCount: filteredItems.length,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Stream<List<Map<String, dynamic>>> _getCombinedFeed() {
+    final postsStream = FirebaseFirestore.instance
+        .collection('posts')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+
+    final eventsStream = FirebaseFirestore.instance
+        .collection('events')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+
+    return Rx.combineLatest2<QuerySnapshot, QuerySnapshot, List<Map<String, dynamic>>>(
+      postsStream,
+      eventsStream,
+      (postsSnapshot, eventsSnapshot) {
+        final List<Map<String, dynamic>> items = [];
+        
+        // Add posts
+        for (var doc in postsSnapshot.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          items.add({
+            ...data,
+            'id': doc.id,
+            'type': 'post',
+            'timestamp': data['createdAt'] ?? DateTime.now(),
+          });
+        }
+        
+        // Add events
+        for (var doc in eventsSnapshot.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          items.add({
+            ...data,
+            'id': doc.id,
+            'type': 'event',
+            'timestamp': data['createdAt'] ?? DateTime.now(),
+          });
+        }
+        
+        // Sort by timestamp (newest first)
+        items.sort((a, b) {
+          final tA = a['timestamp'] is Timestamp 
+              ? (a['timestamp'] as Timestamp).toDate() 
+              : a['timestamp'] as DateTime;
+          final tB = b['timestamp'] is Timestamp 
+              ? (b['timestamp'] as Timestamp).toDate() 
+              : b['timestamp'] as DateTime;
+          return tB.compareTo(tA);
+        });
+        
+        return items;
+      },
     );
   }
 
@@ -331,9 +437,9 @@ class _EventListScreenState extends State<EventListScreen> with SingleTickerProv
             ),
           ),
           const SizedBox(height: 20),
-          Text(
-            "No $_activeFilter events found",
-            style: const TextStyle(
+          const Text(
+            "No events found",
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Color(0xFF1A1A2E),
@@ -341,26 +447,25 @@ class _EventListScreenState extends State<EventListScreen> with SingleTickerProv
           ),
           const SizedBox(height: 8),
           Text(
-            "Try adjusting your filters or check back later",
+            "Check back later for new events",
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[600],
             ),
           ),
           const SizedBox(height: 24),
-          if (_activeFilter != 'All')
-            ElevatedButton.icon(
-              onPressed: () => setState(() => _activeFilter = 'All'),
-              icon: const Icon(Icons.clear),
-              label: const Text('Clear Filter'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          ElevatedButton.icon(
+            onPressed: () => _fetchAllContent(),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refresh'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
+          ),
         ],
       ),
     );
@@ -400,7 +505,7 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
                 label: Text(category),
                 selected: isSelected,
                 onSelected: (_) => onCategorySelected(category),
-                selectedColor: Colors.deepPurpleAccent,
+                selectedColor: primaryColor,
                 backgroundColor: Colors.white,
                 checkmarkColor: Colors.white,
                 labelStyle: TextStyle(
@@ -411,7 +516,7 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                   side: BorderSide(
-                    color: isSelected ? Colors.deepPurpleAccent : Colors.grey.shade300,
+                    color: isSelected ? primaryColor : Colors.grey.shade300,
                     width: 1,
                   ),
                 ),
@@ -434,3 +539,5 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
     return oldDelegate.activeFilter != activeFilter;
   }
 }
+
+// Add this import at the top if you don't have rxdart

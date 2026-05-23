@@ -11,16 +11,14 @@ import '../../app/app_theme.dart';
 class ProfileScreen extends StatefulWidget {
   final String userId;
 
-  const ProfileScreen({
-    required this.userId,
-    super.key,
-  });
+  const ProfileScreen({required this.userId, super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -32,10 +30,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Stream<QuerySnapshot>? _bookingsStream;
   Stream<QuerySnapshot>? _savedStream;
   Stream<QuerySnapshot>? _reviewsStream;
-  
+
   late TabController _tabController;
   int _currentTabIndex = 0;
-  
+
   bool _isVendor = false;
 
   static const Color primaryColor = Color(0xFF6C63FF);
@@ -43,14 +41,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    
+
     isMe = widget.userId == currentUid;
-    
-    _tabController = TabController(
-      length: isMe ? 3 : 1,
-      vsync: this,
-    );
-    
+
+    _tabController = TabController(length: isMe ? 3 : 1, vsync: this);
+
     _tabController.addListener(() {
       if (mounted) {
         setState(() {
@@ -59,21 +54,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       }
     });
 
-    _userStream = _firestore
-        .collection('users')
-        .doc(widget.userId)
-        .snapshots();
+    _userStream = _firestore.collection('users').doc(widget.userId).snapshots();
 
     _postsStream = _firestore
         .collection('posts')
-        .where('userId', isEqualTo: widget.userId)
+        .where('creatorId', isEqualTo: widget.userId)
         .orderBy('createdAt', descending: true)
         .snapshots();
 
     if (isMe) {
       _bookingsStream = _firestore
           .collection('bookings')
-          .where('customerId', isEqualTo: widget.userId)
+          .where('userId', isEqualTo: widget.userId)
           .orderBy('createdAt', descending: true)
           .snapshots();
 
@@ -82,22 +74,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           .doc(widget.userId)
           .collection('bookmarks')
           .snapshots();
-          
+
       _reviewsStream = _firestore
           .collection('reviews')
-          .where('customerId', isEqualTo: widget.userId)
+          .where('userId', isEqualTo: widget.userId)
           .orderBy('createdAt', descending: true)
           .snapshots();
     } else {
       _checkFollowStatus();
     }
-    
+
     _checkVendorStatus();
   }
-  
+
   Future<void> _checkVendorStatus() async {
     try {
-      final userDoc = await _firestore.collection('users').doc(widget.userId).get();
+      final userDoc = await _firestore
+          .collection('users')
+          .doc(widget.userId)
+          .get();
       if (mounted) {
         setState(() {
           _isVendor = userDoc.data()?['isVendor'] ?? false;
@@ -148,30 +143,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final userRef = _firestore.collection('users').doc(widget.userId);
     final currentUserRef = _firestore.collection('users').doc(currentUid);
     final followerRef = userRef.collection('followers').doc(currentUid);
-    final followingRef = currentUserRef.collection('following').doc(widget.userId);
+    final followingRef = currentUserRef
+        .collection('following')
+        .doc(widget.userId);
 
     final batch = _firestore.batch();
 
     try {
       if (isFollowing) {
-        batch.set(followerRef, {
-          'followedAt': FieldValue.serverTimestamp(),
-        });
-        batch.set(followingRef, {
-          'followedAt': FieldValue.serverTimestamp(),
-        });
-        batch.update(userRef, {
-          'followerCount': FieldValue.increment(1),
-        });
+        batch.set(followerRef, {'followedAt': FieldValue.serverTimestamp()});
+        batch.set(followingRef, {'followedAt': FieldValue.serverTimestamp()});
+        batch.update(userRef, {'followerCount': FieldValue.increment(1)});
         batch.update(currentUserRef, {
           'followingCount': FieldValue.increment(1),
         });
       } else {
         batch.delete(followerRef);
         batch.delete(followingRef);
-        batch.update(userRef, {
-          'followerCount': FieldValue.increment(-1),
-        });
+        batch.update(userRef, {'followerCount': FieldValue.increment(-1)});
         batch.update(currentUserRef, {
           'followingCount': FieldValue.increment(-1),
         });
@@ -186,9 +175,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       }
       debugPrint("Error toggling follow: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) {
@@ -214,6 +203,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return count.toString();
   }
 
+  String _truncateText(String text, int maxLength) {
+    if (text.isEmpty) return '';
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength)}...';
+  }
+
   void _showMoreOptions() {
     showModalBottomSheet(
       context: context,
@@ -226,7 +221,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.share_outlined, color: AppColors.textPrimary),
+              leading: const Icon(
+                Icons.share_outlined,
+                color: AppColors.textPrimary,
+              ),
               title: Text("Share Profile", style: AppTextStyles.titleMedium),
               onTap: () {
                 Navigator.pop(context);
@@ -234,8 +232,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               },
             ),
             ListTile(
-              leading: const Icon(Icons.report_problem_outlined, color: AppColors.error),
-              title: Text("Report User", style: AppTextStyles.titleMedium.copyWith(color: AppColors.error)),
+              leading: const Icon(
+                Icons.report_problem_outlined,
+                color: AppColors.error,
+              ),
+              title: Text(
+                "Report User",
+                style: AppTextStyles.titleMedium.copyWith(
+                  color: AppColors.error,
+                ),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _reportUser();
@@ -244,7 +250,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             if (!isMe)
               ListTile(
                 leading: const Icon(Icons.block, color: AppColors.error),
-                title: Text("Block User", style: AppTextStyles.titleMedium.copyWith(color: AppColors.error)),
+                title: Text(
+                  "Block User",
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.error,
+                  ),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _blockUser();
@@ -263,9 +274,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _reportUser() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Report submitted')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Report submitted')));
   }
 
   void _blockUser() async {
@@ -275,32 +286,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           .doc(currentUid)
           .collection('blocked')
           .doc(widget.userId)
-          .set({
-        'blockedAt': FieldValue.serverTimestamp(),
-      });
+          .set({'blockedAt': FieldValue.serverTimestamp()});
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('User blocked')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('User blocked')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error blocking user: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error blocking user: $e')));
       }
     }
   }
 
   void _navigateToChat(String displayName, String? photoURL) {
     final chatId = _getChatId(currentUid, widget.userId);
-    // FIXED: Use pushReplacement to avoid Hero key conflicts
     context.pushReplacement(
       '/chat/$chatId',
-      extra: {
-        'otherUserName': displayName,
-        'otherAvatar': photoURL,
-      },
+      extra: {'otherUserName': displayName, 'otherAvatar': photoURL},
     );
   }
 
@@ -311,7 +316,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       body: StreamBuilder<DocumentSnapshot>(
         stream: _userStream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(color: AppColors.accentPurple),
             );
@@ -324,9 +330,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 children: [
                   Icon(Icons.error_outline, size: 64, color: AppColors.error),
                   const SizedBox(height: 16),
-                  Text('Error loading profile', style: AppTextStyles.headlineMedium),
+                  Text(
+                    'Error loading profile',
+                    style: AppTextStyles.headlineMedium,
+                  ),
                   const SizedBox(height: 8),
-                  Text(snapshot.error.toString(), style: AppTextStyles.bodyMedium),
+                  Text(
+                    snapshot.error.toString(),
+                    style: AppTextStyles.bodyMedium,
+                  ),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () => setState(() {}),
@@ -362,7 +374,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             body: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
                 SliverToBoxAdapter(
-                  child: _buildProfileHeader(photoURL, displayName, username, bio, isVendor, userData),
+                  child: _buildProfileHeader(
+                    photoURL,
+                    displayName,
+                    username,
+                    bio,
+                    isVendor,
+                    userData,
+                  ),
                 ),
                 SliverPersistentHeader(
                   pinned: true,
@@ -398,7 +417,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       automaticallyImplyLeading: !isMe,
       leading: !isMe
           ? IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 20),
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: AppColors.textPrimary,
+                size: 20,
+              ),
               onPressed: () => context.pop(),
             )
           : null,
@@ -443,7 +466,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
               child: Text(
                 "Vendor",
-                style: AppTextStyles.labelSmall.copyWith(color: AppColors.accentPurple),
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: AppColors.accentPurple,
+                ),
               ),
             ),
           if (!isMe && username.isNotEmpty)
@@ -476,37 +501,38 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     if (!isMe) {
       return const [Tab(icon: Icon(Icons.grid_on_rounded), text: 'Posts')];
     }
-    
+
     final tabs = <Tab>[
       const Tab(icon: Icon(Icons.grid_on_rounded), text: 'Posts'),
       const Tab(icon: Icon(Icons.book_online_outlined), text: 'Bookings'),
       const Tab(icon: Icon(Icons.bookmark_outline_rounded), text: 'Saved'),
     ];
-    
+
     if (isVendor) {
-      tabs.insert(2, const Tab(icon: Icon(Icons.reviews_outlined), text: 'Reviews'));
+      tabs.insert(
+        2,
+        const Tab(icon: Icon(Icons.reviews_outlined), text: 'Reviews'),
+      );
     }
-    
+
     return tabs;
   }
-  
+
   List<Widget> _buildTabContent(bool isMe, bool isVendor) {
     if (!isMe) {
-      return [
-        _buildPostsGrid(),
-      ];
+      return [_buildPostsGrid()];
     }
-    
+
     final content = <Widget>[
       _buildPostsGrid(),
       _buildBookingsGrid(),
       _buildSavedGrid(),
     ];
-    
+
     if (isVendor) {
       content.insert(2, _buildReviewsGrid());
     }
-    
+
     return content;
   }
 
@@ -522,8 +548,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           child: CircleAvatar(
             radius: 48,
             backgroundColor: AppColors.bgCard,
-            backgroundImage: (photoURL != null && photoURL.isNotEmpty) 
-                ? CachedNetworkImageProvider(photoURL) 
+            backgroundImage: (photoURL != null && photoURL.isNotEmpty)
+                ? NetworkImage(photoURL)
                 : null,
             child: (photoURL == null || photoURL.isEmpty)
                 ? const Icon(Icons.person, size: 40, color: AppColors.textHint)
@@ -543,7 +569,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.bgPrimary, width: 3),
                 ),
-                child: const Icon(Icons.add_a_photo_rounded, size: 14, color: Colors.white),
+                child: const Icon(
+                  Icons.add_a_photo_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -572,11 +602,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   Widget _statDivider() => Container(
-        height: 24,
-        width: 1,
-        color: AppColors.borderDefault,
-        margin: const EdgeInsets.symmetric(horizontal: 24),
-      );
+    height: 24,
+    width: 1,
+    color: AppColors.borderDefault,
+    margin: const EdgeInsets.symmetric(horizontal: 24),
+  );
 
   Widget _statItem(int count, String label) {
     return Column(
@@ -588,8 +618,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // FIXED: Updated action buttons with pushReplacement for chat navigation
-  Widget _buildActionButtons(Map<String, dynamic> userData, String displayName, String? photoURL) {
+  Widget _buildActionButtons(
+    Map<String, dynamic> userData,
+    String displayName,
+    String? photoURL,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
@@ -610,7 +643,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               if (isMe) {
                 _showMoreOptions();
               } else {
-                // FIXED: Use the dedicated navigation method with pushReplacement
                 _navigateToChat(displayName, photoURL);
               }
             },
@@ -662,12 +694,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  // FIXED: Posts Grid with safe text truncation
   Widget _buildPostsGrid() {
     return StreamBuilder<QuerySnapshot>(
       stream: _postsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.accentPurple));
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.accentPurple),
+          );
         }
 
         if (snapshot.hasError) {
@@ -675,7 +710,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         }
 
         final docs = snapshot.data?.docs ?? [];
-        
+
         if (docs.isEmpty) {
           return _buildEmptyWidget("No posts yet", Icons.camera_alt_outlined);
         }
@@ -692,11 +727,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            final mediaUrl = data['imageUrl'] ?? data['mediaUrl'] ?? '';
-            
+            final mediaUrl = data['mediaUrl'] ?? data['imageUrl'] ?? '';
+            final String content = data['content'] ?? '';
+            // FIXED: Safe truncation
+            final String title = content.isEmpty
+                ? 'Post'
+                : _truncateText(content, 50);
+
             return _buildGridItem(
               mediaUrl: mediaUrl,
-              title: data['title'] ?? '',
+              title: title,
               onTap: () => context.push('/post/${docs[index].id}', extra: data),
             );
           },
@@ -705,16 +745,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  // FIXED: Bookings Grid
   Widget _buildBookingsGrid() {
     if (_bookingsStream == null) {
       return _buildEmptyWidget("No bookings yet", Icons.book_online_outlined);
     }
-    
+
     return StreamBuilder<QuerySnapshot>(
       stream: _bookingsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.accentPurple));
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.accentPurple),
+          );
         }
 
         if (snapshot.hasError) {
@@ -722,10 +765,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         }
 
         final docs = snapshot.data?.docs ?? [];
-        
+
         if (docs.isEmpty) {
-          return _buildEmptyWidget("No bookings yet", Icons.book_online_outlined,
-              actionText: "Browse Events", onAction: () => context.push('/explore'));
+          return _buildEmptyWidget(
+            "No bookings yet",
+            Icons.book_online_outlined,
+            actionText: "Browse Events",
+            onAction: () => context.push('/explore'),
+          );
         }
 
         return ListView.builder(
@@ -735,11 +782,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             final data = docs[index].data() as Map<String, dynamic>;
             final status = data['status'] ?? 'pending';
             final Color statusColor = _getStatusColor(status);
-            
+
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: ListTile(
                 leading: data['eventImageUrl'] != null
                     ? ClipRRect(
@@ -755,31 +804,45 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             color: Colors.grey.shade200,
                             child: const Icon(Icons.event, size: 30),
                           ),
-                          errorWidget: (context, url, error) => const Icon(Icons.event, size: 40),
+                          errorWidget: (context, url, error) =>
+                              const Icon(Icons.event, size: 40),
                         ),
                       )
                     : const Icon(Icons.event, size: 40),
-                title: Text(data['eventName'] ?? 'Event Booking'),
+                title: Text(
+                  data['eventTitle'] ?? data['eventName'] ?? 'Event Booking',
+                ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Date: ${data['eventDate'] ?? 'TBD'}'),
+                    Text('Date: ${data['eventDate'] ?? data['date'] ?? 'TBD'}'),
                     const SizedBox(height: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: statusColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         status.toUpperCase(),
-                        style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                trailing: Text('\$${data['price'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                onTap: () => context.push('/booking/${docs[index].id}', extra: data),
+                trailing: Text(
+                  '₦${(data['total'] ?? data['price'] ?? 0).toStringAsFixed(0)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                onTap: () =>
+                    context.push('/ticket/${data['ticketId']}', extra: data),
               ),
             );
           },
@@ -788,16 +851,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  // FIXED: Reviews Grid
   Widget _buildReviewsGrid() {
     if (_reviewsStream == null) {
       return _buildEmptyWidget("No reviews yet", Icons.reviews_outlined);
     }
-    
+
     return StreamBuilder<QuerySnapshot>(
       stream: _reviewsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.accentPurple));
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.accentPurple),
+          );
         }
 
         if (snapshot.hasError) {
@@ -805,7 +871,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         }
 
         final docs = snapshot.data?.docs ?? [];
-        
+
         if (docs.isEmpty) {
           return _buildEmptyWidget("No reviews yet", Icons.reviews_outlined);
         }
@@ -816,11 +882,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
             final rating = (data['rating'] ?? 0).toDouble();
-            
+
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -828,24 +896,34 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   children: [
                     Row(
                       children: [
-                        ...List.generate(5, (i) => Icon(
-                          i < rating ? Icons.star : Icons.star_border,
-                          color: Colors.amber,
-                          size: 18,
-                        )),
+                        ...List.generate(
+                          5,
+                          (i) => Icon(
+                            i < rating ? Icons.star : Icons.star_border,
+                            color: Colors.amber,
+                            size: 18,
+                          ),
+                        ),
                         const Spacer(),
                         Text(
                           DateFormat('MMM dd, yyyy').format(
-                            (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now()
+                            (data['createdAt'] as Timestamp?)?.toDate() ??
+                                DateTime.now(),
                           ),
                           style: AppTextStyles.bodySmall,
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(data['comment'] ?? 'No comment', style: AppTextStyles.bodyMedium),
-                    if (data['vendorName'] != null)
-                      Text('For: ${data['vendorName']}', style: AppTextStyles.bodySmall),
+                    Text(
+                      data['comment'] ?? 'No comment',
+                      style: AppTextStyles.bodyMedium,
+                    ),
+                    if (data['eventTitle'] != null)
+                      Text(
+                        'For: ${data['eventTitle']}',
+                        style: AppTextStyles.bodySmall,
+                      ),
                   ],
                 ),
               ),
@@ -856,16 +934,22 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  // Saved/Bookmarked items
   Widget _buildSavedGrid() {
     if (_savedStream == null) {
-      return _buildEmptyWidget("No saved items", Icons.bookmark_outline_rounded);
+      return _buildEmptyWidget(
+        "No saved items",
+        Icons.bookmark_outline_rounded,
+      );
     }
-    
+
     return StreamBuilder<QuerySnapshot>(
       stream: _savedStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.accentPurple));
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.accentPurple),
+          );
         }
 
         if (snapshot.hasError) {
@@ -873,9 +957,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         }
 
         final docs = snapshot.data?.docs ?? [];
-        
+
         if (docs.isEmpty) {
-          return _buildEmptyWidget("No saved items", Icons.bookmark_outline_rounded);
+          return _buildEmptyWidget(
+            "No saved items",
+            Icons.bookmark_outline_rounded,
+          );
         }
 
         return GridView.builder(
@@ -890,14 +977,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            final mediaUrl = data['imageUrl'] ?? data['mediaUrl'] ?? '';
-            
+            final mediaUrl = data['imageUrl'] ?? '';
+
             return _buildGridItem(
               mediaUrl: mediaUrl,
-              title: data['title'] ?? '',
+              title: data['title'] ?? 'Saved Item',
               onTap: () {
-                final postId = data['postId'] ?? docs[index].id;
-                context.push('/post/$postId', extra: data);
+                final type = data['type'] ?? 'post';
+                final id = data['id'] ?? docs[index].id;
+                if (type == 'event') {
+                  context.push('/home/event/$id', extra: data);
+                } else {
+                  context.push('/post/$id', extra: data);
+                }
               },
             );
           },
@@ -924,7 +1016,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 fit: BoxFit.cover,
                 placeholder: (context, url) => Container(
                   color: Colors.grey.shade200,
-                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  child: const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
                 errorWidget: (context, url, error) => Container(
                   color: Colors.grey.shade200,
@@ -941,7 +1035,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildEmptyWidget(String message, IconData icon, {String? actionText, VoidCallback? onAction}) {
+  Widget _buildEmptyWidget(
+    String message,
+    IconData icon, {
+    String? actionText,
+    VoidCallback? onAction,
+  }) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -975,7 +1074,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           const SizedBox(height: 14),
           Text(message, style: AppTextStyles.bodyMedium),
           const SizedBox(height: 8),
-          Text(error?.toString() ?? 'Unknown error', style: AppTextStyles.bodySmall),
+          Text(
+            error?.toString() ?? 'Unknown error',
+            style: AppTextStyles.bodySmall,
+          ),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () => setState(() {}),
@@ -985,7 +1087,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       ),
     );
   }
-  
+
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'confirmed':
@@ -1013,10 +1115,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(BuildContext context, double offset, bool overlaps) {
-    return Container(
-      color: AppColors.bgPrimary,
-      child: _tabBar,
-    );
+    return Container(color: AppColors.bgPrimary, child: _tabBar);
   }
 
   @override

@@ -31,6 +31,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
   String? _location;
   DateTime? _eventDate;
   bool _isPosting = false;
+  bool _isUploadingMedia = false;
   
   // 0 = Post, 1 = Event
   int _selectedType = 0; 
@@ -92,7 +93,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
 
   // --- Validation ---
   bool get _isPostButtonEnabled {
-    if (_isPosting) return false;
+    if (_isPosting || _isUploadingMedia) return false;
     if (_selectedType == 1) {
       return _titleController.text.trim().isNotEmpty && 
              _contentController.text.trim().isNotEmpty && 
@@ -108,13 +109,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
       final picker = ImagePicker();
       final List<XFile> pickedList = await picker.pickMultiImage(imageQuality: 80);
       if (pickedList.isNotEmpty) {
+        if (_selectedMediaList.length + pickedList.length > 10) {
+          _showSnackBar('Maximum 10 images allowed', isError: true);
+          return;
+        }
         HapticFeedback.lightImpact();
         setState(() {
           _selectedMediaList.addAll(pickedList.map((x) => File(x.path)));
         });
       }
     } catch (e) {
-      _showSnackBar('Error picking images: $e');
+      _showSnackBar('Error picking images: $e', isError: true);
     }
   }
 
@@ -123,11 +128,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
       final picker = ImagePicker();
       final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
       if (video != null) {
+        if (_selectedMediaList.length >= 10) {
+          _showSnackBar('Maximum 10 media items allowed', isError: true);
+          return;
+        }
         HapticFeedback.mediumImpact();
         setState(() => _selectedMediaList.add(File(video.path)));
       }
     } catch (e) {
-      _showSnackBar('Error picking video: $e');
+      _showSnackBar('Error picking video: $e', isError: true);
     }
   }
 
@@ -136,11 +145,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
       final picker = ImagePicker();
       final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
       if (picked != null) {
+        if (_selectedMediaList.length >= 10) {
+          _showSnackBar('Maximum 10 media items allowed', isError: true);
+          return;
+        }
         HapticFeedback.mediumImpact();
         setState(() => _selectedMediaList.add(File(picked.path)));
       }
     } catch (e) {
-      _showSnackBar('Error taking photo: $e');
+      _showSnackBar('Error taking photo: $e', isError: true);
     }
   }
 
@@ -173,13 +186,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
     }
   }
 
+  void _removeMedia(int index) {
+    setState(() => _selectedMediaList.removeAt(index));
+  }
+
   // --- Submission Logic ---
   Future<void> _submit() async {
     if (!_isPostButtonEnabled) return;
     
     final auth = context.read<AuthProvider>();
     if (auth.userId == null || auth.userId!.isEmpty) {
-      _showSnackBar('Please log in to continue');
+      _showSnackBar('Please log in to continue', isError: true);
       return;
     }
     
@@ -188,12 +205,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
 
     try {
       List<String> mediaUrls = [];
-      for (var file in _selectedMediaList) {
-        if (!file.path.toLowerCase().endsWith('.mp4') && 
-            !file.path.toLowerCase().endsWith('.mov')) {
-          String? url = await ImgBBService.uploadImage(file);
-          if (url != null) mediaUrls.add(url);
+      if (_selectedMediaList.isNotEmpty) {
+        setState(() => _isUploadingMedia = true);
+        int uploaded = 0;
+        for (var file in _selectedMediaList) {
+          if (!file.path.toLowerCase().endsWith('.mp4') && 
+              !file.path.toLowerCase().endsWith('.mov')) {
+            String? url = await ImgBBService.uploadImage(file);
+            if (url != null) {
+              mediaUrls.add(url);
+              uploaded++;
+              if (mounted) {
+                setState(() {});
+              }
+            }
+          }
         }
+        setState(() => _isUploadingMedia = false);
       }
 
       if (_selectedType == 1) {
@@ -211,14 +239,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
       }
     } catch (e) {
       if (mounted) {
-        _showSnackBar('Error: ${e.toString().replaceAll('Exception: ', '')}');
+        _showSnackBar('Error: ${e.toString().replaceAll('Exception: ', '')}', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
   }
 
-  // FIXED: Create post directly in Firestore
   Future<void> _createPostInFirebase(AuthProvider auth, List<String> urls) async {
     final postData = {
       'creatorId': auth.userId,
@@ -229,6 +256,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
       'timestamp': FieldValue.serverTimestamp(),
       'likes': [],
       'comments': [],
+      'commentCount': 0, // Added for comment counting
       'location': _location,
       'category': _selectedCategory,
       'type': 'post',
@@ -253,6 +281,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
       'category': _selectedCategory,
       'likes': [],
       'comments': [],
+      'commentCount': 0, // Added for comment counting
       'type': 'event',
       'isActive': true,
     };
@@ -320,7 +349,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
                       const SizedBox(height: 12),
                       _buildPriceField(),
                       _buildDateTimePicker(),
-                      const Divider(height: 32),
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 16),
                     ],
 
                     _buildComposer(isEvent),
@@ -363,7 +394,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(25),
@@ -391,7 +422,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
         ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 38,
+          height: 40,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: _categories.length,
@@ -406,7 +437,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
                   selected: isSelected,
                   onSelected: (val) => setState(() => _selectedCategory = cat),
                   selectedColor: primaryColor,
-                  backgroundColor: Colors.grey.withValues(alpha: 0.1),
+                  backgroundColor: Colors.grey,
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.white : textColor,
                     fontSize: 12,
@@ -425,10 +456,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
   Widget _buildEventTitleField() {
     return TextField(
       controller: _titleController,
-      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
+      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor),
       decoration: InputDecoration(
         hintText: "Event Name",
-        hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.5), fontWeight: FontWeight.bold),
+        hintStyle: TextStyle(color: Colors.grey.withValues(alpha: 0.5), fontWeight: FontWeight.w600),
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,
@@ -617,18 +648,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> with SingleTickerPr
               : Image.file(file, fit: BoxFit.cover),
           ),
           Positioned(
-            top: 5, right: 5,
+            top: 5,
+            right: 5,
             child: GestureDetector(
-              onTap: () => setState(() => _selectedMediaList.removeAt(index)),
+              onTap: () => _removeMedia(index),
               child: Container(
+                padding: const EdgeInsets.all(2),
                 decoration: const BoxDecoration(
                   color: Colors.black54,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.close, size: 14, color: Colors.white),
+                child: const Icon(Icons.close, size: 12, color: Colors.white),
               ),
             ),
           ),
+          if (isVideo)
+            const Positioned(
+              bottom: 5,
+              left: 5,
+              child: Icon(Icons.videocam, size: 12, color: Colors.white),
+            ),
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
 
 class MasonryExploreScreen extends StatefulWidget {
   const MasonryExploreScreen({super.key});
@@ -44,6 +45,14 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
     setState(() {
       _searchQuery = _searchController.text.toLowerCase();
     });
+  }
+
+  // Helper to convert Timestamp to DateTime safely
+  DateTime _getDateTime(dynamic timestamp) {
+    if (timestamp == null) return DateTime.now();
+    if (timestamp is DateTime) return timestamp;
+    if (timestamp is Timestamp) return timestamp.toDate();
+    return DateTime.now();
   }
 
   @override
@@ -203,25 +212,25 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
 
             final List<Map<String, dynamic>> items = [];
             
-            // Add posts
+            // Add posts - FIXED: Convert timestamp safely
             postsSnapshot.data?.docs.forEach((doc) {
               final data = doc.data() as Map<String, dynamic>;
               items.add({
                 ...data,
                 'id': doc.id,
                 'type': 'post',
-                'timestamp': data['createdAt'] ?? DateTime.now(),
+                'timestamp': _getDateTime(data['createdAt']),
               });
             });
             
-            // Add events
+            // Add events - FIXED: Convert timestamp safely
             eventsSnapshot.data?.docs.forEach((doc) {
               final data = doc.data() as Map<String, dynamic>;
               items.add({
                 ...data,
                 'id': doc.id,
                 'type': 'event',
-                'timestamp': data['eventDate'] ?? data['createdAt'] ?? DateTime.now(),
+                'timestamp': _getDateTime(data['eventDate'] ?? data['createdAt']),
               });
             });
             
@@ -291,7 +300,7 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
             ...data,
             'id': doc.id,
             'type': 'event',
-            'timestamp': data['eventDate'] ?? data['createdAt'] ?? DateTime.now(),
+            'timestamp': _getDateTime(data['eventDate'] ?? data['createdAt']),
           };
         }).toList();
         
@@ -351,7 +360,7 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
             ...data,
             'id': doc.id,
             'type': 'post',
-            'timestamp': data['createdAt'] ?? DateTime.now(),
+            'timestamp': _getDateTime(data['createdAt']),
           };
         }).toList();
         
@@ -382,7 +391,6 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
     );
   }
 
-  // FIXED: Removed Hero widget to prevent duplicate key error
   Widget _buildMasonryTile(Map<String, dynamic> item) {
     final String imageUrl = item['imageUrl'] ?? item['mediaUrl'] ?? '';
     final bool isEvent = item['type'] == 'event';
@@ -407,7 +415,6 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image Section - NO HERO WIDGET
             ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               child: Stack(
@@ -481,7 +488,7 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '\$${price.toString()}',
+                          _formatPrice(price),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -493,7 +500,6 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
                 ],
               ),
             ),
-            // Content Section
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -537,6 +543,12 @@ class _MasonryExploreScreenState extends State<MasonryExploreScreen>
         ),
       ),
     );
+  }
+
+  String _formatPrice(dynamic price) {
+    if (price == null) return 'FREE';
+    final format = NumberFormat.currency(symbol: '₦', decimalDigits: 0);
+    return format.format(price);
   }
 
   Widget _buildShimmerGrid() {

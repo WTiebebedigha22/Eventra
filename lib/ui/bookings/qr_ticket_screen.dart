@@ -45,23 +45,40 @@ class _TicketScreenState extends State<TicketScreen> {
     }
     
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUserId)
-          .collection('tickets')
-          .doc(widget.ticketId)
+      // FIXED: Query the bookings collection instead
+      final QuerySnapshot querySnapshot = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('ticketId', isEqualTo: widget.ticketId)
+          .where('userId', isEqualTo: currentUserId)
+          .limit(1)
           .get();
       
-      if (doc.exists) {
+      if (querySnapshot.docs.isNotEmpty) {
         setState(() {
-          _ticketData = doc.data();
+          _ticketData = querySnapshot.docs.first.data() as Map<String, dynamic>;
+          _ticketData!['id'] = querySnapshot.docs.first.id;
           _isLoading = false;
         });
       } else {
-        setState(() {
-          _error = 'Ticket not found';
-          _isLoading = false;
-        });
+        // Also try the users/tickets subcollection as fallback
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUserId)
+            .collection('tickets')
+            .doc(widget.ticketId)
+            .get();
+        
+        if (doc.exists) {
+          setState(() {
+            _ticketData = doc.data();
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _error = 'Ticket not found';
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
       setState(() {
@@ -72,7 +89,6 @@ class _TicketScreenState extends State<TicketScreen> {
     }
   }
 
-  // SAFE: No substring operations that can cause RangeError
   String get _displayTicketId {
     final id = widget.ticketId;
     if (id.isEmpty) return 'N/A';
@@ -159,11 +175,10 @@ class _TicketScreenState extends State<TicketScreen> {
     
     final String eventTitle = data['eventTitle'] ?? 'Event';
     final String eventImageUrl = data['eventImageUrl'] ?? '';
-    final String location = data['eventLocation'] ?? data['location'] ?? 'Location TBD';
+    final String location = data['venue'] ?? data['eventLocation'] ?? data['location'] ?? 'Location TBD';
     final int quantity = (data['quantity'] ?? 1).toInt();
-    final double price = (data['price'] ?? 0).toDouble();
-    final double totalPrice = (data['totalPrice'] ?? price * quantity).toDouble();
-    final bool isPaid = data['isPaid'] == true;
+    final double totalPrice = (data['total'] ?? data['totalPrice'] ?? 0).toDouble();
+    final bool isPaid = data['status'] == 'confirmed';
     final String status = data['status'] ?? (isPaid ? 'confirmed' : 'pending');
     
     String formattedDate = 'Date not available';
@@ -172,12 +187,22 @@ class _TicketScreenState extends State<TicketScreen> {
       formattedDate = DateFormat('MMM dd, yyyy • h:mm a').format(timestamp.toDate());
     }
 
+    // Get event date from the booking data
+    String eventDate = 'Date TBD';
+    if (data['eventDate'] != null && data['eventDate'] is String) {
+      eventDate = data['eventDate'];
+    } else if (data['eventDate'] != null) {
+      final timestamp = data['eventDate'] as Timestamp;
+      eventDate = DateFormat('MMM dd, yyyy • h:mm a').format(timestamp.toDate());
+    }
+
     final qrData = {
       'ticketId': widget.ticketId,
       'eventId': data['eventId'] ?? 'N/A',
       'eventTitle': eventTitle,
-      'date': formattedDate,
+      'date': eventDate,
       'location': location,
+      'quantity': quantity,
     };
 
     return SingleChildScrollView(
@@ -187,7 +212,7 @@ class _TicketScreenState extends State<TicketScreen> {
         children: [
           _buildStatusBanner(isPaid, status),
           const SizedBox(height: 16),
-          _buildTicketCard(eventTitle, location, eventImageUrl, qrData, quantity, totalPrice, formattedDate, status),
+          _buildTicketCard(eventTitle, location, eventImageUrl, qrData, quantity, totalPrice, formattedDate, eventDate, status),
           const SizedBox(height: 24),
           _buildActionButtons(),
           const SizedBox(height: 16),
@@ -240,6 +265,7 @@ class _TicketScreenState extends State<TicketScreen> {
     int quantity,
     double totalPrice,
     String purchaseDate,
+    String eventDate,
     String status,
   ) {
     final isConfirmed = status == 'confirmed';
@@ -328,6 +354,21 @@ class _TicketScreenState extends State<TicketScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_today, size: 12, color: Colors.white70),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              eventDate,
+                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
                       Row(
                         children: [
                           const Icon(Icons.location_on, size: 12, color: Colors.white70),

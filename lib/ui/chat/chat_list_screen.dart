@@ -37,6 +37,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     WidgetsBinding.instance.addObserver(this);
     
     _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    print('Current user UID: $_currentUid');
     
     _fadeController = AnimationController(
       vsync: this,
@@ -53,7 +54,6 @@ class _ChatListScreenState extends State<ChatListScreen>
       _isInitialized = true;
     }
     
-    // Listen to auth changes
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user != null && _currentUid != user.uid) {
         _setUserOnlineStatus(false);
@@ -102,20 +102,49 @@ class _ChatListScreenState extends State<ChatListScreen>
     super.dispose();
   }
 
-  // FIXED: Better profile fetching with caching
+  // FIXED: Better extraction for any chat ID format
+  String _extractOtherUserId(String chatId) {
+    // Remove current user ID from chat ID to get the other user ID
+    // The chat ID might contain the current user ID multiple times
+    String result = chatId;
+    
+    // Remove all occurrences of current user ID
+    while (result.contains(_currentUid)) {
+      result = result.replaceFirst(_currentUid, '');
+    }
+    
+    // Remove any underscores at the beginning or end
+    result = result.replaceAll(RegExp(r'^_+|_+$'), '');
+    
+    // If still empty, return original
+    if (result.isEmpty) {
+      return chatId;
+    }
+    
+    print('Original chatId: $chatId');
+    print('Current UID: $_currentUid');
+    print('Extracted other UID: $result');
+    
+    return result;
+  }
+
   Future<Map<String, dynamic>?> _getProfile(String uid) async {
     if (_profileCache.containsKey(uid)) {
       return _profileCache[uid];
     }
     
     try {
+      print('Fetching user profile for UID: $uid');
       final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       if (doc.exists) {
         final userData = doc.data();
+        print('User found: ${userData?['displayName']}');
         _profileCache[uid] = userData!;
         return userData;
+      } else {
+        print('User not found for UID: $uid');
+        return null;
       }
-      return null;
     } catch (e) {
       debugPrint('Error getting profile for $uid: $e');
       return null;
@@ -196,45 +225,147 @@ class _ChatListScreenState extends State<ChatListScreen>
               .map((d) => ChatSession.fromFirestore(d))
               .toList();
 
-          return FadeTransition(
-            opacity: _fadeController,
-            child: RefreshIndicator(
-              onRefresh: () async {
-                setState(() {});
-              },
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                itemCount: sessions.length,
-                itemBuilder: (context, index) {
-                  final session = sessions[index];
-                  final otherId = session.getOtherUserId(_currentUid);
-                  final unread = session.unreadFor(_currentUid);
-                  final isMe = session.lastMessageSenderId == _currentUid;
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(() {});
+            },
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              itemCount: sessions.length,
+              itemBuilder: (context, index) {
+                final session = sessions[index];
+                final otherId = _extractOtherUserId(session.id);
+                final unread = session.unreadFor(_currentUid);
+                final isMe = session.lastMessageSenderId == _currentUid;
 
-                  return _ChatTile(
-                    key: ValueKey(session.id),
-                    session: session,
-                    userId: otherId,
-                    currentUid: _currentUid,
-                    unread: unread,
-                    isMe: isMe,
-                    index: index,
-                    onTap: (name, avatar) {
-                      HapticFeedback.lightImpact();
-                      _chatService.markAsRead(session.id);
-                      context.push(
-                        '/chat/${session.id}',
-                        extra: {'otherUserName': name, 'otherAvatar': avatar},
-                      );
-                    },
-                    onDismiss: () => _chatService.deleteConversation(session.id),
-                    formatTimestamp: _formatTimestamp,
-                  );
-                },
-              ),
+                return FutureBuilder<Map<String, dynamic>?>(
+                  future: _getProfile(otherId),
+                  builder: (context, userSnapshot) {
+                    if (userSnapshot.connectionState == ConnectionState.waiting) {
+                      return _buildSkeletonTile();
+                    }
+                    
+                    if (userSnapshot.hasError || userSnapshot.data == null) {
+                      return _buildErrorTile(otherId, () {
+                        setState(() {
+                          _profileCache.remove(otherId);
+                        });
+                      });
+                    }
+                    
+                    final userData = userSnapshot.data!;
+                    final name = userData['displayName'] ?? 
+                                 userData['username'] ?? 
+                                 userData['email']?.split('@').first ?? 
+                                 'User';
+                    final avatar = userData['photoURL'] as String?;
+                    
+                    return _ChatTile(
+                      session: session,
+                      userName: name,
+                      userAvatar: avatar,
+                      unread: unread,
+                      isMe: isMe,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        _chatService.markAsRead(session.id);
+                        context.push(
+                          '/chat/${session.id}',
+                          extra: {'otherUserName': name, 'otherAvatar': avatar},
+                        );
+                      },
+                      onDismiss: () => _chatService.deleteConversation(session.id),
+                      formatTimestamp: _formatTimestamp,
+                    );
+                  },
+                );
+              },
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildSkeletonTile() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: const BoxDecoration(
+              color: Colors.grey,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 120,
+                  height: 14,
+                  color: Colors.grey.shade200,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 180,
+                  height: 12,
+                  color: Colors.grey.shade200,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorTile(String userId, VoidCallback onRetry) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 26,
+            backgroundColor: Colors.red,
+            child: Icon(Icons.error, color: Colors.white),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Failed to load user',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: onRetry,
+                  child: Text(
+                    'Tap to retry',
+                    style: TextStyle(fontSize: 12, color: Colors.blue),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -307,45 +438,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       itemCount: 6,
-      itemBuilder: (_, index) => Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: const BoxDecoration(
-                color: Colors.grey,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 120,
-                    height: 14,
-                    color: Colors.grey.shade200,
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 180,
-                    height: 12,
-                    color: Colors.grey.shade200,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      itemBuilder: (_, index) => _buildSkeletonTile(),
     );
   }
 
@@ -434,374 +527,128 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 }
 
-// FIXED: Simplified ChatTile that fetches user data directly
-class _ChatTile extends StatefulWidget {
+class _ChatTile extends StatelessWidget {
   final ChatSession session;
-  final String userId;
-  final String currentUid;
+  final String userName;
+  final String? userAvatar;
   final int unread;
   final bool isMe;
-  final int index;
-  final void Function(String name, String? avatar) onTap;
+  final VoidCallback onTap;
   final VoidCallback onDismiss;
   final String Function(dynamic) formatTimestamp;
 
   const _ChatTile({
-    super.key,
     required this.session,
-    required this.userId,
-    required this.currentUid,
+    required this.userName,
+    this.userAvatar,
     required this.unread,
     required this.isMe,
-    required this.index,
     required this.onTap,
     required this.onDismiss,
     required this.formatTimestamp,
   });
 
-  @override
-  State<_ChatTile> createState() => _ChatTileState();
-}
-
-class _ChatTileState extends State<_ChatTile>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _slideController;
-  late Animation<Offset> _slideAnim;
-  late Animation<double> _fadeAnim;
-  final ChatService _chatService = ChatService();
-  
-  Map<String, dynamic>? _userData;
-  bool _isLoading = true;
-  String? _error;
-
   static const Color primaryColor = Color(0xFF6C63FF);
 
   @override
-  void initState() {
-    super.initState();
-    _slideController = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: 350 + widget.index * 40),
-    );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.12),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
-    _fadeAnim = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOut),
-    );
-
-    Future.delayed(Duration(milliseconds: widget.index * 50), () {
-      if (mounted) _slideController.forward();
-    });
-    
-    _fetchUserData();
-  }
-  
-  Future<void> _fetchUserData() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .get();
-      
-      if (doc.exists && mounted) {
-        setState(() {
-          _userData = doc.data();
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _isLoading = false;
-          _error = 'User not found';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = e.toString();
-      });
-      debugPrint('Error fetching user data: $e');
-    }
-  }
-
-  @override
-  void dispose() {
-    _slideController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: SlideTransition(
-        position: _slideAnim,
-        child: Dismissible(
-          key: ValueKey(widget.session.id),
-          direction: DismissDirection.endToStart,
-          background: _dismissBg(),
-          confirmDismiss: (_) => _confirmDelete(context),
-          onDismissed: (_) => widget.onDismiss(),
-          child: _buildContent(),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildContent() {
-    if (_isLoading) {
-      return _buildSkeletonTile();
-    }
-    
-    if (_error != null) {
-      return _buildErrorTile();
-    }
-    
-    final name = _userData?['displayName'] ?? 
-                 _userData?['username'] ?? 
-                 _userData?['email']?.split('@').first ?? 
-                 'User';
-    final avatar = _userData?['photoURL'] as String?;
-    
-    // Real-time online status
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .snapshots(),
-      builder: (context, userSnap) {
-        bool isOnline = false;
-        bool isTyping = false;
-        
-        if (userSnap.hasData && userSnap.data != null && userSnap.data!.exists) {
-          try {
-            final data = userSnap.data!.data() as Map<String, dynamic>?;
-            isOnline = data?['isOnline'] as bool? ?? false;
-            isTyping = data?['typingTo'] == widget.currentUid;
-          } catch (e) {
-            debugPrint('Error parsing user data: $e');
-          }
-        }
-
-        return _buildTile(name, avatar, isOnline, isTyping);
-      },
-    );
-  }
-
-  Widget _buildSkeletonTile() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 120,
-                  height: 14,
-                  color: Colors.grey.shade200,
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: 180,
-                  height: 12,
-                  color: Colors.grey.shade200,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorTile() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.red.shade200),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 26,
-            backgroundColor: Colors.red,
-            child: Icon(Icons.error, color: Colors.white),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Failed to load user',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Tap to retry',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTile(String name, String? avatar, bool isOnline, bool isTyping) {
-    return GestureDetector(
-      onTap: () => widget.onTap(name, avatar),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-          border: widget.unread > 0
-              ? Border.all(color: primaryColor.withOpacity(0.3), width: 1.5)
-              : null,
-        ),
-        child: Row(
-          children: [
-            _buildAvatar(avatar, isOnline),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: TextStyle(
-                            fontWeight: widget.unread > 0 ? FontWeight.w800 : FontWeight.w600,
-                            fontSize: 15,
-                            color: const Color(0xFF1A1A2E),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.formatTimestamp(widget.session.lastMessageTime),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: widget.unread > 0 ? FontWeight.w700 : FontWeight.normal,
-                          color: widget.unread > 0 ? primaryColor : Colors.grey[400],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: isTyping
-                            ? const _TypingIndicator()
-                            : _buildPreview(),
-                      ),
-                      if (widget.unread > 0) ...[
-                        const SizedBox(width: 8),
-                        _buildBadge(),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAvatar(String? avatar, bool isOnline) {
-    return Stack(
-      children: [
-        Container(
+    return Dismissible(
+      key: ValueKey(session.id),
+      direction: DismissDirection.endToStart,
+      background: _buildDismissBackground(),
+      confirmDismiss: (_) => _confirmDelete(context),
+      onDismissed: (_) => onDismiss(),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: primaryColor.withOpacity(0.15),
-                blurRadius: 8,
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
             ],
+            border: unread > 0
+                ? Border.all(color: primaryColor.withOpacity(0.3), width: 1.5)
+                : null,
           ),
-          child: CircleAvatar(
-            radius: 26,
-            backgroundColor: primaryColor.withOpacity(0.1),
-            backgroundImage: avatar != null && avatar.isNotEmpty 
-                ? CachedNetworkImageProvider(avatar) 
-                : null,
-            child: avatar == null || avatar.isEmpty
-                ? Icon(Icons.person, color: primaryColor, size: 28)
-                : null,
+          child: Row(
+            children: [
+              _buildAvatar(),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            userName,
+                            style: TextStyle(
+                              fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600,
+                              fontSize: 15,
+                              color: const Color(0xFF1A1A2E),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          formatTimestamp(session.lastMessageTime),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.normal,
+                            color: unread > 0 ? primaryColor : Colors.grey[400],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    _buildPreview(),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        if (isOnline)
-          Positioned(
-            bottom: 2,
-            right: 2,
-            child: Container(
-              height: 12,
-              width: 12,
-              decoration: BoxDecoration(
-                color: const Color(0xFF22C55E),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-            ),
-          ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar() {
+    return CircleAvatar(
+      radius: 26,
+      backgroundColor: primaryColor.withOpacity(0.1),
+      backgroundImage: userAvatar != null && userAvatar!.isNotEmpty 
+          ? CachedNetworkImageProvider(userAvatar!) 
+          : null,
+      child: userAvatar == null || userAvatar!.isEmpty
+          ? Icon(Icons.person, color: primaryColor, size: 28)
+          : null,
     );
   }
 
   Widget _buildPreview() {
-    final msg = widget.session.lastMessage;
+    final msg = session.lastMessage;
     final isImage = msg.contains('📷') || msg.contains('[image]') || msg.contains('📸');
     final isAudio = msg.contains('🎵') || msg.contains('[audio]') || msg.contains('🎤');
 
     return Row(
       children: [
-        if (widget.isMe)
+        if (isMe)
           Padding(
             padding: const EdgeInsets.only(right: 4),
             child: Icon(
               Icons.done_all_rounded,
               size: 14,
-              color: widget.unread > 0 ? primaryColor.withOpacity(0.7) : Colors.grey.shade400,
+              color: unread > 0 ? primaryColor.withOpacity(0.7) : Colors.grey.shade400,
             ),
           ),
         if (isImage)
@@ -822,8 +669,8 @@ class _ChatTileState extends State<_ChatTile>
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13,
-              color: widget.unread > 0 ? const Color(0xFF1A1A2E) : Colors.grey[500],
-              fontWeight: widget.unread > 0 ? FontWeight.w500 : FontWeight.normal,
+              color: unread > 0 ? const Color(0xFF1A1A2E) : Colors.grey[500],
+              fontWeight: unread > 0 ? FontWeight.w500 : FontWeight.normal,
             ),
           ),
         ),
@@ -831,32 +678,7 @@ class _ChatTileState extends State<_ChatTile>
     );
   }
 
-  Widget _buildBadge() {
-    final count = widget.unread > 99 ? '99+' : '${widget.unread}';
-    return Container(
-      constraints: const BoxConstraints(minWidth: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [primaryColor, Color(0xFF4A42D4)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        count,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-
-  Widget _dismissBg() {
+  Widget _buildDismissBackground() {
     return Container(
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.only(right: 20),
@@ -898,81 +720,6 @@ class _ChatTileState extends State<_ChatTile>
           ),
         ],
       ),
-    );
-  }
-}
-
-class _TypingIndicator extends StatefulWidget {
-  const _TypingIndicator();
-
-  @override
-  State<_TypingIndicator> createState() => _TypingIndicatorState();
-}
-
-class _TypingIndicatorState extends State<_TypingIndicator>
-    with TickerProviderStateMixin {
-  late List<AnimationController> _controllers;
-  late List<Animation<double>> _anims;
-
-  static const Color primaryColor = Color(0xFF6C63FF);
-
-  @override
-  void initState() {
-    super.initState();
-    _controllers = List.generate(3, (i) => AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    ));
-    _anims = _controllers.map((c) => Tween<double>(begin: 0, end: -6).animate(
-      CurvedAnimation(parent: c, curve: Curves.easeInOut),
-    )).toList();
-
-    for (int i = 0; i < 3; i++) {
-      Future.delayed(Duration(milliseconds: i * 150), () {
-        if (mounted) _controllers[i].repeat(reverse: true);
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in _controllers) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          "typing",
-          style: TextStyle(
-            fontSize: 13,
-            color: primaryColor.withOpacity(0.8),
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-        const SizedBox(width: 4),
-        ...List.generate(3, (i) {
-          return AnimatedBuilder(
-            animation: _anims[i],
-            builder: (_, __) => Transform.translate(
-              offset: Offset(0, _anims[i].value),
-              child: Container(
-                width: 4,
-                height: 4,
-                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                decoration: const BoxDecoration(
-                  color: primaryColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          );
-        }),
-      ],
     );
   }
 }

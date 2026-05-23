@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../providers/chat_provider.dart';
 import '../../services/chat_service.dart';
+import '../../services/imgbb_service.dart';
 
 class ChatRoomScreen extends StatefulWidget {
   final String otherUid;
@@ -32,6 +33,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
   Timer? _typingTimer;
   bool _isTyping = false;
   bool _isLoading = true;
+  bool _isUploading = false;
   String? _error;
   FocusNode _focusNode = FocusNode();
   String? _chatId;
@@ -148,27 +150,73 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
     }
   }
 
+  Future<void> _uploadAndSendImage(File imageFile) async {
+    setState(() => _isUploading = true);
+    
+    try {
+      // Upload image to ImgBB
+      final imageUrl = await ImgBBService.uploadImage(imageFile);
+      
+      if (imageUrl != null && mounted) {
+        // Send image URL as message
+        final success = await context.read<ChatProvider>().sendMediaMessage(
+          widget.otherUid,
+          imageUrl,
+          'image',
+        );
+        
+        if (success) {
+          _scrollToBottom();
+        } else {
+          throw Exception('Failed to send image');
+        }
+      } else {
+        throw Exception('Failed to upload image');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send image: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
   Future<void> _pickImage() async {
     try {
       final picker = ImagePicker();
-      final picked = await picker.pickImage(source: ImageSource.gallery);
+      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
       if (picked != null) {
-        _sendMediaMessage(picked.path, 'image');
+        await _uploadAndSendImage(File(picked.path));
       }
     } catch (e) {
       debugPrint("Error picking image: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error picking image'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
   Future<void> _takePhoto() async {
     try {
       final picker = ImagePicker();
-      final picked = await picker.pickImage(source: ImageSource.camera);
+      final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
       if (picked != null) {
-        _sendMediaMessage(picked.path, 'image');
+        await _uploadAndSendImage(File(picked.path));
       }
     } catch (e) {
       debugPrint("Error taking photo: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error taking photo'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -252,9 +300,25 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
                 );
               },
             ),
+            if (message.messageType == 'image')
+              ListTile(
+                leading: const Icon(Icons.download, color: Colors.blue),
+                title: const Text('Save Image'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _saveImageToGallery(message.text);
+                },
+              ),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _saveImageToGallery(String imageUrl) async {
+    // Implement saving image to gallery
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Save image feature coming soon')),
     );
   }
 
@@ -452,6 +516,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
             },
           ),
         ),
+        if (_isUploading)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            color: Colors.white,
+            child: const Center(
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
         _InputBar(
           controller: _controller,
           focusNode: _focusNode,
@@ -662,115 +738,97 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final time = DateFormat('h:mm a').format(message.timestamp);
+    final isImage = message.messageType == 'image';
     
     return GestureDetector(
       onLongPress: onLongPress,
-      child: Container(
-        margin: EdgeInsets.only(
-          top: 4,
-          bottom: 4,
-          left: isMe ? MediaQuery.of(context).size.width * 0.2 : 8,
-          right: isMe ? 8 : MediaQuery.of(context).size.width * 0.2,
-        ),
-        child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.75,
-              ),
-              decoration: BoxDecoration(
-                color: isMe ? primaryColor : Colors.grey[200],
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(isMe ? 18 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 18),
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: EdgeInsets.only(
+            top: 4,
+            bottom: 4,
+            left: isMe ? 8 : 12,
+            right: isMe ? 12 : 8,
+          ),
+          child: Column(
+            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: isImage ? const EdgeInsets.all(8) : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.75,
                 ),
+                decoration: BoxDecoration(
+                  color: isMe ? primaryColor : Colors.grey[200],
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(18),
+                    topRight: const Radius.circular(18),
+                    bottomLeft: Radius.circular(isMe ? 18 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 18),
+                  ),
+                ),
+                child: isImage
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          message.text,
+                          width: 200,
+                          height: 200,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return Container(
+                              width: 200,
+                              height: 200,
+                              color: Colors.grey.shade200,
+                              child: const Center(child: CircularProgressIndicator()),
+                            );
+                          },
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 200,
+                            height: 200,
+                            color: Colors.grey.shade200,
+                            child: const Icon(Icons.broken_image, size: 40),
+                          ),
+                        ),
+                      )
+                    : Text(
+                        message.text,
+                        style: TextStyle(
+                          color: isMe ? Colors.white : Colors.black87,
+                          fontSize: 15,
+                        ),
+                      ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (message.messageType != null && message.messageType != 'text')
-                    _buildMediaIndicator(),
                   Text(
-                    message.text,
+                    time,
                     style: TextStyle(
-                      color: isMe ? Colors.white : Colors.black87,
-                      fontSize: 15,
+                      fontSize: 10,
+                      color: isMe ? Colors.white70 : Colors.grey[500],
                     ),
                   ),
+                  if (isMe && isLast) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      message.read ? Icons.done_all : Icons.done,
+                      size: 12,
+                      color: message.read ? Colors.lightBlueAccent : Colors.grey[400],
+                    ),
+                  ],
                 ],
               ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  time,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: isMe ? Colors.white70 : Colors.grey[500],
-                  ),
-                ),
-                if (isMe && isLast) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    message.read ? Icons.done_all : Icons.done,
-                    size: 12,
-                    color: message.read ? Colors.lightBlueAccent : Colors.grey[400],
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMediaIndicator() {
-    IconData icon;
-    String label;
-    
-    switch (message.messageType) {
-      case 'image':
-        icon = Icons.image;
-        label = 'Image';
-        break;
-      case 'audio':
-        icon = Icons.mic;
-        label = 'Voice Message';
-        break;
-      case 'video':
-        icon = Icons.videocam;
-        label = 'Video';
-        break;
-      default:
-        return const SizedBox.shrink();
-    }
-    
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: isMe ? Colors.white : Colors.grey),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: isMe ? Colors.white70 : Colors.grey[600],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
-
 class _InputBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
