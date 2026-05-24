@@ -24,9 +24,6 @@ class _ActivityScreenState extends State<ActivityScreen>
   static const Color backgroundColor = Colors.white;
   static const Color dividerColor = Color(0xFFF0F2F5);
 
-  static const List<String> _interactionTypes = ['like', 'comment', 'follow', 'tag'];
-  static const List<String> _bookingTypes = ['booking_request', 'booking_confirmed', 'booking_cancelled', 'booking_reminder'];
-
   late TabController _tabController;
   String? _currentUid;
   bool _isLoading = true;
@@ -46,7 +43,6 @@ class _ActivityScreenState extends State<ActivityScreen>
       _isLoading = false;
     });
     
-    // Listen for auth changes
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (mounted) {
         setState(() {
@@ -107,42 +103,27 @@ class _ActivityScreenState extends State<ActivityScreen>
       ),
       body: _currentUid == null
           ? _buildLoggedOutState()
-          : widget.isVendor
-              ? _buildVendorActivity()
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _NotificationsTab(
-                      uid: _currentUid!,
-                      types: _interactionTypes,
-                      emptyIcon: Icons.favorite_border_rounded,
-                      emptyTitle: 'No interactions yet',
-                      emptySubtitle: 'Likes, comments and follows will appear here.',
-                      onTap: _handleNotificationTap,
-                    ),
-                    _NotificationsTab(
-                      uid: _currentUid!,
-                      types: _bookingTypes,
-                      emptyIcon: Icons.confirmation_number_outlined,
-                      emptyTitle: 'No booking activity',
-                      emptySubtitle: 'Booking requests and confirmations will appear here.',
-                      onTap: _handleNotificationTap,
-                    ),
-                  ],
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _NotificationsTab(
+                  uid: _currentUid!,
+                  type: 'interaction',
+                  emptyIcon: Icons.favorite_border_rounded,
+                  emptyTitle: 'No interactions yet',
+                  emptySubtitle: 'Likes, comments and follows will appear here.',
+                  onTap: _handleNotificationTap,
                 ),
-    );
-  }
-
-  Widget _buildVendorActivity() {
-    final vendorTypes = ['booking_request', 'booking_confirmed', 'booking_cancelled', 'review'];
-    
-    return _NotificationsTab(
-      uid: _currentUid!,
-      types: vendorTypes,
-      emptyIcon: Icons.storefront_outlined,
-      emptyTitle: 'No vendor activity',
-      emptySubtitle: 'Booking requests and reviews will appear here.',
-      onTap: _handleVendorNotificationTap,
+                _NotificationsTab(
+                  uid: _currentUid!,
+                  type: 'booking',
+                  emptyIcon: Icons.confirmation_number_outlined,
+                  emptyTitle: 'No booking activity',
+                  emptySubtitle: 'Booking requests and confirmations will appear here.',
+                  onTap: _handleNotificationTap,
+                ),
+              ],
+            ),
     );
   }
 
@@ -186,7 +167,7 @@ class _ActivityScreenState extends State<ActivityScreen>
     }
 
     final type = data['type'];
-    final String postId = data['postId'] ?? '';
+    final String postId = data['postId'] ?? data['itemId'] ?? '';
     final String senderId = data['senderId'] ?? '';
     final String bookingId = data['bookingId'] ?? '';
 
@@ -212,35 +193,6 @@ class _ActivityScreenState extends State<ActivityScreen>
         } else {
           context.push('/tickets');
         }
-        break;
-      default:
-        debugPrint('Unknown notification type: $type');
-    }
-  }
-
-  Future<void> _handleVendorNotificationTap(BuildContext context, String notificationId, Map<String, dynamic> data) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('notifications')
-          .doc(notificationId)
-          .update({'isRead': true});
-    } catch (e) {
-      debugPrint('Error marking notification as read: $e');
-    }
-
-    final type = data['type'];
-    final String bookingId = data['bookingId'] ?? '';
-
-    switch (type) {
-      case 'booking_request':
-      case 'booking_confirmed':
-      case 'booking_cancelled':
-        if (bookingId.isNotEmpty) {
-          context.push('/booking/$bookingId');
-        }
-        break;
-      case 'review':
-        context.push('/reviews');
         break;
       default:
         debugPrint('Unknown notification type: $type');
@@ -332,7 +284,7 @@ class _ActivityScreenState extends State<ActivityScreen>
 class _NotificationsTab extends StatelessWidget {
   const _NotificationsTab({
     required this.uid,
-    required this.types,
+    required this.type,
     required this.emptyIcon,
     required this.emptyTitle,
     required this.emptySubtitle,
@@ -340,24 +292,36 @@ class _NotificationsTab extends StatelessWidget {
   });
 
   final String uid;
-  final List<String> types;
+  final String type;
   final IconData emptyIcon;
   final String emptyTitle;
   final String emptySubtitle;
   final void Function(BuildContext, String, Map<String, dynamic>) onTap;
 
   static const Color primaryColor = Color(0xFF6C63FF);
-  static const Color backgroundColor = Colors.white;
 
   @override
   Widget build(BuildContext context) {
+    Stream<QuerySnapshot> getStream() {
+      if (type == 'interaction') {
+        return FirebaseFirestore.instance
+            .collection('notifications')
+            .where('recipientId', isEqualTo: uid)
+            .where('type', whereIn: ['like', 'comment', 'follow', 'tag'])
+            .orderBy('createdAt', descending: true)
+            .snapshots();
+      } else {
+        return FirebaseFirestore.instance
+            .collection('notifications')
+            .where('recipientId', isEqualTo: uid)
+            .where('type', whereIn: ['booking_request', 'booking_confirmed', 'booking_cancelled', 'booking_reminder'])
+            .orderBy('createdAt', descending: true)
+            .snapshots();
+      }
+    }
+
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('notifications')
-          .where('recipientId', isEqualTo: uid)
-          .where('type', whereIn: types)
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+      stream: getStream(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(
@@ -457,7 +421,6 @@ class _ActivityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String type = data['type'] ?? 'general';
-    // FIXED: Handle null isRead value - default to false
     final bool isRead = data['isRead'] == true;
     final iconData = _getIconForType(type);
     final iconColor = _getIconColor(type);
@@ -480,7 +443,7 @@ class _ActivityTile extends StatelessWidget {
                       style: const TextStyle(color: textColor, fontSize: 14, height: 1.3),
                       children: [
                         TextSpan(
-                          text: data['senderName'] ?? data['username'] ?? 'System',
+                          text: data['senderName'] ?? data['username'] ?? 'Someone',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         TextSpan(text: ' ${data['message'] ?? _getDefaultMessage(type)}'),
@@ -631,7 +594,7 @@ class _ActivityTile extends StatelessWidget {
     }
     
     if (type == 'follow') {
-      return _buildPill('Follow Back', primaryColor);
+      return _buildPill('Follow', primaryColor);
     }
     if (type == 'booking_request') {
       return _buildPill('Respond', primaryColor);

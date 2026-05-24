@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
@@ -75,7 +77,7 @@ class HomeScreen extends StatelessWidget {
                 // Home
                 _buildNavItem(0, Icons.home_rounded, Icons.home_outlined,
                     currentIndex, context),
-                // Messages (Chat)
+                // Messages (Chat with unread count)
                 _buildChatItem(1, currentIndex, context),
                 // Create Post (centre FAB)
                 _buildCreateButton(context),
@@ -128,96 +130,189 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // FIXED: Chat item with unread count from conversations
+  // IMPLEMENTED: Chat item with real unread message count
   Widget _buildChatItem(int index, int currentIndex, BuildContext context) {
     final isSelected = currentIndex == index;
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final String? currentUid = FirebaseAuth.instance.currentUser?.uid;
+    
+    if (currentUid == null || currentUid.isEmpty) {
+      return _buildSimpleChatItem(isSelected, index, context);
+    }
     
     return Expanded(
       child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('chats')
-            .where('participants', arrayContains: uid)
+            .where('participants', arrayContains: currentUid)
+            .where('isActive', isEqualTo: true)
             .snapshots(),
-        builder: (context, snapshot) {
-          int unreadCount = 0;
-          
-          if (snapshot.hasData && snapshot.data != null) {
-            // This is a placeholder - actual unread count would need
-            // to query each chat's messages. For simplicity, we're not
-            // showing unread count for now.
-            unreadCount = 0;
+        builder: (context, chatsSnapshot) {
+          if (!chatsSnapshot.hasData || chatsSnapshot.data == null) {
+            return _buildSimpleChatItem(isSelected, index, context);
           }
           
-          return InkWell(
-            onTap: () => _onTap(index, context),
-            highlightColor: Colors.transparent,
-            splashColor: Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isSelected ? Icons.chat_rounded : Icons.chat_outlined,
-                        color: isSelected ? primaryColor : inactiveColor,
-                        size: 24,
-                      ),
-                      if (isSelected)
-                        Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          height: 3,
-                          width: 20,
-                          decoration: BoxDecoration(
-                            color: primaryColor,
-                            borderRadius: BorderRadius.circular(2),
+          // Stream to calculate total unread count
+          return StreamBuilder<int>(
+            stream: _getTotalUnreadCount(chatsSnapshot.data!.docs, currentUid),
+            builder: (context, unreadSnapshot) {
+              final int unreadCount = unreadSnapshot.data ?? 0;
+              
+              return InkWell(
+                onTap: () => _onTap(index, context),
+                highlightColor: Colors.transparent,
+                splashColor: Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isSelected ? Icons.chat_rounded : Icons.chat_outlined,
+                            color: isSelected ? primaryColor : inactiveColor,
+                            size: 24,
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-                // Unread count badge (simplified - no collection group query)
-                if (unreadCount > 0)
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.5),
-                      ),
-                      constraints: const BoxConstraints(minWidth: 16),
-                      child: Text(
-                        unreadCount > 99 ? '99+' : '$unreadCount',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
+                          if (isSelected)
+                            Container(
+                              margin: const EdgeInsets.only(top: 4),
+                              height: 3,
+                              width: 20,
+                              decoration: BoxDecoration(
+                                color: primaryColor,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                  ),
-              ],
-            ),
+                    if (unreadCount > 0)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white, width: 1.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                          constraints: const BoxConstraints(minWidth: 16),
+                          child: Text(
+                            unreadCount > 99 ? '99+' : '$unreadCount',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
           );
         },
       ),
     );
   }
 
+  // Helper stream to calculate total unread messages
+  Stream<int> _getTotalUnreadCount(List<QueryDocumentSnapshot> chats, String currentUid) {
+    final StreamController<int> controller = StreamController<int>.broadcast();
+    
+    Future<void> calculateTotal() async {
+      int total = 0;
+      for (final chatDoc in chats) {
+        final String chatId = chatDoc.id;
+        try {
+          final QuerySnapshot unreadMessages = await FirebaseFirestore.instance
+              .collection('chats')
+              .doc(chatId)
+              .collection('messages')
+              .where('read', isEqualTo: false)
+              .where('senderId', isNotEqualTo: currentUid)
+              .get();
+          
+          total += unreadMessages.docs.length;
+        } catch (e) {
+          // Skip this chat if error
+          print('Error counting unread for chat $chatId: $e');
+        }
+      }
+      if (!controller.isClosed) {
+        controller.add(total);
+      }
+    }
+    
+    // Calculate initial total
+    calculateTotal();
+    
+    // Listen to changes in all chats' messages
+    for (final chatDoc in chats) {
+      final String chatId = chatDoc.id;
+      FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .where('read', isEqualTo: false)
+          .where('senderId', isNotEqualTo: currentUid)
+          .snapshots()
+          .listen((snapshot) {
+            calculateTotal(); // Recalculate when any message changes
+          });
+    }
+    
+    return controller.stream;
+  }
+
+  Widget _buildSimpleChatItem(bool isSelected, int index, BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: () => _onTap(index, context),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isSelected ? Icons.chat_rounded : Icons.chat_outlined,
+                color: isSelected ? primaryColor : inactiveColor,
+                size: 24,
+              ),
+              if (isSelected)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  height: 3,
+                  width: 20,
+                  decoration: BoxDecoration(
+                    color: primaryColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildProfileItem(int index, int currentIndex, BuildContext context) {
     final isSelected = currentIndex == index;
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
     
     return Expanded(
       child: StreamBuilder<DocumentSnapshot>(

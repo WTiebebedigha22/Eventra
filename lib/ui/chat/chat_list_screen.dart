@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../../models/chat/chat_session.dart';
 import '../../services/chat_service.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -37,12 +36,14 @@ class _ChatListScreenState extends State<ChatListScreen>
     WidgetsBinding.instance.addObserver(this);
     
     _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    print('Current user UID: $_currentUid');
+    // Clean the current UID
+    _currentUid = _currentUid.split('_').first;
+    print('Current user UID (cleaned): $_currentUid');
     
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
-    )..forward();
+    );
     
     _onlineUsersStream = FirebaseFirestore.instance
         .collection('users')
@@ -57,9 +58,18 @@ class _ChatListScreenState extends State<ChatListScreen>
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user != null && _currentUid != user.uid) {
         _setUserOnlineStatus(false);
-        _currentUid = user.uid;
+        _currentUid = user.uid!.split('_').first;
         _setUserOnlineStatus(true);
-        setState(() {});
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    });
+    
+    // Start animation after initState
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _fadeController.forward();
       }
     });
   }
@@ -102,33 +112,28 @@ class _ChatListScreenState extends State<ChatListScreen>
     super.dispose();
   }
 
-  // FIXED: Better extraction for any chat ID format
-  String _extractOtherUserId(String chatId) {
-    // Remove current user ID from chat ID to get the other user ID
-    // The chat ID might contain the current user ID multiple times
-    String result = chatId;
+  // Extract other user ID from chat data
+  String _getOtherUserId(Map<String, dynamic> chatData) {
+    final participants = chatData['participants'] as List<dynamic>?;
     
-    // Remove all occurrences of current user ID
-    while (result.contains(_currentUid)) {
-      result = result.replaceFirst(_currentUid, '');
+    if (participants == null || participants.isEmpty) {
+      return '';
     }
     
-    // Remove any underscores at the beginning or end
-    result = result.replaceAll(RegExp(r'^_+|_+$'), '');
-    
-    // If still empty, return original
-    if (result.isEmpty) {
-      return chatId;
+    for (final participant in participants) {
+      final String participantStr = participant.toString();
+      // Skip the current user
+      if (participantStr != _currentUid) {
+        return participantStr;
+      }
     }
     
-    print('Original chatId: $chatId');
-    print('Current UID: $_currentUid');
-    print('Extracted other UID: $result');
-    
-    return result;
+    return '';
   }
 
   Future<Map<String, dynamic>?> _getProfile(String uid) async {
+    if (uid.isEmpty) return null;
+    
     if (_profileCache.containsKey(uid)) {
       return _profileCache[uid];
     }
@@ -174,6 +179,12 @@ class _ChatListScreenState extends State<ChatListScreen>
     return DateFormat('MMM d').format(date);
   }
 
+  String _truncateText(String text, int maxLength) {
+    if (text.isEmpty) return '';
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength)}...';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_currentUid.isEmpty) {
@@ -212,6 +223,7 @@ class _ChatListScreenState extends State<ChatListScreen>
           }
 
           if (snapshot.hasError) {
+            print('Error loading chats: ${snapshot.error}');
             return _buildError(snapshot.error.toString());
           }
 
@@ -221,9 +233,34 @@ class _ChatListScreenState extends State<ChatListScreen>
             return _buildEmptyState();
           }
 
-          final sessions = docs
-              .map((d) => ChatSession.fromFirestore(d))
-              .toList();
+          // Group by other user ID and keep only the most recent
+          final Map<String, QueryDocumentSnapshot> uniqueChats = {};
+          
+          for (final doc in docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final otherId = _getOtherUserId(data);
+            
+            if (otherId.isEmpty) continue;
+            
+            if (!uniqueChats.containsKey(otherId)) {
+              uniqueChats[otherId] = doc;
+            } else {
+              // Keep the most recent chat
+              final existing = uniqueChats[otherId]!.data() as Map<String, dynamic>;
+              final existingTime = existing['updatedAt'] as Timestamp?;
+              final newTime = data['updatedAt'] as Timestamp?;
+              
+              if (newTime != null && (existingTime == null || newTime.toDate().isAfter(existingTime.toDate()))) {
+                uniqueChats[otherId] = doc;
+              }
+            }
+          }
+
+          final uniqueChatsList = uniqueChats.values.toList();
+          
+          if (uniqueChatsList.isEmpty) {
+            return _buildEmptyState();
+          }
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -231,12 +268,21 @@ class _ChatListScreenState extends State<ChatListScreen>
             },
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              itemCount: sessions.length,
+              itemCount: uniqueChatsList.length,
               itemBuilder: (context, index) {
-                final session = sessions[index];
-                final otherId = _extractOtherUserId(session.id);
-                final unread = session.unreadFor(_currentUid);
-                final isMe = session.lastMessageSenderId == _currentUid;
+                final doc = uniqueChatsList[index];
+                final data = doc.data() as Map<String, dynamic>;
+                final otherId = _getOtherUserId(data);
+                
+                // Get unread count
+                int unread = 0;
+                if (data['unreadCounts'] != null) {
+                  unread = (data['unreadCounts'][_currentUid] as int?) ?? 0;
+                }
+                
+                final isMe = data['lastSenderId'] == _currentUid;
+                final lastMessage = data['lastMessage'] ?? '';
+                final lastMessageTime = data['updatedAt'] as Timestamp?;
 
                 return FutureBuilder<Map<String, dynamic>?>(
                   future: _getProfile(otherId),
@@ -246,7 +292,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                     }
                     
                     if (userSnapshot.hasError || userSnapshot.data == null) {
-                      return _buildErrorTile(otherId, () {
+                      return _buildErrorTile(() {
                         setState(() {
                           _profileCache.remove(otherId);
                         });
@@ -256,26 +302,28 @@ class _ChatListScreenState extends State<ChatListScreen>
                     final userData = userSnapshot.data!;
                     final name = userData['displayName'] ?? 
                                  userData['username'] ?? 
-                                 userData['email']?.split('@').first ?? 
                                  'User';
                     final avatar = userData['photoURL'] as String?;
                     
                     return _ChatTile(
-                      session: session,
+                      chatId: doc.id,
                       userName: name,
                       userAvatar: avatar,
+                      lastMessage: lastMessage,
+                      lastMessageTime: lastMessageTime,
                       unread: unread,
                       isMe: isMe,
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        _chatService.markAsRead(session.id);
+                        _chatService.markAsRead(doc.id);
                         context.push(
-                          '/chat/${session.id}',
+                          '/chat/${doc.id}',
                           extra: {'otherUserName': name, 'otherAvatar': avatar},
                         );
                       },
-                      onDismiss: () => _chatService.deleteConversation(session.id),
+                      onDismiss: () => _chatService.deleteConversation(doc.id),
                       formatTimestamp: _formatTimestamp,
+                      truncateText: _truncateText,
                     );
                   },
                 );
@@ -329,7 +377,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     );
   }
 
-  Widget _buildErrorTile(String userId, VoidCallback onRetry) {
+  Widget _buildErrorTile(VoidCallback onRetry) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -391,9 +439,6 @@ class _ChatListScreenState extends State<ChatListScreen>
             stream: _onlineUsersStream,
             builder: (context, snapshot) {
               final count = snapshot.data?.docs.length ?? 0;
-              if (_onlineCount != count && mounted) {
-                setState(() => _onlineCount = count);
-              }
               return Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Container(
@@ -406,8 +451,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
+                      Container(
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
@@ -528,24 +572,30 @@ class _ChatListScreenState extends State<ChatListScreen>
 }
 
 class _ChatTile extends StatelessWidget {
-  final ChatSession session;
+  final String chatId;
   final String userName;
   final String? userAvatar;
+  final String lastMessage;
+  final Timestamp? lastMessageTime;
   final int unread;
   final bool isMe;
   final VoidCallback onTap;
   final VoidCallback onDismiss;
   final String Function(dynamic) formatTimestamp;
+  final String Function(String, int) truncateText;
 
   const _ChatTile({
-    required this.session,
+    required this.chatId,
     required this.userName,
     this.userAvatar,
+    required this.lastMessage,
+    required this.lastMessageTime,
     required this.unread,
     required this.isMe,
     required this.onTap,
     required this.onDismiss,
     required this.formatTimestamp,
+    required this.truncateText,
   });
 
   static const Color primaryColor = Color(0xFF6C63FF);
@@ -553,7 +603,7 @@ class _ChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dismissible(
-      key: ValueKey(session.id),
+      key: ValueKey(chatId),
       direction: DismissDirection.endToStart,
       background: _buildDismissBackground(),
       confirmDismiss: (_) => _confirmDelete(context),
@@ -588,7 +638,7 @@ class _ChatTile extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
+                        Flexible(
                           child: Text(
                             userName,
                             style: TextStyle(
@@ -601,7 +651,7 @@ class _ChatTile extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          formatTimestamp(session.lastMessageTime),
+                          formatTimestamp(lastMessageTime),
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: unread > 0 ? FontWeight.w700 : FontWeight.normal,
@@ -636,9 +686,11 @@ class _ChatTile extends StatelessWidget {
   }
 
   Widget _buildPreview() {
-    final msg = session.lastMessage;
-    final isImage = msg.contains('📷') || msg.contains('[image]') || msg.contains('📸');
-    final isAudio = msg.contains('🎵') || msg.contains('[audio]') || msg.contains('🎤');
+    String msg = lastMessage;
+    msg = truncateText(msg, 40); // Truncate to prevent overflow
+    
+    final bool isImage = msg.contains('📷') || msg.contains('[image]') || msg.contains('📸');
+    final bool isAudio = msg.contains('🎵') || msg.contains('[audio]') || msg.contains('🎤');
 
     return Row(
       children: [

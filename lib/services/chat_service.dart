@@ -57,17 +57,20 @@ class ChatService {
   String chatId(String otherUid) {
     if (_currentUid == null) throw Exception('User not logged in');
     
-    // Check cache first
-    final cacheKey = '${_currentUid!}_$otherUid';
+    // Clean the UIDs (in case they contain underscores)
+    final cleanOtherUid = otherUid.split('_').first;
+    final cleanCurrentUid = _currentUid!.split('_').first;
+    
+    final cacheKey = '${cleanCurrentUid}_$cleanOtherUid';
     if (_chatIdCache.containsKey(cacheKey)) {
       return _chatIdCache[cacheKey]!;
     }
     
-    final ids = [_currentUid!, otherUid]..sort();
+    final ids = [cleanCurrentUid, cleanOtherUid]..sort();
     final sortedId = '${ids[0]}_${ids[1]}';
     _chatIdCache[cacheKey] = sortedId;
     
-    print('Creating chatId: $sortedId for users: ${ids[0]}, ${ids[1]}');
+    print('📱 Generated chatId: $sortedId for users: ${ids[0]}, ${ids[1]}');
     return sortedId;
   }
 
@@ -77,34 +80,66 @@ class ChatService {
   Future<void> initChat(String otherUid, String otherName) async {
     if (_currentUid == null) throw Exception('User not logged in');
     
-    final id = chatId(otherUid);
-    final ref = _chats().doc(id);
+    final cleanOtherUid = otherUid.split('_').first;
+    final cleanCurrentUid = _currentUid!.split('_').first;
+    final String chatId = this.chatId(cleanOtherUid);
+    final DocumentReference ref = _chats().doc(chatId);
+    
+    print('📱 Initializing chat: $chatId');
+    print('📱 Participants: $cleanCurrentUid, $cleanOtherUid');
     
     try {
-      final snap = await ref.get();
+      final DocumentSnapshot snap = await ref.get();
+      
       if (!snap.exists) {
-        print('Creating new chat document with ID: $id');
-        await ref.set({
-          'participants': [_currentUid, otherUid],
+        print('📝 Creating new chat document...');
+        
+        final Map<String, dynamic> chatData = {
+          'participants': [cleanCurrentUid, cleanOtherUid],
           'participantNames': {
-            _currentUid: _auth.currentUser?.displayName ?? 'User',
-            otherUid: otherName,
+            cleanCurrentUid: _auth.currentUser?.displayName ?? 'User',
+            cleanOtherUid: otherName,
           },
           'lastMessage': '',
           'lastSenderId': '',
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
           'isActive': true,
-        });
+        };
+        
+        await ref.set(chatData);
+        print('✅ Chat document created: $chatId');
+        
+        // Verify creation
+        final verifySnap = await ref.get();
+        if (verifySnap.exists) {
+          print('✅ Verified chat document exists');
+        } else {
+          print('❌ Chat document creation failed');
+          throw Exception('Failed to create chat document');
+        }
       } else {
-        print('Chat document already exists with ID: $id');
-        // Ensure chat is marked as active
-        if (snap['isActive'] == false) {
+        print('✅ Chat document already exists: $chatId');
+        
+        final data = snap.data() as Map<String, dynamic>;
+        
+        // Update if inactive
+        if (data['isActive'] == false) {
           await ref.update({'isActive': true, 'updatedAt': FieldValue.serverTimestamp()});
+          print('🔄 Reactivated chat');
+        }
+        
+        // Fix participants if needed
+        final List<dynamic> participants = data['participants'] ?? [];
+        if (!participants.contains(cleanCurrentUid) || !participants.contains(cleanOtherUid)) {
+          await ref.update({
+            'participants': [cleanCurrentUid, cleanOtherUid],
+          });
+          print('🔄 Fixed participants');
         }
       }
     } catch (e) {
-      print('Error initializing chat: $e');
+      print('❌ Error initializing chat: $e');
       rethrow;
     }
   }
@@ -115,41 +150,17 @@ class ChatService {
     return chatId(otherUid);
   }
 
-  /// Stream of all chats the current user is a participant in (with duplicate prevention)
+  /// Stream of all chats the current user is a participant in
   Stream<QuerySnapshot> getConversationsStream() {
     if (_currentUid == null) return Stream.empty();
     
+    final cleanCurrentUid = _currentUid!.split('_').first;
+    
     return _chats()
-        .where('participants', arrayContains: _currentUid)
+        .where('participants', arrayContains: cleanCurrentUid)
         .where('isActive', isEqualTo: true)
         .orderBy('updatedAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-          // Remove duplicate chats (keep only one per other user)
-          final Map<String, QueryDocumentSnapshot> uniqueChats = {};
-          
-          for (final doc in snapshot.docs) {
-            final participants = List<String>.from(doc['participants']);
-            final otherId = participants.firstWhere((id) => id != _currentUid);
-            
-            if (!uniqueChats.containsKey(otherId)) {
-              uniqueChats[otherId] = doc;
-            } else {
-              // Keep the most recent one
-              final existing = uniqueChats[otherId];
-              final existingTime = existing?['updatedAt'] as Timestamp?;
-              final newTime = doc['updatedAt'] as Timestamp?;
-              
-              if (newTime != null && (existingTime == null || newTime.toDate().isAfter(existingTime.toDate()))) {
-                uniqueChats[otherId] = doc;
-              }
-            }
-          }
-          
-          // Create a new QuerySnapshot with unique chats
-          final docs = uniqueChats.values.toList();
-          return snapshot;
-        })
         .handleError((error) {
           print('Error getting conversations: $error');
           return Stream.error(error);
@@ -179,13 +190,21 @@ class ChatService {
     if (_currentUid == null) throw Exception('User not logged in');
     if (text.trim().isEmpty) return;
     
-    final id = chatId(otherUid);
-    final chatRef = _chats().doc(id);
-    final messagesRef = chatRef.collection('messages');
+    final cleanOtherUid = otherUid.split('_').first;
+    final String chatId = this.chatId(cleanOtherUid);
+    final DocumentReference chatRef = _chats().doc(chatId);
+    
+    // Ensure chat exists before sending message
+    final snap = await chatRef.get();
+    if (!snap.exists) {
+      print('⚠️ Chat doesn\'t exist, creating it first...');
+      await initChat(cleanOtherUid, 'User');
+    }
+    
+    final CollectionReference messagesRef = chatRef.collection('messages');
+    final WriteBatch batch = _firestore.batch();
 
-    final batch = _firestore.batch();
-
-    final msgRef = messagesRef.doc();
+    final DocumentReference msgRef = messagesRef.doc();
     batch.set(msgRef, {
       'senderId': _currentUid,
       'text': text.trim(),
@@ -202,7 +221,7 @@ class ChatService {
     });
 
     await batch.commit();
-    print('Message sent to chat: $id');
+    print('✅ Message sent to chat: $chatId');
   }
 
   /// Send a media message (image, audio, etc.)
@@ -213,13 +232,20 @@ class ChatService {
   ) async {
     if (_currentUid == null) throw Exception('User not logged in');
     
-    final id = chatId(otherUid);
-    final chatRef = _chats().doc(id);
-    final messagesRef = chatRef.collection('messages');
+    final cleanOtherUid = otherUid.split('_').first;
+    final String chatId = this.chatId(cleanOtherUid);
+    final DocumentReference chatRef = _chats().doc(chatId);
+    
+    // Ensure chat exists
+    final snap = await chatRef.get();
+    if (!snap.exists) {
+      await initChat(cleanOtherUid, 'User');
+    }
+    
+    final CollectionReference messagesRef = chatRef.collection('messages');
+    final WriteBatch batch = _firestore.batch();
 
-    final batch = _firestore.batch();
-
-    final msgRef = messagesRef.doc();
+    final DocumentReference msgRef = messagesRef.doc();
     batch.set(msgRef, {
       'senderId': _currentUid,
       'text': mediaUrl,
@@ -251,6 +277,7 @@ class ChatService {
     });
 
     await batch.commit();
+    print('✅ Media sent to chat: $chatId');
   }
 
   /// Mark all unread messages from the other user as read
@@ -272,6 +299,7 @@ class ChatService {
         batch.update(doc.reference, {'read': true});
       }
       await batch.commit();
+      print('✅ Marked ${unread.docs.length} messages as read');
     } catch (e) {
       print('Error marking messages as read: $e');
     }
@@ -282,9 +310,10 @@ class ChatService {
     if (_currentUid == null) return;
     
     try {
-      final id = chatId(otherUid);
-      final typingRef = _chats()
-          .doc(id)
+      final cleanOtherUid = otherUid.split('_').first;
+      final String chatId = this.chatId(cleanOtherUid);
+      final DocumentReference typingRef = _chats()
+          .doc(chatId)
           .collection('typing')
           .doc(_currentUid);
       
@@ -297,7 +326,8 @@ class ChatService {
         await typingRef.delete();
       }
     } catch (e) {
-      print('Error setting typing status: $e');
+      // Silently fail - typing indicators are not critical
+      print('Typing indicator error (non-critical): $e');
     }
   }
 
@@ -306,11 +336,13 @@ class ChatService {
     if (_currentUid == null) return Stream.value(false);
     
     try {
-      final id = chatId(otherUid);
+      final cleanOtherUid = otherUid.split('_').first;
+      final String chatId = this.chatId(cleanOtherUid);
+      
       return _chats()
-          .doc(id)
+          .doc(chatId)
           .collection('typing')
-          .doc(otherUid)
+          .doc(cleanOtherUid)
           .snapshots()
           .map((snap) {
             if (!snap.exists) return false;
@@ -339,28 +371,53 @@ class ChatService {
     }
   }
 
-  /// Count of unread messages across all chats (for badge)
-  Stream<int> getUnreadCount() {
+  /// Count of unread messages across all chats (for badge) - FUTURE (single value)
+  Future<int> getTotalUnreadCount() async {
+    if (_currentUid == null) return 0;
+    
+    final cleanCurrentUid = _currentUid!.split('_').first;
+    int totalUnread = 0;
+    
+    try {
+      final chatsSnapshot = await _chats()
+          .where('participants', arrayContains: cleanCurrentUid)
+          .where('isActive', isEqualTo: true)
+          .get();
+      
+      for (final chatDoc in chatsSnapshot.docs) {
+        final chatId = chatDoc.id;
+        final unreadSnapshot = await _chats()
+            .doc(chatId)
+            .collection('messages')
+            .where('read', isEqualTo: false)
+            .where('senderId', isNotEqualTo: _currentUid)
+            .count()
+            .get();
+        
+        totalUnread += (unreadSnapshot.count ?? 0);
+      }
+    } catch (e) {
+      print('Error getting unread count: $e');
+    }
+    
+    return totalUnread;
+  }
+
+  /// Stream of unread count (real-time for badge)
+  Stream<int> getUnreadCountStream() {
     if (_currentUid == null) return Stream.value(0);
     
     final controller = StreamController<int>.broadcast();
+    final cleanCurrentUid = _currentUid!.split('_').first;
     
     _chats()
-        .where('participants', arrayContains: _currentUid)
+        .where('participants', arrayContains: cleanCurrentUid)
         .where('isActive', isEqualTo: true)
         .snapshots()
         .listen((chatsSnapshot) async {
           int totalUnread = 0;
-          final Set<String> processedUsers = {};
           
           for (final chatDoc in chatsSnapshot.docs) {
-            final participants = List<String>.from(chatDoc['participants']);
-            final otherId = participants.firstWhere((id) => id != _currentUid);
-            
-            // Skip if we already counted unread for this user
-            if (processedUsers.contains(otherId)) continue;
-            processedUsers.add(otherId);
-            
             final chatId = chatDoc.id;
             try {
               final unreadSnapshot = await _chats()
@@ -386,10 +443,7 @@ class ChatService {
           }
         });
     
-    return controller.stream.handleError((error) {
-      print('Error getting unread count: $error');
-      return 0;
-    });
+    return controller.stream;
   }
 
   /// Delete entire conversation (soft delete)
@@ -397,11 +451,11 @@ class ChatService {
     if (_currentUid == null) return;
     
     try {
-      // Soft delete - just mark as inactive instead of deleting
       await _chats().doc(chatId).update({
         'isActive': false,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      print('✅ Conversation $chatId soft deleted');
     } catch (e) {
       print('Error deleting conversation: $e');
       rethrow;
@@ -435,6 +489,7 @@ class ChatService {
       batch.delete(_chats().doc(chatId));
       
       await batch.commit();
+      print('✅ Conversation $chatId permanently deleted');
     } catch (e) {
       print('Error permanently deleting conversation: $e');
       rethrow;
@@ -444,7 +499,8 @@ class ChatService {
   /// Get user profile information
   Future<Map<String, dynamic>?> getUserProfile(String uid) async {
     try {
-      final doc = await _firestore.collection('users').doc(uid).get();
+      final cleanUid = uid.split('_').first;
+      final doc = await _firestore.collection('users').doc(cleanUid).get();
       if (!doc.exists) return null;
       return doc.data();
     } catch (e) {
@@ -455,9 +511,10 @@ class ChatService {
 
   /// Stream user profile for real-time updates
   Stream<DocumentSnapshot> getUserProfileStream(String uid) {
+    final cleanUid = uid.split('_').first;
     return _firestore
         .collection('users')
-        .doc(uid)
+        .doc(cleanUid)
         .snapshots()
         .handleError((error) {
           print('Error getting user profile stream: $error');
@@ -496,9 +553,10 @@ class ChatService {
 
   /// Check if user is online
   Stream<bool> isUserOnline(String uid) {
+    final cleanUid = uid.split('_').first;
     return _firestore
         .collection('users')
-        .doc(uid)
+        .doc(cleanUid)
         .snapshots()
         .map((snapshot) {
           if (!snapshot.exists) return false;
@@ -512,16 +570,20 @@ class ChatService {
   Future<void> blockUser(String userId) async {
     if (_currentUid == null) return;
     
+    final cleanUserId = userId.split('_').first;
+    final cleanCurrentUid = _currentUid!.split('_').first;
+    
     try {
       await _firestore
           .collection('users')
-          .doc(_currentUid)
+          .doc(cleanCurrentUid)
           .collection('blocked')
-          .doc(userId)
+          .doc(cleanUserId)
           .set({
         'blockedAt': FieldValue.serverTimestamp(),
-        'userId': userId,
+        'userId': cleanUserId,
       });
+      print('✅ User $cleanUserId blocked');
     } catch (e) {
       print('Error blocking user: $e');
       rethrow;
@@ -532,13 +594,17 @@ class ChatService {
   Future<void> unblockUser(String userId) async {
     if (_currentUid == null) return;
     
+    final cleanUserId = userId.split('_').first;
+    final cleanCurrentUid = _currentUid!.split('_').first;
+    
     try {
       await _firestore
           .collection('users')
-          .doc(_currentUid)
+          .doc(cleanCurrentUid)
           .collection('blocked')
-          .doc(userId)
+          .doc(cleanUserId)
           .delete();
+      print('✅ User $cleanUserId unblocked');
     } catch (e) {
       print('Error unblocking user: $e');
       rethrow;
@@ -549,12 +615,15 @@ class ChatService {
   Future<bool> isUserBlocked(String userId) async {
     if (_currentUid == null) return false;
     
+    final cleanUserId = userId.split('_').first;
+    final cleanCurrentUid = _currentUid!.split('_').first;
+    
     try {
       final doc = await _firestore
           .collection('users')
-          .doc(_currentUid)
+          .doc(cleanCurrentUid)
           .collection('blocked')
-          .doc(userId)
+          .doc(cleanUserId)
           .get();
       return doc.exists;
     } catch (e) {
@@ -566,6 +635,7 @@ class ChatService {
   /// Clear chat ID cache (useful on logout)
   void clearCache() {
     _chatIdCache.clear();
+    print('Chat cache cleared');
   }
 }
 

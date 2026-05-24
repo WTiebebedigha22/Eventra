@@ -183,7 +183,7 @@ class _EventListScreenState extends State<EventListScreen> with SingleTickerProv
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '🔍',
+                    'Go',
                     style: TextStyle(fontSize: 14, color: primaryColor),
                   ),
                 ),
